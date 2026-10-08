@@ -1,20 +1,25 @@
-"""交互式终端的后端：`sdk/tui/app.py` 里「除 curses 之外的一切」。
+"""Backend for the interactive terminal: "everything but curses" from `sdk/tui/app.py`.
 
-为什么要单独一个文件：面板那几百行只管画和按键；链路、协议、闸门预检、单位换算
-**全部来自 `sdk/`**。这个模块是唯一的接缝，面板只认下面这几样：
+Why a separate file: the panel's few hundred lines only draw and handle keys; the link,
+the protocol, the gate pre-checks and the unit conversion **all come from `sdk/`**. This
+module is the only seam, and the panel knows just these few things:
 
-    sess.snapshot()                一帧一致视图（**SI**），键名固定，draw() 全靠它
-    sess.tick(now)                 每拍推进：发 0x16，或补一帧 0x01 保活
-    sess.jog/cycle_step/send_*     按键动作（闸门交给 sdk.Arm 的预检）
-    sess.target/sel/step/hold/...  「当前臂」的状态，面板直接读写
-    sess.switch_arm(i)             a 键切「当前臂」
+    sess.snapshot()                one consistent view per frame (**SI**), fixed key
+                                   names, draw() depends on it entirely
+    sess.tick(now)                 advance one beat: send 0x16, or top up with a 0x01
+                                   keepalive
+    sess.jog/cycle_step/send_*     key actions (gating is left to sdk.Arm's pre-checks)
+    sess.target/sel/step/hold/...  the "current arm"'s state; the panel reads/writes it
+    sess.switch_arm(i)             the a key switches the "current arm"
 
-**两台臂**：一条 `Link` + 每台一个 `sdk.Arm`。**两台都在被驱动** —— 各自的目标角、
-各自的 0x16 流、各自的保活计时，`a` 键只是切换"面板在看哪一台"。所以切走的那台不会
-停在那儿不管（它跟的还是它自己那份目标角）。
+**Two arms**: one `Link` + one `sdk.Arm` per arm. **Both are being driven** — each has its
+own target, its own 0x16 stream, its own keepalive timer, and the `a` key only switches
+*which arm the panel is looking at*. So the arm you switched away from is not left alone
+(it keeps following its own target).
 
-面板**不知道有两台**：下面 `ConsoleSession.__getattr__/__setattr__` 把 `target/sel/step/...`
-这批名字转发给"当前臂"，面板里那些 `sess.xxx` 一个字都不用改。
+The panel **does not know there are two arms**: `ConsoleSession.__getattr__/__setattr__`
+below forwards the `target/sel/step/...` names to the "current arm", so every `sess.xxx`
+in the panel stays untouched.
 """
 
 import argparse
@@ -27,23 +32,26 @@ from ..link import Link
 from ..sim import SimLink
 
 # ============================================================================
-# A 层：常量与工具（协议 / 限位 / 状态名全部来自 sdk，这里只放"面板要的口径"）
+# Layer A: constants and helpers (protocol / limits / state names all come from
+# sdk; only "the conventions the panel wants" live here)
 # ============================================================================
 
 DEFAULT_ARM_ID = protocol.DEFAULT_ARM_ID
 N_ARM = board_defs.ARM_NUM                 # 2
-N_AXIS = board_defs.ARM_MOTOR_NUM          # 7（6 关节 + 夹爪）
+N_AXIS = board_defs.ARM_MOTOR_NUM          # 7 (6 joints + gripper)
 GRIPPER = board_defs.GRIPPER               # 6
 
-# 点动步长档。**rad 原生** —— 面板和会话内部一律 rad；夹爪标定过之后单独用米档
-# （它有真实行程，rad 档在"张开多少"这件事上不直观）。
+# Jog step presets. **rad is native** — the panel and the session always use rad; only
+# once the gripper is calibrated does it get its own metric presets (it has a real
+# travel, and rad presets are not intuitive for "how far open").
 STEP_CHOICES_RAD = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2]
 STEP_CHOICES_M = [0.0005, 0.001, 0.002, 0.005, 0.01, 0.02]
-DEFAULT_STEP_RAD = 0.02                    # ≈ 旧版 1.0° 的档位
+DEFAULT_STEP_RAD = 0.02                    # the preset close to the old 1.0°
 DEFAULT_STEP_M = 0.002
 
-# 「这一帧反馈够不够新」的门槛：和 `sdk.arm.FEEDBACK_STALE_S` 同一口径（100 ms）。
-# 控制流自己判一次是为了不每拍都进 sdk 的预检（100 Hz 下那纯属白跑）。
+# Threshold for "is this feedback frame fresh enough": the same convention as
+# `sdk.arm.FEEDBACK_STALE_S` (100 ms). The control stream checks it once itself so it
+# does not enter sdk's pre-check every beat (at 100 Hz that is pure waste).
 FEEDBACK_FRESH_S = 0.1
 
 MODE_TID_NAME = {protocol.TID_ARM_START: ("session.tid.start", "run"),
@@ -53,16 +61,19 @@ MODE_TID_NAME = {protocol.TID_ARM_START: ("session.tid.start", "run"),
 
 
 def short_label(arm_id):
-    """日志前缀用的短标签（`臂A`）。全称（含 CAN 号）用 `i18n.arm_label()`。"""
+    """Short label for the log prefix (`ArmA`). For the full name (with the CAN bus)
+    use `i18n.arm_label()`."""
     return i18n.arm_label(arm_id).split("(")[0]
 
 
 def parse_arm_id(s):
-    """`--arm-id` 的取值校验（**启动时的"当前臂"**，运行中按 a 可以切）。
+    """Value check for `--arm-id` (**the "current arm" at startup**; the a key can switch
+    it at run time).
 
-    板子侧只认 `arm_id < ARM_NUM`，越界的帧被**静默丢弃**（连版本包都不回），现象就是
-    "什么都不动、也没有字节" —— 所以宁可在启动时直接报错，别让它变成一个要靠抓包才能
-    诊断的沉默失败。
+    The board side only accepts `arm_id < ARM_NUM`; an out-of-range frame is **silently
+    dropped** (it does not even answer with a version frame), so the symptom is "nothing
+    moves and no bytes come back" — hence it is better to fail loudly at startup than to
+    turn this into a silent failure you can only diagnose with a packet capture.
     """
     try:
         v = int(s, 0)
@@ -74,7 +85,8 @@ def parse_arm_id(s):
 
 
 def axis_lo_rad(axis):
-    """某一根轴的软限位下限（rad）。夹爪那一路用原始角的 ∓142°，不是米。"""
+    """Lower soft limit of one axis (rad). The gripper uses the raw angle's ∓142°, not
+    metres."""
     return (board_defs.GRIPPER_ANGLE_MIN_RAD if axis == GRIPPER
             else board_defs.JOINT_ANGLE_MIN_RAD[axis])
 
@@ -85,10 +97,11 @@ def axis_hi_rad(axis):
 
 
 def clamp_axis_rad(axis, value):
-    """把一根轴夹进软限位（rad），返回 `(夹住后的值, 是否夹过)`。
+    """Clamp one axis into its soft limits (rad); returns `(clamped value, was it clamped)`.
 
-    `sdk.board_defs` 只有 deg 版（`clamp_axis`）；会话内部一律 rad，所以这里用它的
-    rad 限位镜像组合一份 —— 是组合，不是重抄一份限位表。
+    `sdk.board_defs` only has the deg version (`clamp_axis`); the session always uses rad,
+    so this composes one out of its rad limit mirrors — composed, not a second copy of the
+    limit table.
     """
     lo, hi = axis_lo_rad(axis), axis_hi_rad(axis)
     if value < lo:
@@ -99,9 +112,10 @@ def clamp_axis_rad(axis, value):
 
 
 def gripper_m_limits(calib):
-    """标定过之后夹爪的米制软限位 `(lo, hi)`。
+    """The gripper's metric soft limits `(lo, hi)` once it is calibrated.
 
-    两点的映射方向由标定自己决定（哪端是"张开"不预设），所以这里两端都算一遍再排序。
+    Which way the two points map is decided by the calibration itself (neither end is
+    assumed to be "open"), so both ends are computed here and then sorted.
     """
     a = calib.opening_from_raw_deg(board_defs.GRIPPER_ANGLE_MIN)
     b = calib.opening_from_raw_deg(board_defs.GRIPPER_ANGLE_MAX)
@@ -109,14 +123,17 @@ def gripper_m_limits(calib):
 
 
 # ============================================================================
-# C 层：会话（全部跑在 UI 线程，发送单写者）
+# Layer C: the session (all of it runs on the UI thread, single writer for sends)
 # ============================================================================
 
 class ArmView:
-    """**一台臂**在面板里的那一份状态。`a` 键切的就是"面板在看哪一份"。
+    """**One arm**'s piece of panel state. The `a` key switches "which piece the panel is
+    looking at".
 
-    目标角 `target` 的规范域：6 个关节 **rad** + 夹爪 **原始角 rad**（夹爪不做
-    pos_to_angle 换算，米是标定出来的，不是协议里的量）。显示时按需换算。
+    The canonical domain of the target `target`: 6 joints in **rad** + the gripper in
+    **raw-angle rad** (the gripper gets no pos_to_angle conversion; metres are what
+    calibration produces, not a quantity in the protocol). Converted on demand for
+    display.
     """
 
     __slots__ = ("arm_id", "arm", "target", "sel", "hold", "seeded", "prev",
@@ -130,20 +147,24 @@ class ArmView:
         self.arm = arm
         self.target = [0.0] * N_AXIS
         self.sel = 0
-        self.hold = False              # 暂停这一台的 0x16 流（冻结目标，不是停机）
+        self.hold = False              # pause this arm's 0x16 stream (freezes the target,
+                                       # it is not a stop)
         self.seeded = False
-        self.prev = None               # 上一帧 (state, mode, lost)
-        self.last_tx = 0.0             # 上一帧发出去的时刻（0x16 也算）
+        self.prev = None               # previous frame (state, mode, lost)
+        self.last_tx = 0.0             # when the last frame went out (0x16 counts too)
         self.last_ctrl = 0.0
-        self.ctrl_live = False         # 上一拍真的发出去了 0x16
+        self.ctrl_live = False         # the last beat really sent a 0x16
         self.init_t0 = None
-        self.init_told_reset = False   # 初始化流程走没走过"复位"这一步（只用来显示）
+        self.init_told_reset = False   # did the init sequence pass through "reset"
+                                       # (display only)
         self.reset_t0 = None
-        self.force_init = False        # i 键第一遍被预检挡下，第二遍才强发
+        self.force_init = False        # the i key was stopped by the pre-check once; the
+                                       # second press force-sends
         self.have_ever_rx = False
         self.handshake_reported = False
-        self.grip_hint_shown = False   # 夹爪未标定的提示只打一次
-        self.ctrl_err_reported = False # 周期流的发送失败只报一次（100 Hz 会刷屏）
+        self.grip_hint_shown = False   # the uncalibrated-gripper hint is printed once
+        self.ctrl_err_reported = False # a periodic-stream send failure is reported once
+                                       # (at 100 Hz it would flood)
         self.step_idx_rad = (STEP_CHOICES_RAD.index(opts.step)
                              if opts.step in STEP_CHOICES_RAD
                              else STEP_CHOICES_RAD.index(DEFAULT_STEP_RAD))
@@ -152,7 +173,7 @@ class ArmView:
         self._rate_t = time.monotonic()
         self._rate_hz = 0.0
 
-    # ---- 步长档：夹爪标定过、且选中的就是夹爪那一行 → 米档 ----
+    # ---- step preset: gripper calibrated AND the gripper row is selected → metric ----
 
     @property
     def step_in_m(self):
@@ -169,11 +190,12 @@ class ArmView:
 
     @property
     def step_str(self):
-        """面板上「步长 xx」那一格的文字（单位随行变）。"""
+        """The text of the panel's "step xx" cell (the unit follows the row)."""
         return ("%.4f m" % self.step) if self.step_in_m else ("%.3f rad" % self.step)
 
 
-# 「当前臂」的转发表：面板直接读写的这些名字都指"当前臂"那一份。
+# Forwarding table for the "current arm": every name the panel reads/writes directly
+# means the current arm's copy.
 _PER_ARM_ATTRS = frozenset({
     "arm", "arm_id", "target", "sel", "hold", "seeded", "prev", "last_tx",
     "last_ctrl", "ctrl_live", "init_t0", "init_told_reset", "reset_t0",
@@ -183,20 +205,25 @@ _PER_ARM_ATTRS = frozenset({
 
 
 class ConsoleSession:
-    """面板的会话：派生板子状态（从反馈帧，不自己造）、发命令、维护事件日志。
+    """The panel's session: derives board state (from feedback frames, never invented),
+    sends commands, keeps the event log.
 
-    `tick()` 每 2~5 ms 调一次（`getch` 超时）：
-      - 能发 0x16 时（正常运行 + run + 没暂停）按 `--ctrl-hz` 发当前目标角；
-      - 不能发时 150 ms 补一帧 0x01 保活 —— 否则初始化那 7 s 会掉进 comm_lost。
-    **两台臂各跑一遍**，所以切走的那台也在被保活/被位控。
+    `tick()` is called every 2~5 ms (`getch` timeout):
+      - when a 0x16 can be sent (normal operation + run + not paused) it sends the current
+        target at `--ctrl-hz`;
+      - when it cannot, it tops up with a 0x01 keepalive every 150 ms — otherwise those
+        7 s of init would drop into comm_lost.
+    **This runs once per arm**, so the arm you switched away from is kept alive and
+    position-controlled too.
     """
 
     KEEPALIVE_S = 0.15
 
     def __init__(self, link, opts, arm_ids=None):
-        # events / dirty / t0 / link / opts / cur_arm_id / views 是**会话级**的，
-        # 必须用 object.__setattr__ 写：下面的转发规则会拦下同名属性（尤其 views
-        # 自己，写错就无限递归）。
+        # events / dirty / t0 / link / opts / cur_arm_id / views are **session-level** and
+        # must be written with object.__setattr__: the forwarding rules below would
+        # intercept a same-named attribute (views above all — a wrong write there is
+        # infinite recursion).
         object.__setattr__(self, "link", link)
         object.__setattr__(self, "opts", opts)
         object.__setattr__(self, "events", deque(maxlen=400))
@@ -213,7 +240,8 @@ class ConsoleSession:
         object.__setattr__(self, "arms", arms)
         object.__setattr__(self, "views", views)
 
-    # ---- 「当前臂」的间接层：面板读 sess.target 就是读当前臂的 ----
+    # ---- indirection for the "current arm": the panel reading sess.target reads the
+    # ---- current arm's
 
     @property
     def cur(self):
@@ -231,7 +259,8 @@ class ConsoleSession:
             object.__setattr__(self, name, value)
 
     def switch_arm(self, arm_id=None):
-        """切「当前臂」（a 键）。只是换面板看谁 —— 两台一直在被驱动。"""
+        """Switch the "current arm" (the a key). This only changes which one the panel
+        looks at — both arms are being driven all along."""
         if arm_id is None:
             arm_id = (self.cur_arm_id + 1) % N_ARM
         if arm_id == self.cur_arm_id:
@@ -240,17 +269,19 @@ class ConsoleSession:
         self.dirty = True
         self.info(i18n.tr("session.switch_arm", i18n.arm_label(arm_id)))
 
-    # ---- 事件 ----
+    # ---- events ----
 
     def event(self, level, text):
         self.events.append((time.time(), level, text))
         self.dirty = True
 
     def streaming_any(self):
-        """有任何一台正在发（或暂停在）控制流 —— 退出确认用。
+        """Is any arm streaming (or paused in) a control stream — used by the exit
+        confirmation.
 
-        **要看两台**：只按当前臂判的话，切到那台没在跑的臂上按 q 就直接退了，
-        另一台的 0x16 还挂着。"""
+        **Both arms have to be checked**: judging by the current arm alone, pressing q on
+        the arm that is not running would exit right away while the other arm's 0x16 is
+        still going."""
         return any(v.ctrl_live or v.hold for v in self.views.values())
 
     def info(self, text):
@@ -262,13 +293,16 @@ class ConsoleSession:
     def err(self, text):
         self.event("err", text)
 
-    # ---- 读（面板用） ----
+    # ---- reads (used by the panel) ----
 
     def snapshot(self):
-        """面板要的那一帧一致视图 —— 键名是面板的契约，值是 **SI**。
+        """The one consistent view per frame the panel wants — the key names are the
+        panel's contract, the values are **SI**.
 
-        `fb` 直接取 `arm.snapshot()`：它本来就是"同一帧里换算好"的一致视图，不会再被
-        下一帧改掉。夹爪那一格：标定过给**米**，没标定给 None（面板退回显示原始角）。
+        `fb` comes straight from `arm.snapshot()`: that is already a "converted within one
+        frame" consistent view and will not be changed by the next frame. The gripper
+        cell: **metres** once calibrated, None when not (the panel falls back to showing
+        the raw angle).
         """
         view = self.cur
         arm = view.arm
@@ -303,9 +337,9 @@ class ConsoleSession:
             "board_version": st["board_version"],
             "link_up": st["link_up"],
             "link_err": st["link_err"],
-            "n_rx": st["n_rx"],                     # 链路级（两台之和）
-            "n_rx_fb": arm.n_feedback,              # **本臂**的 0x80 帧数
-            "rx_rate": self._rate(view, now),       # 本臂的 0x80 速率
+            "n_rx": st["n_rx"],                     # link level (sum of both arms)
+            "n_rx_fb": arm.n_feedback,              # **this arm**'s 0x80 count
+            "rx_rate": self._rate(view, now),       # this arm's 0x80 rate
             "n_tx": st["n_tx"],
             "n_drop": st["n_drop"],
             "n_crc_err": st["n_err_crc8"] + st["n_err_crc16"],
@@ -316,13 +350,15 @@ class ConsoleSession:
         }
 
     def _arm_line(self, arm_id, now):
-        """状态行下面那一行「两台概览」用的短描述。"""
+        """The short description used by the "two-arm overview" line under the status
+        line."""
         view = self.views[arm_id]
         sp = view.arm.snapshot()
         return {"arm_id": arm_id,
                 "state": None if sp is None else sp.robot_state,
-                # 从**数值码**经 i18n 渲染：`sp.robot_state_name` / `sp.mode_name` 是
-                # `board_defs` 预渲染的中文（公开 API，不能动），英文面板要从这里绕过它。
+                # Rendered from the **numeric code** through i18n: `sp.robot_state_name`
+                # / `sp.mode_name` are the Chinese that `board_defs` pre-rendered (public
+                # API, must not change), so the English panel has to go around them here.
                 "state_name": i18n.tr("session.no_feedback") if sp is None
                 else i18n.state_name(sp.robot_state),
                 "mode_name": "-" if sp is None else i18n.mode_name(sp.mode),
@@ -333,8 +369,10 @@ class ConsoleSession:
                 "rx_rate": self._rate(view, now)}
 
     def _rate(self, view, now):
-        """本臂 0x80 的到达速率（0.5 s 窗）。SDK 的 stats 是链路级的聚合计数，没有速率，
-        而且链路级会把两台加起来 —— 面板上 `0x80 %u` 是本臂的，两个数必须同口径。"""
+        """This arm's 0x80 arrival rate (0.5 s window). The SDK's stats are link-level
+        aggregate counts with no rate, and link level would add both arms together —
+        while the panel's `0x80 %u` is this arm's, so the two numbers have to use the same
+        convention."""
         dt = now - view._rate_t
         if dt >= 0.5:
             view._rate_hz = (view.arm.n_feedback - view._rate_n) / dt
@@ -343,15 +381,19 @@ class ConsoleSession:
         return view._rate_hz
 
     def fb(self):
-        """当前臂的反馈视图（面板的按键处理用；没有反馈返回 None）。"""
+        """The current arm's feedback view (used by the panel's key handling; None when
+        there is no feedback)."""
         return self.snapshot()["fb"]
 
     def gripper_row(self, fb):
-        """夹爪那一行要显示的量（面板只管排版，单位换算留在后端）。
+        """The quantities the gripper row shows (the panel only lays them out; unit
+        conversion stays in the backend).
 
-        **标定过就给米**（目标/反馈/软限位全按标定那两点映射），**没标定就给原始角**（rad）
-        —— 原始角是电机的量，没有"多少毫米"的规格，只能标定出来（见 sdk/README「夹爪标定」）。
-        `fb` 可以传 None（还没有反馈帧）。
+        **Metres once calibrated** (target/feedback/soft limits all map through those two
+        calibration points), **the raw angle (rad) when not** — the raw angle is the
+        motor's quantity and has no "how many millimetres" spec, so it can only come out of
+        a calibration (see sdk/README "gripper calibration"). `fb` may be None (no
+        feedback frame yet).
         """
         view = self.cur
         calib = view.arm.calibration
@@ -372,7 +414,7 @@ class ConsoleSession:
             return None, None, snap
         return fb["state"], fb["mode"], snap
 
-    # ---- 目标角 / 步长 ----
+    # ---- target / step ----
 
     def seed_from_feedback(self, fb, why):
         view = self.cur
@@ -381,13 +423,14 @@ class ConsoleSession:
         self.info(i18n.tr("session.seeded", short_label(view.arm_id), why))
 
     def _seed(self, view, sp, why):
-        """从 `sdk` 的快照播种（会话内部的自动重播种走这条，值域和 target 完全一致）。"""
+        """Seed from `sdk`'s snapshot (the session's internal automatic re-seeding goes
+        through this; the value domain matches `target` exactly)."""
         view.target = list(sp.joint_angles) + [units.deg_to_rad(sp.gripper_raw_deg)]
         view.seeded = True
         self.info(i18n.tr("session.seeded", short_label(view.arm_id), why))
 
     def jog(self, axis, sign):
-        """按键只改 target[]，实际下发由 tick 按周期做。"""
+        """A key only changes target[]; the actual send is done by tick at its period."""
         view = self.cur
         if axis is None:
             return
@@ -398,7 +441,8 @@ class ConsoleSession:
         lbl = short_label(view.arm_id)
 
         if axis == GRIPPER and view.step_in_m:
-            # 米档：目标按米加减，再换回原始角（映射由标定那两点决定）
+            # metric preset: add/subtract the target in metres, then map back to the raw
+            # angle (the mapping is decided by the two calibration points)
             calib = view.arm.calibration
             cur_m = calib.opening_from_raw_deg(units.rad_to_deg(view.target[axis]))
             want_m = cur_m + sign * view.step
@@ -433,10 +477,12 @@ class ConsoleSession:
             view.step_idx_rad = (view.step_idx_rad + direction) % len(STEP_CHOICES_RAD)
         self.info(i18n.tr("session.step", lbl, view.step_str))
 
-    # ---- 发：命令（预检交给 sdk.Arm，这里只负责把异常翻成人话进事件流） ----
+    # ---- sends: commands (pre-checking is left to sdk.Arm; here we only turn exceptions
+    # ---- into plain words in the event stream)
 
     def _report_send_failure(self, view, what, e):
-        """命令发不出去时统一进事件流。发送类是 err，闸门类是 warn（板子也没受理）。"""
+        """A command that cannot be sent goes into the event stream in one place. Send
+        errors are err, gate rejections are warn (the board did not accept it either)."""
         lbl = short_label(view.arm_id)
         if isinstance(e, (GateRejected, FeedbackStale)):
             self.warn(i18n.tr("session.send_gated", lbl, what, e))
@@ -458,12 +504,16 @@ class ConsoleSession:
         view.last_tx = time.monotonic()
 
     def send_arm_init(self):
-        """0x02。板子会先比姿态和掉线，不合格**静默丢弃**，所以预检交给 `sdk.Arm`。
+        """0x02. The board first compares the pose and the lost mask and **silently drops**
+        anything that fails, so the pre-check is left to `sdk.Arm`.
 
-        **「再按一次 i 强发」只给姿态这一条闸门**（旧版就是这样的）：其余闸门（态不对、
-        有掉线）强发过去也是被板子静默丢弃，可日志会照报"已发 0x02、约 7 s" —— 那就是
-        在谎报初始化开始了，正是这个面板要防的坑。所以姿态先自己复核一遍，只有它超了
-        才走两次按键的强发通道；别的闸门一律直接由 SDK 报出来，不提供强发。
+        **"Press i again to force" is given to the pose gate only** (that is how the old
+        one behaved): the other gates (wrong state, motors lost) would also be silently
+        dropped by the board if forced, but the log would still say "sent 0x02, about
+        7 s" — that is lying about the init having started, exactly the trap this panel
+        exists to prevent. So the pose is re-checked here, and only when it is exceeded does
+        the two-press force path open; every other gate is reported straight by the SDK
+        with no force option.
         """
         view = self.cur
         arm = view.arm
@@ -498,7 +548,8 @@ class ConsoleSession:
         view.last_tx = time.monotonic()
 
     def send_arm_reset(self):
-        """0x18 一键复位。闸门是「正常运行 + 无掉线」（板子**故意不查姿态**）。"""
+        """0x18 one-key reset. The gate is "normal operation + nothing lost" (the board
+        **deliberately does not check the pose**)."""
         view = self.cur
         lbl = short_label(view.arm_id)
         try:
@@ -523,7 +574,7 @@ class ConsoleSession:
         view.last_tx = time.monotonic()
 
     def stop_all(self):
-        """`--stop-on-exit`：给**两台**补一帧 0x14（失能、松劲）。"""
+        """`--stop-on-exit`: send one extra 0x14 to **both arms** (disable, go slack)."""
         done = []
         for arm_id in sorted(self.views):
             try:
@@ -533,13 +584,15 @@ class ConsoleSession:
                 self.err(i18n.tr("session.stop_all_fail", short_label(arm_id), e))
         return done
 
-    # ---- 链路 ----
+    # ---- link ----
 
     def reopen(self):
-        """重开链路（r 键）。`--fake` 下就是"假板子重新上电"。
+        """Reopen the link (the r key). Under `--fake` this is "power-cycle the fake
+        board".
 
-        SDK 的 `Link.open()` 出错时**抛 `LinkError`**（不是 SystemExit），所以这里接住、
-        照旧只报事件，不打断面板。顺手重读一遍夹爪标定 —— 标定往往是在另一个进程里做的。
+        The SDK's `Link.open()` **raises `LinkError`** on failure (not SystemExit), so this
+        catches it and reports an event as usual without tearing the panel down. It also
+        re-reads the gripper calibration — that tends to be done in another process.
         """
         for view in self.views.values():
             view.handshake_reported = False
@@ -563,7 +616,7 @@ class ConsoleSession:
         self.dirty = True
         return True
 
-    # ---- 每拍 ----
+    # ---- per beat ----
 
     def tick(self, now):
         for arm_id in sorted(self.views):
@@ -600,9 +653,10 @@ class ConsoleSession:
             self._rate(view, now)
 
     def _send_ctrl(self, view, now):
-        """周期 0x16。`force=True` 的理由：上面那道本地门和 `sdk.Arm` 的预检判据**逐条
-        一样**（state/mode/age/link_up），100 Hz 下每拍再走一遍预检纯属白跑 —— 但走的是
-        `Arm` 的换算和编码，不是自己组帧。"""
+        """The periodic 0x16. Why `force=True`: the local gate above and `sdk.Arm`'s
+        pre-check test **exactly the same things** (state/mode/age/link_up), so running the
+        pre-check again every beat at 100 Hz is pure waste — but the conversion and the
+        encoding still go through `Arm`, we do not build the frame here."""
         try:
             view.arm.send_ctrl_pos(view.target[:6],
                                    gripper_raw_deg=units.rad_to_deg(view.target[GRIPPER]),
@@ -629,7 +683,8 @@ class ConsoleSession:
         return True
 
     def _report_handshake(self):
-        """版本码是**链路级**的（一条链路一台上位机），所以整个会话只报一次。"""
+        """The version code is **link level** (one link, one host), so the whole session
+        reports it once."""
         if self.version_reported:
             return
         self.version_reported = True
@@ -642,8 +697,10 @@ class ConsoleSession:
             self.err(i18n.tr("session.hs_bad", bv, protocol.VERSION_CODE))
 
     def _on_feedback(self, view, sp, now):
-        """反馈帧 → 事件 / 自动重播种。**策略逐条照搬**原来单臂那一版，只是单位换 SI、
-        日志里带臂标签。角度写进日志前换回 deg（日志口径是 deg）。"""
+        """Feedback frame → events / automatic re-seeding. **The policy is carried over
+        clause by clause** from the old single-arm version; only the units became SI and
+        the log lines carry an arm label. Angles are converted back to deg before being
+        written to the log (the log's convention is deg)."""
         lbl = short_label(view.arm_id)
         if not view.have_ever_rx:
             view.have_ever_rx = True
@@ -668,25 +725,29 @@ class ConsoleSession:
                     view.init_told_reset = False
                 if st == board_defs.STATE_RESETTING:
                     view.reset_t0 = now
-                # 从 comm_lost 回来 / 初始化结束进 normal —— 这两处必须重播种，
-                # 否则残留的旧目标会在进 run 的那一帧把臂拽走（板子的 joint_src
-                # 自播种只在没有有效控制帧时才跟着反馈走）。
+                # Coming back from comm_lost / finishing init into normal — these two
+                # must re-seed, otherwise a stale target yanks the arm on the very frame
+                # that enters run (the board's own joint_src seeding only follows the
+                # feedback while there is no valid control frame).
                 if st == board_defs.STATE_WAIT_INIT and pst in (
                         board_defs.STATE_INITING, board_defs.STATE_COMM_LOST,
                         board_defs.STATE_CALIBRATING):
                     self._seed(view, sp, i18n.tr("session.why.wait_init"))
                 if st == board_defs.STATE_NORMAL and pst == board_defs.STATE_RESETTING:
-                    # 复位收尾。**必须重播种**：复位期间臂真的动过，切走之前那个目标
-                    # 早过期了（板子的 Ctrl_Invalidate 也把它清了），不重播种的话下一帧
-                    # 0x16 会把臂按老目标再拽一次。
+                    # End of a reset. **Must re-seed**: the arm really moved during the
+                    # reset, so the target from before the excursion went stale long ago
+                    # (the board's Ctrl_Invalidate cleared it too); without re-seeding the
+                    # next 0x16 would yank the arm back to the old target once more.
                     self._seed(view, sp, i18n.tr("session.why.reset_tail"))
                     bad = [(board_defs.JOINT_NAMES[i],
                             units.rad_to_deg(sp.joint_angles[i] - want))
                            for i, want in enumerate(board_defs.RESET_POSE_RAD)
                            if abs(sp.joint_angles[i] - want) > self.opts.init_tol]
                     if bad:
-                        # 板上那个静默失败：临时规划池满时复位起了个空规划、下一拍就
-                        # "跑完"，状态机以为做完了但臂没动过。
+                        # That silent failure on the board: when the temporary planning
+                        # pool is full the reset starts an empty plan and "finishes" on the
+                        # next beat, so the state machine thinks it is done but the arm
+                        # never moved.
                         self.err(i18n.tr(
                             "session.reset_skipped", lbl,
                             i18n.tr("session.pose_dev_sep").join(
@@ -702,15 +763,17 @@ class ConsoleSession:
                 if pst in (board_defs.STATE_INITING, board_defs.STATE_RESETTING) \
                         and st == board_defs.STATE_NORMAL \
                         and mode == board_defs.MODE_DAMPING:
-                    # 初始化/复位收尾都会 run → damping，是**正常收尾**不是异常
-                    # （异常那条是掉线把 run 打回 stop，下面那句）。别吓人。
+                    # Both the end of init and the end of a reset go run → damping; that
+                    # is a **normal finish**, not an anomaly (the anomalous one is a loss
+                    # knocking run back to stop, the line below). Do not scare anyone.
                     good = "info"
                     text += i18n.tr("session.mode_tail_normal")
                 if mode == board_defs.MODE_RUN:
                     self._seed(view, sp, i18n.tr("session.why.enter_run"))
                     self.event("info", text)
                 elif pmode == board_defs.MODE_RUN:
-                    # 最典型的：Motor_Lost_Handle 因为掉线把 arm_mode 打回 stop
+                    # The most typical one: Motor_Lost_Handle knocks arm_mode back to stop
+                    # because motors were lost.
                     self.event("err" if lost else good,
                                text + i18n.tr("session.ctrl_stopped"))
                 else:
@@ -725,20 +788,22 @@ class ConsoleSession:
             self._seed(view, sp, i18n.tr("session.why.reseed"))
 
         if st == board_defs.STATE_INITING and view.init_t0 is not None:
-            self.dirty = True      # 面板上要看着秒数走
+            self.dirty = True      # the panel wants to watch the seconds tick
             if now - view.init_t0 > 4.0 and not view.init_told_reset:
                 view.init_told_reset = True
                 self.info(i18n.tr("session.initing_note", lbl))
 
 
 # ============================================================================
-# 壳：建会话（面板和 main 用）
+# Shell: build the session (used by the panel and main)
 # ============================================================================
 
 def build_session(opts):
-    """按 opts 建链路 + 会话。**两台臂都建**：一条链路、每台一个 sdk.Arm。"""
+    """Build the link + session from opts. **Both arms are built**: one link, one sdk.Arm
+    each."""
     if opts.fake:
-        # --fake-lost 的掩码落在 opts.arm_id 那一台上（另一台留着对照）
+        # the --fake-lost mask lands on the arm in opts.arm_id (the other stays as a
+        # control)
         link = SimLink(lost_mask=opts.fake_lost, lost_arm=opts.arm_id)
     else:
         link = Link(opts.port, opts.baud)
