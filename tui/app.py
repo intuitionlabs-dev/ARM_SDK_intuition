@@ -1,11 +1,14 @@
-"""curses 面板：`Ui`（画屏 / 按键 / 对话框）。只认 `session` 那份接口契约。
+"""The curses panel: `Ui` (draw / keys / dialogs). It only knows `session`'s interface
+contract.
 
-后端在 [session.py](session.py)：链路、闸门预检、单位换算、每拍 tick、事件策略全在
-`ConsoleSession` 里。这里只管把它给的"一帧一致视图"画出来，外加**在阻塞路径里也喂 tick**
-（`input_line` 里那一次）—— 板子 500 ms 收不到有效帧就掉进 comm_lost，弹着对话框干等
-会把臂踢出「正常运行」。
+The backend is in [session.py](session.py): the link, the gate pre-checks, the unit
+conversion, the per-beat tick and the event policy all live in `ConsoleSession`. Here we
+only draw the "one consistent view per frame" it hands us, plus **keep feeding tick on the
+blocking path** (the one inside `input_line`) — the board drops into comm_lost if it does
+not get a valid frame within 500 ms, and sitting in a dialog would knock the arm out of
+"normal operation".
 
-命令行入口在 [__main__.py](__main__.py)：`python3 -m sdk.tui`。
+The command-line entry point is in [__main__.py](__main__.py): `python3 -m sdk.tui`.
 """
 
 import curses
@@ -16,13 +19,15 @@ from .session import GRIPPER, N_AXIS, axis_hi_rad, axis_lo_rad, short_label
 
 
 # ============================================================================
-# D 层：curses 面板（只知道 sess.snapshot() 那一份契约，别的都在后端）
+# Layer D: the curses panel (knows only the sess.snapshot() contract; everything
+# else lives in the backend)
 # ============================================================================
 
 C_OK, C_WARN, C_ERR, C_DIM, C_HEAD = 1, 2, 3, 4, 5
 
-# 帮助页的 key 顺序（"" 是分隔空行，不进语言表）。**不能在 import 期取文本** ——
-# `set_lang` 要等 `__main__` 解析完 `--lang` 才跑。
+# Key order of the help page ("" is a separating blank line, it does not go into the
+# language table). **The text must not be looked up at import time** — `set_lang` only
+# runs once `__main__` has parsed `--lang`.
 HELP_KEYS = ("app.help.select", "app.help.jog", "app.help.step", "app.help.arm",
              "app.help.align", "app.help.modes", "app.help.init", "app.help.reset",
              "app.help.setzero", "app.help.hold", "app.help.misc", "",
@@ -46,7 +51,8 @@ class Ui:
         self.last_draw = 0.0
         self.draw_period = 1.0 / max(1.0, opts.fb_hz)
         self._logged = set()
-        self.esc_until = 0.0   # ESC 之后的 50 ms 内吞键（防方向键序列被拆成单键）
+        self.esc_until = 0.0   # swallow keys for 50 ms after ESC (so an arrow-key
+                               # sequence is not split into single keys)
         self.logf = None
         if opts.log:
             try:
@@ -58,7 +64,7 @@ class Ui:
                 self.logf = None
                 print(i18n.tr("app.log_warn", e))
 
-    # ---- 画 ----
+    # ---- drawing ----
     def init_colors(self):
         try:
             curses.start_color()
@@ -121,8 +127,9 @@ class Ui:
                  self.attr(C_ERR) if not snap["link_up"] else self.attr(C_OK))
         y += 1
 
-        # 两台概览：一条链路驱动两台，所以"另一台现在什么样"必须一眼看得见
-        # （> 是当前臂；它那台还在不在发、掉没掉线，全在这一行）
+        # Two-arm overview: one link drives both arms, so "what is the other one doing
+        # right now" has to be visible at a glance (> is the current arm; whether its arm
+        # is still streaming and whether anything is lost are all on this line)
         seg = ["%s%s %s/%s %s %.0fHz%s" % (
             ">" if a["arm_id"] == arm_id else " ", short_label(a["arm_id"]),
             a["state_name"], a["mode_name"],
@@ -155,8 +162,9 @@ class Ui:
             if fb["lost"]:
                 extra += i18n.tr("app.lost_prefix") + i18n.expand_mask(fb["lost"])
             if missing:
-                # 夹爪的 ∓142 软限位要**一次成功的找零之后**才生效（motor_inited[夹爪]
-                # 由找零自己维护，别处没人写它），所以没标定好要看见。
+                # The gripper's ∓142 soft limits only take effect **after one successful
+                # zeroing** (motor_inited[gripper] is maintained by the zeroing itself,
+                # nobody else writes it), so an uncalibrated gripper has to be visible.
                 extra += i18n.tr("app.uninit_prefix") + i18n.expand_mask(missing)
                 if missing >> GRIPPER & 1:
                     extra += i18n.tr("app.grip_limit_note")
@@ -195,7 +203,8 @@ class Ui:
                 else:
                     fv = grip["fb"]
                     unit = "m" if grip["calibrated"] else "raw rad"
-                    if fv is None:      # 没反馈（或标定没有米数）：只画目标
+                    if fv is None:      # no feedback (or the calibration has no metres):
+                                        # draw only the target
                         line = "%s%-4s %11.4f %13s %11s   [%8.4f,%8.4f] %s" % (
                             mark, i18n.axis_name(GRIPPER), grip["tgt"], "-", "-",
                             grip["lo"], grip["hi"], unit)
@@ -212,13 +221,14 @@ class Ui:
                      self.attr(C_DIM))
             y += 1
             if not grip["calibrated"]:
-                # 这一行是"为什么夹爪那行的数看着怪"的答案（标定之后就没用了）
+                # This line is the answer to "why do the numbers in the gripper row look
+                # odd" (useless once calibrated)
                 self.put(y, 0, i18n.tr("app.grip_uncal_hint",
                                        board_defs.GRIPPER_ANGLE_MAX_RAD, arm_id),
                          self.attr(C_DIM))
                 y += 1
 
-        # 事件区
+        # event area
         if snap["ack"] is not None and self.sess.have_ever_rx:
             ack = snap["ack"]
             self.put(y, 0, i18n.tr("app.setzero_ack",
@@ -229,8 +239,9 @@ class Ui:
                                             for i in range(N_AXIS))), self.attr(C_DIM))
             y += 1
             if 1 in ack["result"]:
-                # 达妙"未确认"是常态（位置本来就在 0 附近，写没写进去分辨不出来），
-                # 不说清楚的话每次找零完都会以为失败了。
+                # "Unconfirmed" is normal for DM motors (the position is already near 0,
+                # so whether the write landed cannot be told apart); without saying so,
+                # every zeroing would look like it failed.
                 self.put(y, 0, i18n.tr("app.setzero_unconfirmed"), self.attr(C_WARN))
                 y += 1
 
@@ -253,9 +264,10 @@ class Ui:
         scr.noutrefresh()
         curses.doupdate()
 
-    # ---- 输入 ----
+    # ---- input ----
     def input_line(self, prompt):
-        """底部一行的手输（设零双重确认用）。自己画、自己吃键，回车返回字符串，ESC 返回 None。"""
+        """One-line input at the bottom (used by the double confirmation for set-zero). It
+        draws itself, eats keys itself, returns the string on Enter and None on ESC."""
         try:
             maxy, maxx = self.scr.getmaxyx()
         except curses.error:
@@ -268,19 +280,24 @@ class Ui:
             curses.doupdate()
             ch = self.scr.getch()
             if ch == -1:
-                # getch 超时（节拍由 --ctrl-hz 定，2~17 ms）**必须在这里把链路喂上**：
-                # 本函数是阻塞的，主循环的 tick() 整段时间不跑，而 0x16 和 0x01 保活都是
-                # tick() 发的 —— 一个字节都不发出去，板子 500 ms 收不到有效帧就掉进通信
-                # 离线（robot_state.c 的 Fsm_Step）。等对话框关掉、保活重新发出去，板子的
-                # 落点是**离线等待 → 待初始化**，也就是"按 o 弹确认的这几秒"会把「正常
-                # 运行」打掉，答 y 发出去的 0x18 反而被板子按"不在正常运行"静默丢弃。
-                # tick() 现在是两台一起推进的，所以两台的保活都在这条路径上。
+                # getch timed out (the beat is set by --ctrl-hz, 2~17 ms) — **the link must
+                # be fed here**: this function blocks, so the main loop's tick() does not
+                # run for the whole time, and both the 0x16 and the 0x01 keepalive are sent
+                # by tick() — with not a single byte going out, the board drops into
+                # comm_lost when it gets no valid frame for 500 ms (robot_state.c's
+                # Fsm_Step). Once the dialog closes and the keepalive resumes, where the
+                # board lands is **offline-wait → wait-init**, i.e. "those few seconds
+                # while the o confirmation is up" knock out "normal operation", and the 0x18
+                # you send by answering y is silently dropped by the board for "not in
+                # normal operation". tick() now advances both arms, so both arms' keepalives
+                # are on this path.
                 self.sess.tick(time.monotonic())
                 continue
             if ch in (10, 13, curses.KEY_ENTER):
                 return buf
             if ch == 27:  # ESC
-                # 也要设吞键窗：ESC 后面的序列尾巴会落到 on_key，而 'D' 在那儿 = 0x15 阻尼
+                # The swallow window has to be set here too: the tail of a sequence after
+                # ESC lands in on_key, and 'D' there = 0x15 damping
                 self.esc_until = time.monotonic() + 0.05
                 return None
             if ch in (curses.KEY_BACKSPACE, 127, 8):
@@ -290,10 +307,11 @@ class Ui:
 
     def on_key(self, ch):
         s = self.sess
-        # ESC 后面的字节要吞掉：终端的方向键序列（CSI/SS3）在 terminfo 对不上时会
-        # 被 ncurses 拆成 ESC '[' 'D' 三个键，而 'D' 在我们的键表里 = 0x15 阻尼！
-        # 也就是说"按一下方向键顺手把臂切进阻尼"是真会发生的，所以 ESC 之后 50 ms
-        # 内的按键一律当序列尾巴丢掉。
+        # Bytes after an ESC have to be swallowed: a terminal arrow-key sequence (CSI/SS3)
+        # that terminfo cannot match is split by ncurses into the three keys ESC '[' 'D',
+        # and 'D' in our key table = 0x15 damping! So "press an arrow key and knock the arm
+        # into damping along the way" really does happen; hence any key within 50 ms of an
+        # ESC is discarded as the tail of a sequence.
         if ch == 27:
             self.esc_until = time.monotonic() + 0.05
             if self.show_help:
@@ -303,7 +321,8 @@ class Ui:
         if time.monotonic() < self.esc_until:
             return
         if self.show_help:
-            # 帮助是覆盖层，但**当模态用**：在帮助里按键不该顺手发出控制包
+            # The help is an overlay but **used as a modal**: pressing keys in it should not
+            # send control frames along the way
             if ch in (ord("h"), ord("?"), ord("e"), ord("q")):
                 self.show_help = False
                 if ch == ord("e"):
@@ -373,8 +392,10 @@ class Ui:
             s.dirty = True
 
     def reset_confirm(self):
-        """0x18 的姿态闸门在**上位机**这一侧（板子故意不查：运行中的臂本来就该是歪的，
-        不歪就不用复位了）。偏差超过容差时弹一次 y/n 由人拍板，合格就直接发。"""
+        """0x18's pose gate lives on **the host** side (the board deliberately does not
+        check it: an arm in motion is supposed to be off the reset pose, otherwise there
+        would be no point resetting). When the deviation exceeds the tolerance, a y/n is
+        popped once for a human to decide; when it passes, the frame goes out directly."""
         s = self.sess
         fb = s.fb()
         if fb is not None and fb["state"] == board_defs.STATE_NORMAL and not fb["lost"]:
@@ -387,11 +408,13 @@ class Ui:
                 if self.input_line(i18n.tr("app.reset_confirm")).strip().lower() != "y":
                     s.info(i18n.tr("app.reset_cancelled"))
                     return
-        # 剩下的自检（没反馈/状态不对/掉线）交给 send_arm_reset 去报，避免两处文案打架
+        # The remaining self-checks (no feedback / wrong state / motors lost) are left to
+        # send_arm_reset to report, so that two places do not fight over the wording.
         s.send_arm_reset()
 
     def setzero_confirm(self):
-        """0x10 是唯一会动"零点"的包，所以双重确认（逐字敲，防手滑）。"""
+        """0x10 is the only frame that moves the "zero", hence the double confirmation
+        (typed out in full, to guard against a slip of the hand)."""
         s = self.sess
         fb = s.fb()
         if fb is None:
@@ -413,7 +436,8 @@ class Ui:
         s.send_setzero()
 
     def reopen(self):
-        """重开链路（`--fake` 下就是"假板子重新上电"）。报错由后端收进事件流。"""
+        """Reopen the link (under `--fake` this is "power-cycle the fake board"). Errors are
+        collected into the event stream by the backend."""
         self.sess.reopen()
         self.sess.dirty = True
 
@@ -435,9 +459,11 @@ class Ui:
         except curses.error:
             pass
         self.scr.keypad(True)
-        # 面板节拍 = 控制周期的 1/2：发送在 tick 里做，而 tick 只在 getch 超时后才跑，
-        # 节拍不比控制周期短一半就跑不满 --ctrl-hz（100 Hz 要 5 ms）。下限 2 ms，
-        # 免得 --ctrl-hz 填太大时把 CPU 打满。画面刷新另由 --fb-hz 管，与这里无关。
+        # Panel beat = half the control period: sending is done in tick, and tick only runs
+        # after a getch timeout, so a beat that is not at least half the control period
+        # cannot keep up with --ctrl-hz (5 ms for 100 Hz). Floor of 2 ms, so that a large
+        # --ctrl-hz does not peg the CPU. Screen refresh is governed separately by --fb-hz
+        # and is unrelated to this.
         self.scr.timeout(max(2, int(round(500.0 / max(1.0, self.opts.ctrl_hz)))))
         curses.noecho()
         curses.cbreak()
