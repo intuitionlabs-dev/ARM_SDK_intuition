@@ -1,0 +1,5 @@
+# 上位机 SDK 的唯一依赖。
+#
+# 只有 Link.open() 需要它 —— `import sdk`、协议层、离线自测（python3 -m sdk.selftest）
+# 都不 import pyserial，所以没有它的机器上也能跑自测和写协议相关代码。
+pyserial>=3.5
