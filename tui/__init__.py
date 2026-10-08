@@ -1,18 +1,22 @@
-"""上机控制台（curses 全屏面板）—— `python3 -m sdk.tui` 跑，真机/假板子都行。
+"""On-bench console (full-screen curses panel) — run with `python3 -m sdk.tui`; works on a
+real board or a fake one.
 
-    session.py    后端/适配层：`ConsoleSession`（一帧一致视图、每拍 tick、按键动作）、
-                  `ArmView`（每台臂一份状态）、步长档与限位口径。**不 import curses**
-    app.py        curses 前端：`Ui`（画屏 / 按键 / 对话框）。只认 `session` 那几样接口
-    selftest.py   控制台侧离线自测（44 项，用假板子跑）
-    __main__.py   argparse + `main()`：`python3 -m sdk.tui [--fake] [--selftest]`
+    session.py    backend/adapter layer: `ConsoleSession` (one consistent view per frame,
+                  tick-per-beat, key actions), `ArmView` (one piece of state per arm),
+                  step presets and the unit/limit convention. **Does not import curses**
+    app.py        curses front end: `Ui` (draw / keys / dialogs). Only knows `session`
+    selftest.py   console-side offline self-test (44 items, runs against a fake board)
+    __main__.py   argparse + `main()`: `python3 -m sdk.tui [--fake] [--selftest]`
 
-**这个包的 `__init__` 刻意只重导出后端**（下面那些名字），不碰 curses —— 于是
-`import sdk.tui` 在没终端的地方也能用（自测、脚本里拿 `ConsoleSession` 驱动假板子），
-面板本身只在你真要开屏时才被 import。
+**This package's `__init__` deliberately re-exports the backend only** (the names below)
+and never touches curses — so `import sdk.tui` works where there is no terminal (self-tests,
+scripts driving a fake board via `ConsoleSession`), and the panel itself is imported only
+when you actually open a screen.
 
-面板要的东西一句话说完：`sess.snapshot()` 给一帧一致视图、`sess.tick()` 每拍推进、
-`sess.jog/cycle_step/send_*` 是按键动作 —— 细节在 `session.py` 的 docstring 里。
-`scripts/uart_frame_cli.py` 是兼容壳，转调的就是 `python3 -m sdk.tui`。
+What the panel needs, in one sentence: `sess.snapshot()` gives one consistent view per
+frame, `sess.tick()` advances one beat, `sess.jog/cycle_step/send_*` are the key actions —
+details live in `session.py`'s docstring. `scripts/uart_frame_cli.py` is a compatibility
+shim that forwards to `python3 -m sdk.tui`.
 """
 
 from .session import (DEFAULT_ARM_ID, DEFAULT_STEP_M, DEFAULT_STEP_RAD,
@@ -23,12 +27,12 @@ from .session import (DEFAULT_ARM_ID, DEFAULT_STEP_M, DEFAULT_STEP_RAD,
                       short_label)
 
 __all__ = [
-    # 会话
+    # session
     "ConsoleSession", "ArmView", "build_session",
-    # 口径/工具
+    # units / helpers
     "parse_arm_id", "short_label", "axis_lo_rad", "axis_hi_rad", "clamp_axis_rad",
     "gripper_m_limits",
-    # 常量
+    # constants
     "DEFAULT_ARM_ID", "N_ARM", "N_AXIS", "GRIPPER", "STEP_CHOICES_RAD",
     "STEP_CHOICES_M", "DEFAULT_STEP_RAD", "DEFAULT_STEP_M", "FEEDBACK_FRESH_S",
     "MODE_TID_NAME",
