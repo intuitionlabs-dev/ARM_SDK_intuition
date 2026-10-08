@@ -56,7 +56,7 @@ import locale
 import os
 import sys
 
-from .. import board_defs
+from .. import board_defs, i18n
 from ..errors import LinkError
 from ..link import (assert_port_allowed, describe_port, link_hint,
                     list_links, pick_default_port)
@@ -65,44 +65,62 @@ from .session import (DEFAULT_ARM_ID, DEFAULT_STEP_RAD, STEP_CHOICES_RAD,
 from .selftest import selftest
 
 
+def _pre_lang(argv):
+    """先单独把 `--lang` 摘出来。
+
+    必须在建真 parser **之前**定语言：`--help` 和 argparse 自己的报错都发生在
+    `parse_args` 里，那时候再 `set_lang` 已经晚了（`help=` 文本早就是中文了）。
+    预解析器不带 `choices`、不开 `-h`，所以它自己永远不会 `SystemExit`；
+    `set_lang` 只认 zh/en，其余（含 None）一律回落 zh。
+    """
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--lang", nargs="?", default=None)
+    try:
+        return i18n.set_lang(pre.parse_known_args(argv)[0].lang)
+    except SystemExit:
+        return i18n.set_lang(None)
+
+
 def main(argv=None, prog=None):
+    _pre_lang(argv)
     ap = argparse.ArgumentParser(
         prog=prog or "python3 -m sdk.tui",   # -m 下不给就显示成 "__main__.py"
-        description=__doc__.split("\n")[0],
+        description=i18n.tr("main.cli_description"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="按 h 看按键表；--selftest / --fake 都不需要硬件。")
-    ap.add_argument("--port", default=None,
-                    help="串口设备（默认自动挑：优先板子 USB 0483:5740，退回 1a86 适配器）")
-    ap.add_argument("--baud", type=int, default=921600, help="波特率（默认 921600）")
+        epilog=i18n.tr("main.epilog"))
+    ap.add_argument("--port", default=None, help=i18n.tr("main.help.port"))
+    ap.add_argument("--baud", type=int, default=921600, help=i18n.tr("main.help.baud"))
     ap.add_argument("--arm-id", type=parse_arm_id, default=DEFAULT_ARM_ID,
-                    help="启动时「当前臂」是谁：0=CAN1/臂A，1=CAN2/臂B（默认 %d）。"
-                         "**两台都在被同时驱动**，面板里按 a 随时切" % DEFAULT_ARM_ID)
-    ap.add_argument("--ctrl-hz", type=float, default=100.0, help="0x16 下发频率（默认 100，每台）")
-    ap.add_argument("--fb-hz", type=float, default=5.0, help="面板刷新率（默认 5，按键响应不受影响）")
+                    help=i18n.tr("main.help.arm_id", DEFAULT_ARM_ID))
+    ap.add_argument("--ctrl-hz", type=float, default=100.0, help=i18n.tr("main.help.ctrl_hz"))
+    ap.add_argument("--fb-hz", type=float, default=5.0, help=i18n.tr("main.help.fb_hz"))
     ap.add_argument("--step", type=float, default=DEFAULT_STEP_RAD,
-                    help="初始步长 rad（%s；默认 %g）"
-                         % (" / ".join("%g" % v for v in STEP_CHOICES_RAD), DEFAULT_STEP_RAD))
-    ap.add_argument("--handshake-timeout", type=float, default=3.0, help="多久没收到字节就提示握手超时")
+                    help=i18n.tr("main.help.step",
+                                 " / ".join("%g" % v for v in STEP_CHOICES_RAD),
+                                 DEFAULT_STEP_RAD))
+    ap.add_argument("--handshake-timeout", type=float, default=3.0,
+                    help=i18n.tr("main.help.handshake"))
     ap.add_argument("--init-tol", type=float, default=board_defs.ROBOT_INIT_POSE_TOL_RAD,
-                    help="姿态复核容差 rad（默认 %.4f = 板上的 %.0f°）。只用于 0x18 前的弹确认和"
-                         "复位收尾的显示判据；0x02 的闸门在 sdk 里，恒为板上的 %.0f°"
-                         % (board_defs.ROBOT_INIT_POSE_TOL_RAD,
-                            board_defs.ROBOT_INIT_POSE_TOL_DEG,
-                            board_defs.ROBOT_INIT_POSE_TOL_DEG))
-    ap.add_argument("--fake", action="store_true", help="不接硬件，用内置假板子（sdk/sim.py）")
+                    help=i18n.tr("main.help.init_tol",
+                                 board_defs.ROBOT_INIT_POSE_TOL_RAD,
+                                 board_defs.ROBOT_INIT_POSE_TOL_DEG,
+                                 board_defs.ROBOT_INIT_POSE_TOL_DEG))
+    ap.add_argument("--fake", action="store_true", help=i18n.tr("main.help.fake"))
     ap.add_argument("--fake-lost", type=lambda s: int(s, 0), default=0,
-                    help="假板子每隔一会给「当前臂」制造这个掉线掩码（如 0x41）")
-    ap.add_argument("--selftest", action="store_true", help="离线自测，不接硬件不起 curses")
-    ap.add_argument("--log", default=None, help="把事件追加写到文件（用 .log 名字，*.json 被 gitignore）")
+                    help=i18n.tr("main.help.fake_lost"))
+    ap.add_argument("--selftest", action="store_true", help=i18n.tr("main.help.selftest"))
+    ap.add_argument("--log", default=None, help=i18n.tr("main.help.log"))
     ap.add_argument("--stop-on-exit", action="store_true",
-                    help="退出前给**两台**补发 0x14（默认不发：只停 0x16，约 500 ms 后板子自己进 damping）")
+                    help=i18n.tr("main.help.stop_on_exit"))
+    ap.add_argument("--lang", nargs="?", choices=i18n.LANGS, default=i18n.get_lang(),
+                    help=i18n.tr("main.help.lang"))
     opts = ap.parse_args(argv)
 
     if opts.selftest:
         return selftest()
 
     if opts.step not in STEP_CHOICES_RAD:
-        print("--step 只能是 %s 之一（单位是 rad）" % STEP_CHOICES_RAD)
+        print(i18n.tr("main.bad_step", STEP_CHOICES_RAD))
         return 2
 
     if not opts.fake:
@@ -114,18 +132,18 @@ def main(argv=None, prog=None):
             print("%s" % e)
             return 2
         if not os.path.exists(opts.port):
-            print("链路设备 %s 不存在。\n  %s" % (opts.port, link_hint()))
+            print(i18n.tr("main.no_device", opts.port, link_hint()))
             cands = list_links()
             if cands:
                 for path, _kind, _ident in cands:
                     print("    %s" % describe_port(path))
             else:
-                print("    （一个都没有：两条链路都没插）")
+                print(i18n.tr("main.no_links"))
             return 2
         try:
             import serial  # noqa: F401
         except ImportError:
-            print("缺 pyserial：pip3 install -r sdk/requirements.txt")
+            print(i18n.tr("main.no_pyserial"))
             return 2
 
     # curses 里要显示中文，必须在 initscr **之前**设好 locale（否则宽字符画不出来）
@@ -139,25 +157,23 @@ def main(argv=None, prog=None):
     try:
         sess.link.open()   # 链路错误要在进 curses 之前报出来
     except Exception as e:                                  # noqa: BLE001
-        print("打开 %s 失败：%s" % (opts.port, e))
+        print(i18n.tr("main.open_failed", opts.port, e))
         if "Permission" in str(e):
-            print("（多半是权限：把用户加进 dialout 组，或 sudo 跑）")
+            print(i18n.tr("main.permission_hint"))
         return 2
     # 面板第一行就把"抓的是哪个设备"写清楚 —— 抓错口子是这里最容易犯的错。
     # 板子那侧走哪条链路是**编译期**定死的（App/inc/robot_state.h 的 ROBOT_LINK），
     # 两边选反了的现象是"一切都对但一个字节都没有"，所以把链路类型也标出来。
-    sess.info("链路 %s" % (describe_port(opts.port) if not opts.fake
-                          else "假板子（--fake，不接硬件）"))
+    sess.info(i18n.tr("main.link_info",
+                      describe_port(opts.port) if not opts.fake
+                      else i18n.tr("main.fake_link")))
     # 两台臂一条链路，所以"现在在看哪一台"必须是开机第一眼就看得见的东西
-    sess.info("两台臂都在被驱动：%s、%s（一条链路、每台一个 Arm）；面板上按 a 切「当前臂」，"
-              "现在看的是 %s"
-              % (board_defs.arm_label(0), board_defs.arm_label(1),
-                 board_defs.arm_label(opts.arm_id)))
+    sess.info(i18n.tr("main.two_arms", i18n.arm_label(0), i18n.arm_label(1),
+                      i18n.arm_label(opts.arm_id)))
     if not opts.fake and sess.link.kind == "USB":
-        sess.info("板子 USB CDC：波特率 %d 在这条上无意义（CDC 是包传输）" % opts.baud)
+        sess.info(i18n.tr("main.usb_note", opts.baud))
     elif not opts.fake and sess.link.kind is None:
-        sess.warn("这个口子既不是板子 USB(0483:5740)也不是 1a86 适配器，"
-                  "确认板子的 ROBOT_LINK 和它是对得上的")
+        sess.warn(i18n.tr("main.unknown_kind"))
 
     ui = Ui(None, sess, opts)
 
@@ -170,10 +186,10 @@ def main(argv=None, prog=None):
     finally:
         try:
             if opts.stop_on_exit:
-                print("已给 %s 补发 0x14 停止。" % "、".join(sess.stop_all()))
+                print(i18n.tr("main.stopped",
+                              i18n.tr("main.stop_sep").join(sess.stop_all())))
             else:
-                print("已停发两台的 0x16（目标冻结、臂保持）。约 500 ms 后板子会因 500 ms 无"
-                      "有效帧进 comm_lost → damping；要立刻松劲按 x，或用 --stop-on-exit。")
+                print(i18n.tr("main.exit_note"))
             sess.link.close()
         except Exception:                                   # noqa: BLE001
             pass
