@@ -1,54 +1,77 @@
-"""机械臂上位机控制台（curses 全屏面板）。UART / USB 两条链路、两台臂都能跑。
+"""Host console for the robot arm (full-screen curses panel). Runs over both UART and
+USB links, and with both arms.
 
-**后端就是 `sdk/`**：协议、串口链路、按 arm_id 分流、闸门预检、单位换算全在那儿；
-面板要的"一帧一致视图"由 [session.py](session.py) 的
-`ConsoleSession.snapshot()` 给，屏幕上的东西在 [app.py](app.py)。所以本模块只剩
-命令行壳 —— 改协议、加命令只动 `sdk/`，这里最多改排版。
+**The backend is just `sdk/`**: the protocol, the serial link, the per-arm_id routing, the
+gate pre-checks and the unit conversion are all there; the "one consistent view per frame"
+the panel wants comes from `ConsoleSession.snapshot()` in [session.py](session.py), and
+what is on screen lives in [app.py](app.py). So this module is only the command-line
+shell — changing the protocol or adding a command touches `sdk/`, and at most the layout
+here.
 
-和板子说话的方式（口 protocol_doc.md / sdk/README）：
+How it talks to the board (see protocol_doc.md / sdk/README):
 
-  * **周期发 0x16**（6 个关节角 + 夹爪角），**它同时就是保活帧** —— 板子那边 500 ms
-    没收到任意有效帧就进 comm_lost(damping)，而被丢掉的 0x16 也算有效帧（robot_state.c
-    的 s_last_rx_ms 在分派之前刷新），所以任何时候发都不亏。
-  * **收 0x80 反馈帧**显示 mode / robot_state / 关节角 / 掉线掩码 / 夹爪角。
-  * 按键步进关节目标角，目标角按板子的软限位在**上位机**先夹住：板子也会夹
-    （gimbal_cmd.c），但上位机不夹的话面板上显示的目标角就是骗人的。
+  * **sends a 0x16 periodically** (6 joint angles + gripper angle), **which is also the
+    keepalive frame** — on the board side, no valid frame for 500 ms means
+    comm_lost(damping), and a dropped 0x16 still counts as a valid frame (robot_state.c's
+    s_last_rx_ms is refreshed before dispatch), so sending at any time costs nothing.
+  * **receives the 0x80 feedback frame** and displays mode / robot_state / joint angles /
+    lost mask / gripper angle.
+  * a key steps the joint target, and the target is clamped on **the host** against the
+    board's soft limits first: the board clamps too (gimbal_cmd.c), but without clamping
+    here the target shown on the panel would be a lie.
 
-**单位：面板上是 SI** —— 关节 rad / rad·s⁻¹、夹爪 m（要标定，见 sdk/README「夹爪标定」）。
-线上是 deg，换算在 sdk 里做。**事件日志仍然写 deg**（和固件、和别人的日志对得上），
-所以"面板上 0.0175 rad、日志里 1.0°"说的是同一件事，别以为哪个错了。
+**Units: on the panel everything is SI** — joints in rad / rad·s⁻¹, gripper in m (needs a
+calibration, see sdk/README "gripper calibration"). On the wire it is deg and sdk does the
+conversion. **The event log still writes deg** (so it matches the firmware and other
+people's logs), so "0.0175 rad on the panel, 1.0° in the log" are the same thing — do not
+assume one of them is wrong.
 
-会话流程（板子的状态机，详见 sdk/README「一次会话的生命周期」）：
-    ① 等握手（板子只认 0x01 版本包，版本码不符会**静默锁死**，只能复位板子）
-    ② 离线等待（7 台电机全上线后板子自己走）
-    ③ 待初始化 —— 按 i 发 0x02
-    ④ 初始化中（板子自己跑一键复位 → 一键夹爪找零，约 7 s，期间必须保持保活）
-    ⑤ 正常运行（**默认 damping**！按 s 发 0x12 才进 run，run 下 0x16 才被接受）
-       ↑ 这一档（stop/damping）下**也能按 i 重跑一遍初始化**；跑完回 ⑤ 而不是 ③。
-         （板侧闸门放开是用户要求的口径；run 档下按 i 仍会被静默丢弃。）
-    ⑥ 按 z 发 0x10 设零点 → 校准，跑完回 ③
-    ⑦ 500 ms 无有效帧 → comm_lost；再来一帧就回 ②
+Session flow (the board's state machine, see sdk/README "the life cycle of a session"):
+    ① wait for handshake (the board only accepts the 0x01 version frame; a wrong version
+       code **silently locks up**, and only a board reset recovers it)
+    ② offline wait (the board advances on its own once all 7 motors are up)
+    ③ wait-init — press i to send 0x02
+    ④ initializing (the board runs one-key reset → one-key gripper zeroing itself, about
+       7 s, and the keepalive must be maintained throughout)
+    ⑤ normal operation (**damping by default**! press s to send 0x12 to enter run, and
+       only under run is 0x16 accepted)
+       ↑ in that mode (stop/damping) **you can also press i to re-run the init**; when it
+         finishes it returns to ⑤ rather than ③.
+         (Opening the board-side gate up is the convention the user asked for; under run,
+         pressing i is still silently dropped.)
+    ⑥ press z to send 0x10 set-zero → calibration, then back to ③
+    ⑦ no valid frame for 500 ms → comm_lost; one more frame returns it to ②
 
-**两台臂**：一块板子两块板卡、两条 CAN、两台臂，但上位机只有**一条链路**。所以一个
-进程 = 一条链路 + 两个 `sdk.Arm`，**两台都在被驱动**（各自的目标角、各自的 0x16 流、
-各自的保活计时），面板上按 `a` 切的是"在看/在操作哪一台"。两台的状态机完全独立 ——
-一台还停在待初始化、另一台已经 run，是正常的（i/o/s/d/v/x 两台都要各自按一遍）。
+**Two arms**: one board with two boards, two CAN buses and two arms, but the host has only
+**one link**. So a process = one link + two `sdk.Arm`s, and **both are being driven** (each
+with its own target, its own 0x16 stream, its own keepalive timer); what `a` switches on
+the panel is "which arm is being watched / operated". The two state machines are fully
+independent — one still sitting in wait-init while the other is already running is normal
+(i/o/s/d/v/x have to be pressed once per arm).
 
-**一次只能开一个进程**：板子的上位机链路是编译期二选一的一路（robot_state.h 的
-ROBOT_LINK），物理上就一个口子，两个进程同时开同一个 tty 会互相抢字节、把帧拆散。
+**Only one process at a time**: the board's host link is one of a compile-time either/or
+pair (ROBOT_LINK in robot_state.h) and is physically a single port, so two processes on the
+same tty would steal bytes from each other and split frames.
 
-**安全**：默认退出**不发** 0x14（停止），只停发 0x16 —— 目标冻结、臂保持原样，
-约 500 ms 后板子自己因无帧进 damping。要立刻松劲请手动按 x，或加 --stop-on-exit。
+**Safety**: by default, exiting does **not** send 0x14 (stop), it just stops sending 0x16 —
+the target freezes, the arm stays where it is, and after about 500 ms the board drops into
+damping on its own for lack of frames. To go slack right away, press x by hand or add
+--stop-on-exit.
 
-用法（在仓库根跑 —— `sdk` 是仓库里的包，没打包安装）：
-    python3 -m sdk.tui                       # 真机：自动挑口子（板子 USB 优先，
-                                             # 退回 1a86 RS485 适配器），921600
-    python3 -m sdk.tui --port /dev/ttyACM0   # 指定口子
-    python3 -m sdk.tui --arm-id 1            # 启动时「当前臂」看 CAN2 那台（a 可切）
-    python3 -m sdk.tui --fake                # 假板子，不接硬件就能把面板/按键/状态机走一遍
-    python3 -m sdk.tui --selftest            # 离线自测（sdk + 控制台后端），不接硬件
-旧路径 `python3 scripts/uart_frame_cli.py ...` 参数一模一样，它是转调这里的兼容壳。
-面板里按 h 看按键表。"""
+Usage (run it at the repository root — `sdk` is a package in the repo, not installed):
+    python3 -m sdk.tui                       # real hardware: pick a port automatically
+                                             # (the board's USB first, falling back to a
+                                             # 1a86 RS485 adapter), 921600
+    python3 -m sdk.tui --port /dev/ttyACM0   # a specific port
+    python3 -m sdk.tui --arm-id 1            # current arm watches the CAN2 one at startup
+                                             # (a switches it)
+    python3 -m sdk.tui --fake                # fake board: walk the panel/keys/state machine
+                                             # with no hardware
+    python3 -m sdk.tui --selftest            # offline self-test (sdk + console backend),
+                                             # no hardware
+The old path `python3 scripts/uart_frame_cli.py ...` takes exactly the same arguments; it
+is a compatibility shim that forwards here.
+Press h in the panel for the key table."""
 
 
 import argparse
@@ -66,12 +89,13 @@ from .selftest import selftest
 
 
 def _pre_lang(argv):
-    """先单独把 `--lang` 摘出来。
+    """Pull `--lang` out on its own first.
 
-    必须在建真 parser **之前**定语言：`--help` 和 argparse 自己的报错都发生在
-    `parse_args` 里，那时候再 `set_lang` 已经晚了（`help=` 文本早就是中文了）。
-    预解析器不带 `choices`、不开 `-h`，所以它自己永远不会 `SystemExit`；
-    `set_lang` 只认 zh/en，其余（含 None）一律回落 zh。
+    The language has to be fixed **before** the real parser is built: `--help` and
+    argparse's own errors both happen inside `parse_args`, and calling `set_lang` then
+    would be too late (the `help=` text would already be Chinese). The pre-parser carries
+    no `choices` and does not open `-h`, so it can never `SystemExit` itself; `set_lang`
+    only accepts zh/en and falls back to zh for anything else (including None).
     """
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument("--lang", nargs="?", default=None)
@@ -84,7 +108,7 @@ def _pre_lang(argv):
 def main(argv=None, prog=None):
     _pre_lang(argv)
     ap = argparse.ArgumentParser(
-        prog=prog or "python3 -m sdk.tui",   # -m 下不给就显示成 "__main__.py"
+        prog=prog or "python3 -m sdk.tui",   # under -m, omitting it shows "__main__.py"
         description=i18n.tr("main.cli_description"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=i18n.tr("main.epilog"))
@@ -128,7 +152,8 @@ def main(argv=None, prog=None):
             opts.port = opts.port or pick_default_port()
             assert_port_allowed(opts.port)
         except LinkError as e:
-            # 探针口在这里被拒（SDK 的文案里写了为什么），别把这条提示弄丢
+            # A probe port is rejected here (the SDK's message says why); do not lose that
+            # hint
             print("%s" % e)
             return 2
         if not os.path.exists(opts.port):
@@ -146,28 +171,33 @@ def main(argv=None, prog=None):
             print(i18n.tr("main.no_pyserial"))
             return 2
 
-    # curses 里要显示中文，必须在 initscr **之前**设好 locale（否则宽字符画不出来）
+    # curses has to show Chinese, so the locale must be set **before** initscr (otherwise
+    # the wide characters cannot be drawn)
     locale.setlocale(locale.LC_ALL, "")
 
-    # curses 与面板**延迟到这里**：--selftest 和真机预检那几条路都不需要终端
+    # curses and the panel are **deferred to here**: neither --selftest nor the real-
+    # hardware pre-checks need a terminal
     import curses
     from .app import Ui
 
     sess = build_session(opts)
     try:
-        sess.link.open()   # 链路错误要在进 curses 之前报出来
+        sess.link.open()   # link errors have to be reported before entering curses
     except Exception as e:                                  # noqa: BLE001
         print(i18n.tr("main.open_failed", opts.port, e))
         if "Permission" in str(e):
             print(i18n.tr("main.permission_hint"))
         return 2
-    # 面板第一行就把"抓的是哪个设备"写清楚 —— 抓错口子是这里最容易犯的错。
-    # 板子那侧走哪条链路是**编译期**定死的（App/inc/robot_state.h 的 ROBOT_LINK），
-    # 两边选反了的现象是"一切都对但一个字节都没有"，所以把链路类型也标出来。
+    # The panel's first line states plainly "which device is being used" — grabbing the
+    # wrong port is the easiest mistake to make here. Which link the board side uses is
+    # fixed at **compile time** (ROBOT_LINK in App/inc/robot_state.h), and picking the two
+    # the wrong way round looks like "everything is right but not one byte comes back", so
+    # the link kind is spelled out too.
     sess.info(i18n.tr("main.link_info",
                       describe_port(opts.port) if not opts.fake
                       else i18n.tr("main.fake_link")))
-    # 两台臂一条链路，所以"现在在看哪一台"必须是开机第一眼就看得见的东西
+    # Two arms over one link, so "which one is being watched right now" has to be visible
+    # at the first glance after power-up
     sess.info(i18n.tr("main.two_arms", i18n.arm_label(0), i18n.arm_label(1),
                       i18n.arm_label(opts.arm_id)))
     if not opts.fake and sess.link.kind == "USB":
