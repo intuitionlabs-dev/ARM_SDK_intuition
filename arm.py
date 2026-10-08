@@ -41,7 +41,7 @@
 import time
 from dataclasses import dataclass
 
-from . import board_defs, protocol, units
+from . import board_defs, i18n, protocol, units
 from .errors import (FeedbackStale, GateRejected, GripperNotCalibrated,
                      LinkError)
 from .gripper import GripperCalibStore
@@ -88,12 +88,13 @@ class Snapshot:
 
     def __str__(self):
         grip = ("%.4f m" % self.gripper_opening) if self.gripper_calibrated \
-            else ("未标定(raw %.2f°)" % self.gripper_raw_deg)
-        return ("臂%s state=%s mode=%s 关节(rad) %s 夹爪 %s 温度 %s 丢 %s"
-                % (self.arm_id, self.robot_state_name, self.mode_name,
-                   " ".join("%+.4f" % v for v in self.joint_angles), grip,
-                   " ".join("%d" % t for t in self.temperatures),
-                   self.lost_names))
+            else (i18n.tr("arm.grip_uncal", self.gripper_raw_deg))
+        return (i18n.tr("arm.snapshot_line",
+                        self.arm_id, i18n.state_name(self.robot_state),
+                        i18n.mode_name(self.mode),
+                        " ".join("%+.4f" % v for v in self.joint_angles), grip,
+                        " ".join("%d" % t for t in self.temperatures),
+                        i18n.expand_mask(self.motor_lost_mask)))
 
 
 class Arm:
@@ -101,8 +102,8 @@ class Arm:
 
     def __init__(self, arm_id=protocol.DEFAULT_ARM_ID, link=None, *, calib_store=None):
         if not 0 <= arm_id < board_defs.ARM_NUM:
-            raise ValueError("arm_id 只能是 0..%d（板上 ARM_NUM=%d），收到 %r"
-                             % (board_defs.ARM_NUM - 1, board_defs.ARM_NUM, arm_id))
+            raise ValueError(i18n.tr("arm.arm_id_range",
+                                     board_defs.ARM_NUM - 1, board_defs.ARM_NUM, arm_id))
         from .link import Link   # 延迟 import：link.py 的 arm() 反过来要用本模块
 
         self.arm_id = arm_id
@@ -143,27 +144,28 @@ class Arm:
 
         st = self.link.stats
         if st["board_version"] is None:
-            ver = "(没收到 —— 板子连版本包都没回)"
+            ver = i18n.tr("arm.no_version")
         elif st["board_version"] == protocol.VERSION_CODE:
-            ver = "0x%08X（和 SDK 一致）" % st["board_version"]
+            ver = i18n.tr("arm.ver_ok", st["board_version"])
         else:
-            ver = ("0x%08X  ← **和 SDK 的 0x%08X 不一致，板子会锁死不再回任何帧，"
-                   "要复位板子**" % (st["board_version"], protocol.VERSION_CODE))
+            ver = i18n.tr("arm.ver_mismatch", st["board_version"], protocol.VERSION_CODE)
 
-        lines = ["%.1fs 内没等到 %s 的反馈帧。" % (timeout, board_defs.arm_label(self.arm_id)),
-                 "  口子：%s" % (self.link.describe() if self.link.port else "(没挑到口子)"),
-                 "  链路：open=%s up=%s" % (st["is_open"], st["link_up"])]
+        lines = [i18n.tr("arm.connect_timeout", timeout,
+                         i18n.arm_label(self.arm_id)),
+                 i18n.tr("arm.connect_port",
+                         self.link.describe() if self.link.port
+                         else i18n.tr("arm.no_port")),
+                 i18n.tr("arm.connect_link", st["is_open"], st["link_up"])]
         if st["link_err"]:
-            lines.append("  错误：%s" % st["link_err"])
-        lines.append("  收到 %d 帧（CRC8 错 %d、CRC16 错 %d、丢弃字节 %d）"
-                     % (st["n_rx"], st["n_err_crc8"], st["n_err_crc16"], st["n_drop"]))
-        lines.append("  板子回的版本码：%s" % ver)
+            lines.append(i18n.tr("arm.link_error", st["link_err"]))
+        lines.append(i18n.tr("arm.connect_rx", st["n_rx"], st["n_err_crc8"],
+                             st["n_err_crc16"], st["n_drop"]))
+        lines.append(i18n.tr("arm.connect_board_ver", ver))
         if st["n_rx"] == 0:
-            lines.append("  一个字节都没收到：口子挑错 / 线没插 / 板子跑的是另一条链路。")
+            lines.append(i18n.tr("arm.connect_zero_bytes"))
             lines.append(link_hint())
         elif st["board_version"] is None:
-            lines.append("  收到了字节但没有版本包：版本码很可能对不上（板子锁死），"
-                         "或者收到的是噪声。")
+            lines.append(i18n.tr("arm.bytes_no_version"))
         return "\n".join(lines)
 
     # ==================== 读：反馈 ====================
@@ -334,11 +336,10 @@ class Arm:
     def _calib_hint(self):
         fb = self.feedback
         if fb is None:
-            return "  （现在一帧反馈都没收到，先 connect()）"
+            return i18n.tr("arm.no_feedback_yet")
         if not fb.motor_inited_mask >> board_defs.GRIPPER & 1:
-            return ("  ⚠ 反馈里夹爪的 motor_inited 位是 0 —— **夹爪还没找过零**，它的原始角零点"
-                    "现在没有含义。先做一次初始化（0x02，里面带夹爪找零）再标。")
-        return "  （夹爪 motor_inited = 1，零点已经建立了，可以标）"
+            return i18n.tr("arm.grip_not_homed")
+        return i18n.tr("arm.grip_inited_hint")
 
     # ==================== 发：不用看状态的 ====================
 
@@ -368,12 +369,11 @@ class Arm:
             from_soft = (fb.robot_state == board_defs.STATE_NORMAL
                          and fb.mode in (board_defs.MODE_STOP, board_defs.MODE_DAMPING))
             if not (fb.robot_state == board_defs.STATE_WAIT_INIT or from_soft):
-                why.append("总模式不对：现在 %s / %s。要能在「%s」，或「%s」+ mode 是 "
-                           "stop/damping（run/gravity 下位置环在跑，板子故意不接）。"
-                           % (board_defs.state_name(fb.robot_state),
-                              board_defs.mode_name(fb.mode),
-                              board_defs.state_name(board_defs.STATE_WAIT_INIT),
-                              board_defs.state_name(board_defs.STATE_NORMAL)))
+                why.append(i18n.tr("arm.gate_init_state",
+                                   i18n.state_name(fb.robot_state),
+                                   i18n.mode_name(fb.mode),
+                                   i18n.state_name(board_defs.STATE_WAIT_INIT),
+                                   i18n.state_name(board_defs.STATE_NORMAL)))
             self._check_motors_online(fb, why)
             self._check_pose(fb, why)
             self._raise_if(why, "init_arm")
@@ -392,9 +392,9 @@ class Arm:
             fb = self._fresh_feedback("set_zero")
             why = []
             if fb.robot_state != board_defs.STATE_WAIT_INIT:
-                why.append("总模式不对：现在 %s，设零只能在「%s」发起。"
-                           % (board_defs.state_name(fb.robot_state),
-                              board_defs.state_name(board_defs.STATE_WAIT_INIT)))
+                why.append(i18n.tr("arm.gate_setzero_state",
+                                   i18n.state_name(fb.robot_state),
+                                   i18n.state_name(board_defs.STATE_WAIT_INIT)))
             self._raise_if(why, "set_zero")
         self._ack_after = self._chan.snapshot_ack()[2]
         return self._send(protocol.TID_MOTOR_SET_ZERO)
@@ -424,9 +424,9 @@ class Arm:
             fb = self._fresh_feedback(name)
             why = []
             if fb.robot_state != board_defs.STATE_NORMAL:
-                why.append("总模式不对：现在 %s，切 Arm_mode 只能在「%s」发。"
-                           % (board_defs.state_name(fb.robot_state),
-                              board_defs.state_name(board_defs.STATE_NORMAL)))
+                why.append(i18n.tr("arm.gate_mode_state",
+                                   i18n.state_name(fb.robot_state),
+                                   i18n.state_name(board_defs.STATE_NORMAL)))
             self._raise_if(why, name)
         return self._send(tid)
 
@@ -460,20 +460,19 @@ class Arm:
 
     def _ctrl(self, tid, joint_rad, joint_vel_rad_s, gripper_m, gripper_raw_deg, force):
         name = "send_ctrl_pos" if tid == protocol.TID_ARM_CTRL_POS else "send_ctrl_pos_vel"
-        angles = units.check_joint_seq(joint_rad, "关节角(rad)")
-        vels = (units.check_joint_seq(joint_vel_rad_s, "关节角速度(rad/s)")
+        angles = units.check_joint_seq(joint_rad, i18n.tr("arm.joint_angle"))
+        vels = (units.check_joint_seq(joint_vel_rad_s, i18n.tr("arm.joint_vel"))
                 if joint_vel_rad_s is not None else None)
 
         if not force:
             fb = self._fresh_feedback(name)
             why = []
             if fb.robot_state != board_defs.STATE_NORMAL:
-                why.append("总模式不对：现在 %s，控制帧只能在「%s」发。"
-                           % (board_defs.state_name(fb.robot_state),
-                              board_defs.state_name(board_defs.STATE_NORMAL)))
+                why.append(i18n.tr("arm.gate_ctrl_state",
+                                   i18n.state_name(fb.robot_state),
+                                   i18n.state_name(board_defs.STATE_NORMAL)))
             elif fb.mode != board_defs.MODE_RUN:
-                why.append("Arm_mode 不是 run：现在 %s。先 start()。"
-                           % board_defs.mode_name(fb.mode))
+                why.append(i18n.tr("arm.gate_not_run", i18n.mode_name(fb.mode)))
             self._raise_if(why, name)
 
         angles_deg = units.rad_seq_to_deg(angles)
@@ -496,9 +495,9 @@ class Arm:
             fb = self._fresh_feedback("reset")
             why = []
             if fb.robot_state != board_defs.STATE_NORMAL:
-                why.append("总模式不对：现在 %s，一键复位只能在「%s」发。"
-                           % (board_defs.state_name(fb.robot_state),
-                              board_defs.state_name(board_defs.STATE_NORMAL)))
+                why.append(i18n.tr("arm.gate_reset_state",
+                                   i18n.state_name(fb.robot_state),
+                                   i18n.state_name(board_defs.STATE_NORMAL)))
             self._check_motors_online(fb, why)
             self._raise_if(why, "reset")
         return self._send(protocol.TID_ARM_RESET)
@@ -510,7 +509,7 @@ class Arm:
         单位是你自己的事，闸门是板子的事。
         """
         if not isinstance(payload, (bytes, bytearray)):
-            raise TypeError("payload 要给 bytes，收到 %r" % type(payload).__name__)
+            raise TypeError(i18n.tr("arm.payload_type", type(payload).__name__))
         return self._send(tid, bytes(payload))
 
     # ==================== 等 ====================
@@ -541,12 +540,10 @@ class Arm:
             if ack is not None and seq > after:
                 return ack
             if time.monotonic() >= deadline:
-                raise TimeoutError(
-                    "%.1fs 内没等到设零回复(0x11)。现在 state=%s。\n"
-                    "  0x11 是**跑完一轮才发**的，几秒到十几秒都正常；再等就加大 timeout。\n"
-                    "  一直不来要查：0x10 有没有真的发出去（闸门？遥控器在线？）、"
-                    "板子是不是还在校准零点(6)。"
-                    % (timeout, self.robot_state_name))
+                st = self.robot_state
+                # 没有反馈帧时和以前一样打印 "None"（别为一个边角路径改动字面输出）
+                raise TimeoutError(i18n.tr("arm.setzero_timeout", timeout,
+                                           i18n.state_name(st) if st is not None else None))
             time.sleep(0.02)
 
     def wait_for(self, pred, timeout=5.0, poll=0.02):
@@ -578,59 +575,46 @@ class Arm:
         fb = self.feedback
         if fb is None:
             raise FeedbackStale(
-                "%s 要看板子的状态，但 %s 一帧反馈都没收到。先 connect()（它等第一帧反馈）。"
-                % (what, board_defs.arm_label(self.arm_id)))
+                i18n.tr("arm.stale_no_fb", what, i18n.arm_label(self.arm_id)))
         age = self.feedback_age
         if age > FEEDBACK_STALE_S:
             raise FeedbackStale(
-                "%s 要看板子的状态，但手上这帧反馈已经 %.0f ms 旧了（阈值 %.0f ms）——"
-                "不拿旧状态猜。\n"
-                "  反馈断了要查：板子在不在跑、链路 link_up=%s、口子对不对。\n"
-                "  要跳过这一层用 force=True（但闸门判错的责任就归你了）。"
-                % (what, age * 1000.0, FEEDBACK_STALE_S * 1000.0, self.link.link_up))
+                i18n.tr("arm.stale_old", what, age * 1000.0, FEEDBACK_STALE_S * 1000.0,
+                        self.link.link_up))
         return fb
 
     def _raise_if(self, why, what):
         if why:
             raise GateRejected(
-                "%s 被客户端预检挡下（**这一帧没发出去**）：\n  - %s\n"
-                "  现在：state=%s(robot_state=%s) mode=%s(%s) 掉线=%s\n"
-                "  （板子对所有命令都是静默丢弃、没有 NACK，所以这里先替你算一遍。\n"
-                "   预检**查不到「遥控器在线」**这一条 —— 那是板子才知道的。\n"
-                "   确认过闸门真的会过，用 force=True 跳过预检。）"
-                % (what, "\n  - ".join(why),
-                   self.robot_state_name, self.robot_state,
-                   self.mode_name, self.mode, self.lost_names))
+                i18n.tr("arm.gate_rejected", what, "\n  - ".join(why),
+                        i18n.state_name(self.robot_state), self.robot_state,
+                        i18n.mode_name(self.mode), self.mode,
+                        i18n.expand_mask(self.motor_lost_mask)))
 
     def _check_motors_online(self, fb, why):
         if fb.motor_lost_mask:
-            why.append("有电机掉线：%s。板子会拒（掉线会强制 arm_stop，动作根本跑不动）。"
-                       % board_defs.expand_mask(fb.motor_lost_mask))
+            why.append(i18n.tr("arm.motors_lost",
+                               i18n.expand_mask(fb.motor_lost_mask)))
 
     def _check_pose(self, fb, why):
         dev = board_defs.pose_deviation_deg(fb.joint_angle)
         if dev > board_defs.ROBOT_INIT_POSE_TOL_DEG:
             worst = max(range(6), key=lambda i: abs(fb.joint_angle[i]
                                                     - board_defs.RESET_POSE_DEG[i]))
-            why.append("姿态偏差 %.2f° > %.0f°（关节 %s 差得最多：现在 %.2f°，要 %.2f°）。"
-                       "先把臂摆回复位位姿 —— 注意它是按**反馈角**比的，不是你要它去的地方。"
-                       % (dev, board_defs.ROBOT_INIT_POSE_TOL_DEG,
-                          board_defs.JOINT_NAMES[worst], fb.joint_angle[worst],
-                          board_defs.RESET_POSE_DEG[worst]))
+            why.append(i18n.tr("arm.pose_dev", dev, board_defs.ROBOT_INIT_POSE_TOL_DEG,
+                               i18n.axis_name(worst), fb.joint_angle[worst],
+                               board_defs.RESET_POSE_DEG[worst]))
 
     def _gripper_deg_for_send(self, gripper_m, gripper_raw_deg):
         if gripper_m is not None and gripper_raw_deg is not None:
-            raise ValueError("gripper_m 和 gripper_raw_deg 只能给一个（两个都给就不知道听谁的）")
+            raise ValueError(i18n.tr("arm.grip_two_targets"))
         if gripper_raw_deg is not None:
             return float(gripper_raw_deg)
         if gripper_m is not None:
             return self.require_calibration().raw_deg_from_opening(gripper_m)
         fb = self.feedback
         if fb is None:
-            raise FeedbackStale(
-                "没给夹爪目标、又没收到过反馈帧，不知道该把夹爪放哪儿。\n"
-                "  给一个 gripper_m= 或 gripper_raw_deg=；或者先 connect() 让我拿"
-                "当前角当目标（保持不动）。")
+            raise FeedbackStale(i18n.tr("arm.grip_no_target"))
         return fb.gripper_angle
 
     # ==================== 杂项 ====================
@@ -638,13 +622,14 @@ class Arm:
     def describe(self):
         """日志用的一行。没收到反馈也出得来。"""
         s = self.snapshot()
-        head = "%s %s" % (board_defs.arm_label(self.arm_id), self.link.describe())
+        head = "%s %s" % (i18n.arm_label(self.arm_id), self.link.describe())
         if s is None:
-            return "%s：还没收到反馈（link_up=%s）" % (head, self.link.link_up)
-        return "%s：%s" % (head, s)
+            return i18n.tr("arm.describe_no_fb", head, self.link.link_up)
+        return i18n.tr("arm.desc_line", head, s)
 
     def __repr__(self):
-        st = self.robot_state_name
+        st = self.robot_state
         return "<Arm %d %s %s>" % (self.arm_id,
-                                   ("state=%s" % st) if st else "无反馈",
-                                   (self.link.port or "(未开口子)"))
+                                   ("state=%s" % i18n.state_name(st)) if st is not None
+                                   else i18n.tr("arm.no_feedback"),
+                                   (self.link.port or i18n.tr("arm.no_port_open")))
