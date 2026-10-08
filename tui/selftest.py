@@ -44,6 +44,15 @@ def selftest():
     print("=" * 68)
     print(i18n.tr("selftest.hdr_tui"))
     print("=" * 68)
+    # 语言表自检：键集相等 / 值都是 str / zh→en 的 % 转换说明符一致 / en 里没有汉字。
+    # **故意不进 c.check** —— 它不是"跑一遍就知道对不对"的运行时判据，而且加进去会
+    # 把「44 项」这个到处都在引用的计数改掉。
+    probs = i18n.check_tables()
+    if probs:
+        print(i18n.tr("selftest.table_bad", len(probs)))
+        for p in probs:
+            print("  " + p)
+        return 1
     c = Checker()
 
     # ---- 单位与限位（rad 是面板的口径）----

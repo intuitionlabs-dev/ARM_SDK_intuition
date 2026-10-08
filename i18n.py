@@ -406,6 +406,7 @@ _ZH.update({
     "selftest.reopen_seeded": "reopen 后两台都重新握手+播种（假板子重上电 → 0→1→2）",
     "selftest.stop_two": "退出补 0x14：两台都发、都带各自的 arm_id",
     "selftest.fail": "自测**没过**：见上面 FAIL。",
+    "selftest.table_bad": "语言表有问题（%d 条）：",
     "selftest.fb_counts": "0x80 帧数 臂A=%s 臂B=%s",
     "selftest.sent": "发出的：%r",
 })
@@ -476,6 +477,36 @@ _ZH.update({
     "arm.describe_no_fb": "%s：还没收到反馈（link_up=%s）",
     "arm.no_feedback": "无反馈",
     "arm.no_port_open": "(未开口子)",
+})
+
+# ---- sdk/link.py：串口打不开 / 口子挑选提示（会印进面板事件区）----
+_ZH.update({
+    "link.kind_usb": "板子 USB CDC",
+    "link.kind_rs485": "USB 转 RS485 适配器",
+    "link.kind_fake": "假板子（sdk.sim，不接硬件）",
+    "link.kind_unknown": "未知链路",
+    "link.not_link_dev": "，**不是链路设备**",
+    "link.desc_port": "%s（USB %s:%s %s %s%s）",
+    "link.desc_no_ident": "%s（查不到 USB 身份）",
+    "link.desc_kind_tag": "，%s",
+    "link.hint_uart": "跑 UART 那条(ROBOT_LINK_UART)要接 USB 转 RS485 适配器；",
+    "link.hint_usb": "跑 USB 那条(ROBOT_LINK_USB)要把板子自己的 USB 口插上（%s:%s）。",
+    "link.hint_cands": "现在机器上看到这些候选：",
+    "link.hint_no_tty": "现在一个 ttyUSB*/ttyACM* 都没看到 —— 线插了吗？",
+    "link.hint_port_arg": "用 port= 可以指定口子。",
+    "link.reject_probe_ident": "拒绝打开 %s：查出来是 J-Link 探针的 VCOM 口。\n"
+                               "  探针要留给 JLink / 烧录用（占着它就连不上）。\n  %s",
+    "link.reject_probe_name": "拒绝打开 %s：查不到它的 USB 身份，而名字像 J-Link 的探针口。\n"
+                              "  别赌（探针那条多半也在 ttyACM* 上）。\n  %s",
+    "link.not_open": "链路还没 open（先 link.open() 或 arm.connect()）",
+    "link.open_failed": "打不开 %s：%s\n%s",
+    "link.write_link_err": "写串口失败: %s",
+    "link.write_failed": "写 %s 失败：%s",
+    "link.read_link_err": "读串口失败: %s",
+    "link.parse_link_err": "解析失败: %s",
+    "link.arm_id_range": "arm_id 只能是 0..%d（板上 ARM_NUM=%d），收到 %r",
+    "link.describe_line": "%s，%s",
+    "link.auto_port": "(自动)",
 })
 
 _EN.update({
@@ -729,6 +760,7 @@ _EN.update({
                               "board reboots -> 0->1->2)",
     "selftest.stop_two": "exit sends 0x14 to both arms, each with its own arm_id",
     "selftest.fail": "self-test **FAILED**: see the FAIL lines above.",
+    "selftest.table_bad": "language table problems (%d):",
     "selftest.fb_counts": "0x80 frames A=%s B=%s",
     "selftest.sent": "sent: %r",
 })
@@ -812,6 +844,39 @@ _EN.update({
     "arm.describe_no_fb": "%s: no feedback yet (link_up=%s)",
     "arm.no_feedback": "no feedback",
     "arm.no_port_open": "(port not open)",
+})
+
+# ---- sdk/link.py ----
+_EN.update({
+    "link.kind_usb": "board USB CDC",
+    "link.kind_rs485": "USB-to-RS485 adapter",
+    "link.kind_fake": "fake board (sdk.sim, no hardware)",
+    "link.kind_unknown": "unknown link",
+    "link.not_link_dev": ", **not a link device**",
+    "link.desc_port": "%s (USB %s:%s %s %s%s)",
+    "link.desc_no_ident": "%s (no USB identity found)",
+    "link.desc_kind_tag": ", %s",
+    "link.hint_uart": "the UART link (ROBOT_LINK_UART) needs a USB-to-RS485 adapter;",
+    "link.hint_usb": "the USB link (ROBOT_LINK_USB) needs the board's own USB port "
+                     "plugged in (%s:%s).",
+    "link.hint_cands": "candidates currently visible on this machine:",
+    "link.hint_no_tty": "not a single ttyUSB*/ttyACM* visible -- is the cable plugged in?",
+    "link.hint_port_arg": "pass port= to name one.",
+    "link.reject_probe_ident": "refusing to open %s: this is the J-Link probe's VCOM port.\n"
+                               "  The probe is for JLink / flashing (holding it blocks "
+                               "both).\n  %s",
+    "link.reject_probe_name": "refusing to open %s: no USB identity, and the name looks "
+                              "like a J-Link probe.\n"
+                              "  Do not gamble (the probe is usually on ttyACM* too).\n  %s",
+    "link.not_open": "link is not open yet (call link.open() or arm.connect() first)",
+    "link.open_failed": "cannot open %s: %s\n%s",
+    "link.write_link_err": "serial write failed: %s",
+    "link.write_failed": "write to %s failed: %s",
+    "link.read_link_err": "serial read failed: %s",
+    "link.parse_link_err": "parse failed: %s",
+    "link.arm_id_range": "arm_id must be 0..%d (ARM_NUM=%d on the board), got %r",
+    "link.describe_line": "%s, %s",
+    "link.auto_port": "(auto)",
 })
 
 

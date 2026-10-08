@@ -25,7 +25,7 @@ import os
 import threading
 import time
 
-from . import board_defs, protocol
+from . import board_defs, i18n, protocol
 from .errors import LinkError, NotConnected
 
 # ==================== 口子挑选 ====================
@@ -46,8 +46,15 @@ FORBIDDEN_HINTS = ("segger", "j-link", "jlink")
 
 # 链路类型 → 人话。板子那侧对应 `App/inc/robot_state.h` 的 ROBOT_LINK。
 # 两边选反了的现象是"一切都对但一个字节都没有"，所以选中了哪种要写出来。
-KIND_NAMES = {"USB": "板子 USB CDC", "RS485": "USB 转 RS485 适配器",
-              "FAKE": "假板子（sdk.sim，不接硬件）"}
+# 存的是 i18n 的 key（不是文案）：模块级常量在 import 期就求值，那时候 `set_lang`
+# 还没跑，存中文会锁死语言。
+KIND_NAMES = {"USB": "link.kind_usb", "RS485": "link.kind_rs485",
+              "FAKE": "link.kind_fake"}
+
+
+def kind_name(kind):
+    """链路类型 → 人话（走 i18n；未知/null 给个兜底）。"""
+    return i18n.tr(KIND_NAMES.get(kind) or "link.kind_unknown")
 
 
 def _read_sys(path):
@@ -146,26 +153,27 @@ def describe_port(path):
     """给日志用的一行描述。带上"这是哪种链路" —— 插错口子时一眼看得出来。"""
     ident = usb_identity(path)
     if ident is None:
-        return "%s（查不到 USB 身份）" % path
+        return i18n.tr("link.desc_no_ident", path)
     kind = classify_port(ident)
-    tag = "，%s" % KIND_NAMES[kind] if kind else "，**不是链路设备**"
-    return "%s（USB %s:%s %s %s%s）" % (path, ident["idVendor"], ident["idProduct"],
-                                       ident["product"], ident["manufacturer"], tag)
+    tag = (i18n.tr("link.desc_kind_tag", kind_name(kind)) if kind
+           else i18n.tr("link.not_link_dev"))
+    return i18n.tr("link.desc_port", path, ident["idVendor"], ident["idProduct"],
+                   ident["product"], ident["manufacturer"], tag)
 
 
 def link_hint():
     """没找到合适口子时给的提示：两条链路各要配什么，一起说清楚。"""
-    lines = ["跑 UART 那条(ROBOT_LINK_UART)要接 USB 转 RS485 适配器；",
-             "跑 USB 那条(ROBOT_LINK_USB)要把板子自己的 USB 口插上（%s:%s）。"
-             % (BOARD_VID, BOARD_PID)]
+    lines = [i18n.tr("link.hint_uart"),
+             i18n.tr("link.hint_usb", BOARD_VID, BOARD_PID)]
     cands = list_links()
     if cands:
-        lines.append("现在机器上看到这些候选：")
+        lines.append(i18n.tr("link.hint_cands"))
         for path, kind, _ in cands:
-            lines.append("    %s%s" % (path, "  ← %s" % KIND_NAMES[kind] if kind else ""))
+            # 缩进和箭头是排版不是文案，两边一样，所以不进表
+            lines.append("    %s%s" % (path, ("  ← %s" % kind_name(kind)) if kind else ""))
     else:
-        lines.append("现在一个 ttyUSB*/ttyACM* 都没看到 —— 线插了吗？")
-    lines.append("用 port= 可以指定口子。")
+        lines.append(i18n.tr("link.hint_no_tty"))
+    lines.append(i18n.tr("link.hint_port_arg"))
     return "\n".join(lines)
 
 
@@ -181,10 +189,7 @@ def assert_port_allowed(path):
     if ident is not None:
         blob = (ident["manufacturer"] + " " + ident["product"]).lower()
         if ident["idVendor"].lower() == SEGGER_VID or any(h in blob for h in FORBIDDEN_HINTS):
-            raise LinkError(
-                "拒绝打开 %s：查出来是 J-Link 探针的 VCOM 口。\n"
-                "  探针要留给 JLink / 烧录用（占着它就连不上）。\n  %s"
-                % (path, describe_port(path)))
+            raise LinkError(i18n.tr("link.reject_probe_ident", path, describe_port(path)))
         return
     # 查不到身份（没有 /sys、设备还没枚举出来）：名字像 SEGGER 的直接拒；
     # 名字是裸 ttyACM* 的也拒（宁可不连，也不赌它是探针）
@@ -192,9 +197,7 @@ def assert_port_allowed(path):
     blob = (path + " " + real).lower()
     if any(h in blob for h in FORBIDDEN_HINTS) or \
             os.path.basename(real).lower().startswith("ttyacm"):
-        raise LinkError(
-            "拒绝打开 %s：查不到它的 USB 身份，而名字像 J-Link 的探针口。\n"
-            "  别赌（探针那条多半也在 ttyACM* 上）。\n  %s" % (path, link_hint()))
+        raise LinkError(i18n.tr("link.reject_probe_name", path, link_hint()))
 
 
 # ==================== 每台臂的收包槽 ====================
@@ -315,7 +318,8 @@ class Link:
             # 所以照设不误，只是别据此以为它有用。串口那条(RS485)上它才是真的。
             self.ser = serial.Serial(self.port, self.baud, timeout=self.ser_timeout)
         except Exception as e:
-            raise LinkError("打不开 %s：%s\n%s" % (self.port, e, link_hint())) from None
+            raise LinkError(i18n.tr("link.open_failed", self.port, e,
+                                    link_hint())) from None
 
         self.kind = classify_port(usb_identity(self.port))
         self._alive = True
@@ -364,7 +368,7 @@ class Link:
         交错在一起，板子两帧都解不出来（而且是静默的）。
         """
         if self.ser is None:
-            raise NotConnected("链路还没 open（先 link.open() 或 arm.connect()）")
+            raise NotConnected(i18n.tr("link.not_open"))
         frame = protocol.encode(tid, payload, arm_id)
         try:
             with self._write_lock:
@@ -372,8 +376,8 @@ class Link:
         except Exception as e:
             with self._chan_lock:
                 self.link_up = False
-                self.link_err = "写串口失败: %s" % e
-            raise LinkError("写 %s 失败：%s" % (self.port, e)) from None
+                self.link_err = i18n.tr("link.write_link_err", e)
+            raise LinkError(i18n.tr("link.write_failed", self.port, e)) from None
         self.n_tx += 1
         return len(frame)
 
@@ -382,8 +386,8 @@ class Link:
     def channel(self, arm_id):
         """拿（必要时建）某一台臂的收包槽。arm_id 越界直接报错 —— 越界的帧板子会静默丢弃。"""
         if not 0 <= arm_id < board_defs.ARM_NUM:
-            raise ValueError("arm_id 只能是 0..%d（板上 ARM_NUM=%d），收到 %r"
-                             % (board_defs.ARM_NUM - 1, board_defs.ARM_NUM, arm_id))
+            raise ValueError(i18n.tr("link.arm_id_range",
+                                     board_defs.ARM_NUM - 1, board_defs.ARM_NUM, arm_id))
         with self._chan_lock:
             ch = self._channels.get(arm_id)
             if ch is None:
@@ -419,7 +423,7 @@ class Link:
             except Exception as e:
                 with self._chan_lock:
                     self.link_up = False
-                    self.link_err = "读串口失败: %s" % e
+                    self.link_err = i18n.tr("link.read_link_err", e)
                 return
             if not chunk:
                 continue
@@ -428,7 +432,7 @@ class Link:
             except Exception as e:
                 with self._chan_lock:
                     self.link_up = False
-                    self.link_err = "解析失败: %s" % e
+                    self.link_err = i18n.tr("link.parse_link_err", e)
                 return
 
     def inject_bytes(self, chunk):
@@ -443,7 +447,7 @@ class Link:
         except Exception as e:
             with self._chan_lock:
                 self.link_up = False
-                self.link_err = "解析失败: %s" % e
+                self.link_err = i18n.tr("link.parse_link_err", e)
             return
         now = time.monotonic()
         for tid, arm_id, payload in frames:
@@ -510,9 +514,8 @@ class Link:
         }
 
     def describe(self):
-        p = self.port or "(自动)"
-        kind = KIND_NAMES.get(self.kind, "未知链路")
-        return "%s，%s" % (p, kind)
+        p = self.port or i18n.tr("link.auto_port")
+        return i18n.tr("link.describe_line", p, kind_name(self.kind))
 
     def __repr__(self):
         return "<Link %s %s>" % ("open" if self.is_open else "closed", self.port)
