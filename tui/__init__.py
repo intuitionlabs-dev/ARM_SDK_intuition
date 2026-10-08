@@ -6,7 +6,7 @@ real board or a fake one.
                   step presets and the unit/limit convention. **Does not import curses**
     app.py        curses front end: `Ui` (draw / keys / dialogs). Only knows `session`
     selftest.py   console-side offline self-test (44 items, runs against a fake board)
-    __main__.py   argparse + `main()`: `python3 -m sdk.tui [--fake] [--selftest]`
+    __main__.py   argparse + `main()`: `python3 -m sdk.tui [--fake] [--selftest] [--lang en]`
 
 **This package's `__init__` deliberately re-exports the backend only** (the names below)
 and never touches curses — so `import sdk.tui` works where there is no terminal (self-tests,
@@ -17,6 +17,12 @@ What the panel needs, in one sentence: `sess.snapshot()` gives one consistent vi
 frame, `sess.tick()` advances one beat, `sess.jog/cycle_step/send_*` are the key actions —
 details live in `session.py`'s docstring. `scripts/uart_frame_cli.py` is a compatibility
 shim that forwards to `python3 -m sdk.tui`.
+
+Panel language: Chinese by default, `--lang en` for English. That is **one code path plus
+the language table in `sdk/i18n.py`**, not two panels, and the Chinese output is
+byte-for-byte what it was before the table existed. The name tables in
+`sdk/board_defs.py`, the sdk-side self-test's own output and `calibrate_gripper.py`'s own
+prompts stay Chinese on purpose — see sdk/README, the "UI language" section.
 """
 
 from .session import (DEFAULT_ARM_ID, DEFAULT_STEP_M, DEFAULT_STEP_RAD,

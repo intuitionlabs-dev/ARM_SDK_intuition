@@ -342,6 +342,27 @@ python3 -m sdk.tui --selftest    # 再带上控制台那 44 项（同样不接�
 （一条链路、两个 `Arm`、状态机各跑各的）、单位与软限位、步长档、闸门有没有真拦住、
 命令是不是真写出去了 —— 同样用 `sdk.sim` 的假板子跑。
 
+### 界面语言（`--lang`）
+
+面板默认中文，`--lang en` 换成**英文面板、英文事件、英文 `--help`**；`--selftest` 也跟着
+换，于是英文模板会被真跑一遍。中文路径与以前**逐字一致**（同一份代码 + 一张语言表，
+`sdk/i18n.py`，键名 `<模块>.<名字>`，zh/en 键集必须相等 —— 语言表自检就挂在
+`--selftest` 里）。不是两套面板；`set_lang()` 只认 `zh`/`en`，其余（含 `None`）一律
+回落 `zh`，永不抛。
+
+```bash
+python3 -m sdk.tui --lang en                 # 英文面板（真机）
+python3 -m sdk.tui --fake --lang en          # 英文面板（假板子）
+python3 -m sdk.tui --selftest --lang en      # 英文模板真跑一遍自测
+```
+
+英文只覆盖**给人看的东西**。下面这些**仍然是中文**，是有意的：
+
+* `sdk/board_defs.py` 的名字表 —— 它是公开字段 `ArmSnapshot.robot_state_name` /
+  `mode_name` / `lost_names` / `inited_names` 的来源，故意没动；英文名并列在 `i18n` 里；
+* `python3 -m sdk.selftest`（以及 `--selftest` 里那一段 sdk 自测）自己的小节标题与汇总行；
+* `calibrate_gripper.py` 自己打印的交互提示（但它抛出的 arm/link 异常会跟着变英文）。
+
 ## 15. 文件清单
 
 | 文件 | 职责 |
@@ -358,7 +379,8 @@ python3 -m sdk.tui --selftest    # 再带上控制台那 44 项（同样不接�
 | `sim.py` | `SimLink`：假单片机，两台臂的模拟状态机 + 闸门 + 看门狗 |
 | `gripper.py` | 夹爪两点标定：m ↔ 原始度的映射 + JSON 存取 |
 | `calibrate_gripper.py` | 交互式标定工具 |
-| `tui/` | **上机控制台**（curses 面板）：`python3 -m sdk.tui`，不接硬件用 `--fake`。`session` = 后端/适配层、`app` = 面板、`selftest` = 控制台那 44 项 |
+| `i18n.py` | 语言表（`zh`/`en`）+ `tr()` + 名字表 + 表自检。中文是默认，也是 `board_defs` 的唯一来源 |
+| `tui/` | **上机控制台**（curses 面板）：`python3 -m sdk.tui`，不接硬件用 `--fake`，英文面板用 `--lang en`。`session` = 后端/适配层、`app` = 面板、`selftest` = 控制台那 44 项 |
 | `selftest.py` | 离线自测 |
 | `config/` | 运行期数据（`gripper_calib.json`），由工具自动创建 |
 

@@ -340,11 +340,17 @@ ArError
 python3 -m sdk.selftest               # 离线自测（165 项，不需要 pyserial）
 python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085   # 交互式标定
 python3 -m sdk.tui --fake             # 上机控制台（curses 面板），假单片机；真机去掉 --fake
+python3 -m sdk.tui --fake --lang en   # 同上，英文面板（`--lang` 见 sdk/README「界面语言」）
 ```
 
 `sdk.tui` 就是控制台，`--fake` 等于给下面这个假单片机配了个交互界面；`--selftest` 跑 sdk
 165 项 + 控制台 44 项。**面板自己不会使能电机**（`0x16` 只在板子已经在「正常运行 + run」
 时才发，那要用户自己按键）。
+
+界面语言：默认中文，`--lang en` 切英文（**同一份代码 + 一张语言表** `sdk/i18n.py`，中文路径
+逐字不变）。`board_defs` 的名字表、`python3 -m sdk.selftest` 自己的输出、`calibrate_gripper`
+的交互提示**仍是中文** —— 边界与理由见 sdk/README「界面语言」。SDK 侧的用户可见消息
+（闸门拒绝、串口打不开）跟着 `--lang` 走，改语言用 `sdk.i18n.set_lang()`。
 
 `sdk.calibrate_gripper` 的选项：`--arm-id`（0=CAN1，1=CAN2）、`--full-open-m`（完全张开的
 开口距离，米）、`--port` / `--baud`、`--calib`（标定文件路径）、`--note`、`--timeout`。

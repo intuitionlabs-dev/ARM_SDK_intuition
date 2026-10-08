@@ -51,7 +51,7 @@ def get_lang():
 _ZH = {}
 _EN = {}
 
-# ---- sdk/tui/session.py：事件流 / 对话框文案 ----
+# ---- sdk/tui/session.py: event stream / dialog text ----
 _ZH.update({
     "session.tid.start": "0x12 启动",
     "session.tid.gravity": "0x13 重力补偿",
@@ -206,9 +206,9 @@ _EN.update({
     "session.pose_dev_sep": ", ",
 })
 
-# ---- sdk/tui/app.py：面板 / 帮助页 / 对话框 ----
+# ---- sdk/tui/app.py: panel / help page / dialogs ----
 _ZH.update({
-    # 帮助页（每行一条，空行是 ""，不进表）
+    # help page (one entry per line, "" is a blank line and never enters the table)
     "app.help.select": "1-6 / 0 / Tab      选中 j1..j6 / 夹爪 / 下一个",
     "app.help.jog": "← ↓ / → ↑ / + -    选中轴 ∓ 一个步长（只改目标角，实际下发按 --ctrl-hz）",
     "app.help.step":
@@ -243,7 +243,7 @@ _ZH.update({
         "**两台臂各自跑各的状态机**：i/o/s/d/v/x 只作用于「当前臂」（底下那行 > 标着的那台）。",
     "app.help.two2": "一条链路上开两个进程会互相抢字节，所以一次只开这一个。",
     "app.help.exit": "退出不发 0x14：目标冻结、臂保持，约 500 ms 后板子自己因无帧进 damping。",
-    # 面板
+    # panel
     "app.log_head": "# sdk.tui 启动 %s port=%s fake=%s 当前臂=%d\n",
     "app.log_warn": "警告：日志文件打不开(%s)，只在屏幕上显示",
     "app.too_small": "窗口太小（%dx%d），至少要 12 行 60 列",
@@ -284,7 +284,7 @@ _ZH.update({
         "a 切臂  1-6/0/Tab 选轴  ←↓→↑/+- 步进  [/] 步长  c 对齐  s run  "
         "d 阻尼  x 停  v 重力  i 初始化  o 复位  z 设零  Space 暂停  "
         "h 帮助  q 退出",
-    # 按键 / 对话框
+    # keys / dialogs
     "app.events_cleared": "事件已清",
     "app.quit_confirm": "有臂正发/曾发控制帧，确定退出？(y/n) ",
     "app.no_fb_align": "还没反馈帧，没法对齐",
@@ -311,7 +311,7 @@ _ZH.update({
     "app.setzero_cancel2": "设零已取消（第 2 步没通过）",
 })
 
-# ---- sdk/tui/__main__.py：命令行 ----
+# ---- sdk/tui/__main__.py: command line ----
 _ZH.update({
     "main.cli_description": "机械臂上位机控制台（curses 全屏面板）。UART / USB 两条链路、两台臂都能跑。",
     "main.epilog": "按 h 看按键表；--selftest / --fake 都不需要硬件。",
@@ -350,7 +350,7 @@ _ZH.update({
                       "有效帧进 comm_lost → damping；要立刻松劲按 x，或用 --stop-on-exit。",
 })
 
-# ---- sdk/tui/selftest.py：自测条目名 / 小节名 / 汇总 ----
+# ---- sdk/tui/selftest.py: self-test item names / section names / summary ----
 _ZH.update({
     "selftest.hdr_sdk": "1) sdk 离线自测（协议 / 闸门 / 假板子）",
     "selftest.hdr_tui": "2) 控制台后端自测（sdk.tui.session，用假板子跑）",
@@ -411,11 +411,13 @@ _ZH.update({
     "selftest.sent": "发出的：%r",
 })
 
-# ---- sdk/arm.py：闸门拒绝 / send_* 报错 / 握手诊断（会直接印进面板事件区）----
+# ---- sdk/arm.py: gate rejections / send_* errors / handshake diagnostics (printed
+# ---- straight into the panel's event area) ----
 #
-# 注意：`ArmSnapshot.robot_state_name` / `mode_name` / `lost_names` / `inited_names`
-# 这几个**公开字段**仍旧走 board_defs、仍旧是中文（见类注释），所以 arm.py 的
-# `Arm.*_name` 属性也不动；只有**消息里**的渲染改走 i18n，从数值码现算。
+# Note: the **public fields** `ArmSnapshot.robot_state_name` / `mode_name` / `lost_names`
+# / `inited_names` still go through board_defs and are still Chinese (see the class
+# docstring), so arm.py's `Arm.*_name` properties are unchanged too; only the rendering
+# **inside messages** goes through i18n, computed on the spot from the numeric codes.
 _ZH.update({
     "arm.snapshot_line": "臂%s state=%s mode=%s 关节(rad) %s 夹爪 %s 温度 %s 丢 %s",
     "arm.grip_uncal": "未标定(raw %.2f°)",
@@ -479,7 +481,8 @@ _ZH.update({
     "arm.no_port_open": "(未开口子)",
 })
 
-# ---- sdk/link.py：串口打不开 / 口子挑选提示（会印进面板事件区）----
+# ---- sdk/link.py: serial port cannot be opened / port-picking hints (printed into the
+# ---- panel's event area) ----
 _ZH.update({
     "link.kind_usb": "板子 USB CDC",
     "link.kind_rs485": "USB 转 RS485 适配器",

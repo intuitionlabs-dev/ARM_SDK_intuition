@@ -1,10 +1,12 @@
-"""控制台侧离线自测：**不接硬件、不起 curses、不需要 pyserial**。
+"""Console-side offline self-test: **no hardware, no curses, no pyserial needed**.
 
-跑的是后端那一套 —— 两台臂的接线（一条链路、两个 `Arm`、各自的状态机）、单位与软限位、
-步长档、闸门有没有把该拦的拦住、命令真的写出去了没有。用 `sdk.sim.SimLink` 当假板子，
-走的是**真的**解析、分流、闸门。面板本身（curses 排版）不在这里测。
+It runs the backend's own set — the two-arm wiring (one link, two `Arm`s, one state machine
+each), the units and soft limits, the step presets, whether the gates stop what they should,
+and whether commands really went out. `sdk.sim.SimLink` stands in for the board, and the
+**real** parsing, routing and gating are exercised. The panel itself (curses layout) is not
+tested here.
 
-入口：`python3 -m sdk.tui --selftest`（先跑 sdk 那 165 项，再跑这里的）。
+Entry point: `python3 -m sdk.tui --selftest` (runs sdk's 165 items first, then these).
 """
 
 import argparse
@@ -18,7 +20,7 @@ from .session import DEFAULT_STEP_RAD, GRIPPER
 
 
 def _fake_opts(**kw):
-    """自测用的 opts（和 argparse 出来的那份同名同义）。"""
+    """The opts used by the self-test (same names, same meanings as the argparse one)."""
     d = dict(fake=True, port=None, baud=921600, arm_id=0, fake_lost=0, ctrl_hz=100.0,
              fb_hz=5.0, log=None, stop_on_exit=False, step=DEFAULT_STEP_RAD,
              init_tol=board_defs.ROBOT_INIT_POSE_TOL_RAD, handshake_timeout=3.0,
@@ -28,10 +30,11 @@ def _fake_opts(**kw):
 
 
 def selftest():
-    """离线自测。不接硬件、不起 curses、不需要 pyserial。
+    """Offline self-test. No hardware, no curses, no pyserial needed.
 
-    两块：**sdk 那一套**（协议 / 闸门 / 假板子，`sdk/selftest.py`），
-    再**控制台后端这一套**（两台臂的接线、单位、步长、命令真的写出去了没有）。
+    Two parts: **sdk's own set** (protocol / gates / fake board, `sdk/selftest.py`), then
+    **the console backend's set** (the two-arm wiring, the units, the step presets, whether
+    commands really went out).
     """
     import math
 
@@ -44,9 +47,11 @@ def selftest():
     print("=" * 68)
     print(i18n.tr("selftest.hdr_tui"))
     print("=" * 68)
-    # 语言表自检：键集相等 / 值都是 str / zh→en 的 % 转换说明符一致 / en 里没有汉字。
-    # **故意不进 c.check** —— 它不是"跑一遍就知道对不对"的运行时判据，而且加进去会
-    # 把「44 项」这个到处都在引用的计数改掉。
+    # Language-table self-check: key sets equal / every value a str / the % conversion
+    # specifiers of zh and en agree / no Han characters in en.
+    # **Deliberately not a c.check** — it is not a runtime criterion of the "run it once
+    # and you know" kind, and putting it in would change the "44 items" count that is
+    # referenced all over the place.
     probs = i18n.check_tables()
     if probs:
         print(i18n.tr("selftest.table_bad", len(probs)))
@@ -55,7 +60,7 @@ def selftest():
         return 1
     c = Checker()
 
-    # ---- 单位与限位（rad 是面板的口径）----
+    # ---- units and limits (rad is the panel's convention) ----
     c.section(i18n.tr("selftest.sec_units"))
     c.check(i18n.tr("selftest.j1_hi"), abs(cb.axis_hi_rad(0) - math.radians(90.0)) < 1e-12)
     c.check(i18n.tr("selftest.j1_lo"), abs(cb.axis_lo_rad(0) - math.radians(-115.0)) < 1e-12)
@@ -69,7 +74,7 @@ def selftest():
     v, cl = cb.clamp_axis_rad(3, 0.0)
     c.check(i18n.tr("selftest.clamp_in"), (not cl) and v == 0.0)
 
-    # ---- 步长档 / --arm-id 解析 ----
+    # ---- step presets / --arm-id parsing ----
     c.section(i18n.tr("selftest.sec_step"))
     c.check(i18n.tr("selftest.step_rad"),
             cb.STEP_CHOICES_RAD == [0.005, 0.01, 0.02, 0.05, 0.1, 0.2])
@@ -88,14 +93,15 @@ def selftest():
     for s in ("2", "-1", "x", "", "1.0"):
         try:
             cb.parse_arm_id(s)
-            ok = False          # 该拒的没拒
+            ok = False          # something that should have been rejected was not
         except argparse.ArgumentTypeError:
             pass
     c.check(i18n.tr("selftest.arm_id"), ok)
 
-    # ---- 两台臂的接线（走真实 SimLink：解析、分流、闸门都是真的）----
+    # ---- two-arm wiring (through the real SimLink: parsing, routing and gates are real) ----
     class _RecLink(SimLink):
-        """记下每一帧发出去的 tid —— 断言"该发的发了、不该发的一帧没发"。"""
+        """Records the tid of every frame sent out — to assert "what should have been sent
+        was sent, and nothing that should not have been sent went out at all"."""
 
         def __init__(self, *a, **kw):
             super().__init__(*a, **kw)
@@ -107,17 +113,20 @@ def selftest():
 
     c.section(i18n.tr("selftest.sec_two"))
     opts = _fake_opts()
-    # 假板子时钟 ×2：自测要等 0x02 的 3 s，真实时间等不起。
-    # **不能再快了** —— 面板的保活是**真实时间**每 150 ms 一帧（tick 的 last_tx 用的是
-    # time.monotonic），而假板子的 500 ms 看门狗按它自己的时钟走：×2 时 150 ms 实时 =
-    # 300 ms 模拟（还有 40% 余量），×4 就变成 600 ms > 500，板子会一路被踢进 comm_lost
-    # 卡在「离线等待」。真机演练就用默认的 ×1（面板本来该长什么样就是什么样）。
+    # Fake-board clock ×2: the self-test would wait the 3 s for 0x02, which is too long in
+    # real time. **It must not be speeded up further** — the panel's keepalive is one frame
+    # every **real** 150 ms (tick's last_tx uses time.monotonic), while the fake board's
+    # 500 ms watchdog runs on its own clock: at ×2, 150 ms of real time = 300 ms simulated
+    # (still 40% of margin), but at ×4 that becomes 600 ms > 500 and the board gets kicked
+    # all the way into comm_lost, stuck in "offline wait". For a real-hardware rehearsal use
+    # the default ×1 (the panel then looks exactly the way it should).
     link = _RecLink(speed=2.0)
     sess = cb.ConsoleSession(link, opts)
     link.open()
     try:
         def pump(sec, pred=None):
-            """推 tick 到 pred 成立或超时（tick 是面板的唯一节拍来源）。"""
+            """Advance tick until pred holds or it times out (tick is the panel's only
+            source of beats)."""
             end = time.monotonic() + sec
             while True:
                 sess.tick(time.monotonic())
@@ -159,7 +168,7 @@ def selftest():
         c.check(i18n.tr("selftest.arms_sorted"),
                 [a["arm_id"] for a in snap["arms"]] == [0, 1])
 
-        # 切臂 + 点动只作用于当前臂
+        # switching arms + jogging only affects the current arm
         before0 = list(sess.views[0].target)
         sess.switch_arm(1)
         c.check(i18n.tr("selftest.sw_to_b"), sess.cur_arm_id == 1 and sess.arm_id == 1)
@@ -174,7 +183,7 @@ def selftest():
         c.check(i18n.tr("selftest.hold_cur"),
                 (sess.hold is False) and all(v.hold is False for v in sess.views.values()))
 
-        # ---- 命令：该发的写出去、不该发的一帧都不发 ----
+        # ---- commands: what should go out does, what should not goes out not at all ----
         c.section(i18n.tr("selftest.sec_cmd"))
         c.check(i18n.tr("selftest.a_wait_init"),
                 pump(4.0, lambda: sp(0).robot_state == board_defs.STATE_WAIT_INIT))
@@ -200,9 +209,11 @@ def selftest():
                 i18n.tr("selftest.sent", link.tids))
         c.check(i18n.tr("selftest.i_one_warn"),
                 sum(1 for _, lv, _ in sess.events if lv == "warn") == n_warn + 1)
-        # 再按一次依旧一帧不发：强发通道只给「姿态」那一条闸门。
-        # （原来这里匹配中文「可强发」字样 —— 那样在 --lang en 下会永真、静默失效，
-        #  所以换成语言无关的判据。）
+        # Pressing it once more still sends not one frame: the force path is given to the
+        # "pose" gate only.
+        # (This used to match the Chinese substring "可强发" here — under --lang en that
+        #  would be always true and would silently stop testing anything, so it was replaced
+        #  by a language-neutral criterion.)
         link.tids.clear()
         sess.send_arm_init()
         c.check(i18n.tr("selftest.i_again"),
@@ -238,7 +249,7 @@ def selftest():
                 and (protocol.TID_ARM_CTRL_POS, 1) in link.tids)
         sess.switch_arm(0)
 
-        # ---- reopen：两台都要重新播种 ----
+        # ---- reopen: both arms have to be re-seeded ----
         c.section(i18n.tr("selftest.sec_reopen"))
         c.check(i18n.tr("selftest.reopen_ok"), sess.reopen())
         c.check(i18n.tr("selftest.reopen_cleared"),
@@ -246,7 +257,7 @@ def selftest():
         c.check(i18n.tr("selftest.reopen_seeded"),
                 pump(6.0, lambda: all(v.seeded for v in sess.views.values())))
 
-        # ---- stop_all（--stop-on-exit）----
+        # ---- stop_all (--stop-on-exit) ----
         link.tids.clear()
         done = sess.stop_all()
         c.check(i18n.tr("selftest.stop_two"),

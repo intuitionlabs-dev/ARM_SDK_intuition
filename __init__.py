@@ -11,8 +11,10 @@
     gripper.py       夹爪两点标定：m ↔ 原始 deg 的映射 + JSON 存取
     selftest.py      离线自测：`python3 -m sdk.selftest`（不接硬件）
     calibrate_gripper.py  夹爪标定小工具
-    tui/             上机控制台（curses 全屏面板）：`python3 -m sdk.tui`，不接硬件用 `--fake`
-                     （`import sdk` 不会把它拉进来 —— curses 只在真要开屏时才 import）
+    tui/             上机控制台（curses 全屏面板）：`python3 -m sdk.tui`，不接硬件用 `--fake`，
+                     英文面板用 `--lang en`（`import sdk` 不会把它拉进来 —— curses 只在真要
+                     开屏时才 import）
+    i18n.py          语言表（zh/en）：面板、事件、闸门/链路报错走它；默认中文，逐字不变
     README.md        **手册：会话流程、每个接口、注意事项 —— 先看它**
 
 最小用法（单台臂，角度是 rad、夹爪是 m）：
