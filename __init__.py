@@ -60,7 +60,7 @@ from .errors import (ArError, CalibrationError, FeedbackStale, GateRejected,
                      GripperNotCalibrated, LinkError, NotConnected, ProtocolError)
 from .gripper import GripperCalibration, GripperCalibStore
 from .link import Link, describe_port, list_links, pick_default_port, usb_identity
-from .protocol import Feedback, SetZeroAck
+from .protocol import Feedback, LinkStatus, SetZeroAck
 
 # 协议版本串（板子 `libs/frame/frame_config.h`）。版本码是它的 FNV-1a 32，
 # 见 `protocol.VERSION_CODE` —— 两边必须一致，不一致板子不会握手（它不回你的版本帧，
@@ -72,7 +72,7 @@ __all__ = [
     # 入口
     "Arm", "Link", "Snapshot",
     # 数据
-    "Feedback", "SetZeroAck", "GripperCalibration", "GripperCalibStore",
+    "Feedback", "SetZeroAck", "LinkStatus", "GripperCalibration", "GripperCalibStore",
     # 异常
     "ArError", "LinkError", "NotConnected", "ProtocolError", "GateRejected",
     "FeedbackStale", "GripperNotCalibrated", "CalibrationError",

@@ -22,7 +22,7 @@
 | `sdk.Arm` | 一台臂。**主入口**，见第 3 节 |
 | `sdk.Link` | 一条链路（真串口 / 假单片机）。见第 2 节 |
 | `sdk.Snapshot` | 同一帧里换算好的一致视图（第 4 节） |
-| `sdk.Feedback` / `sdk.SetZeroAck` | 原始帧数据（**线上单位**） |
+| `sdk.Feedback` / `sdk.SetZeroAck` / `sdk.LinkStatus` | 原始帧数据（**线上单位**） |
 | `sdk.GripperCalibration` / `sdk.GripperCalibStore` | 夹爪标定模型和文件存取（第 6 节） |
 | `sdk.ArError` + 7 种下级异常 | 异常层级（第 5 节） |
 | `sdk.pick_default_port` / `list_links` / `describe_port` / `usb_identity` | 挑口子（第 2 节） |
@@ -92,7 +92,8 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 | `describe()` | 一行描述（给日志） |
 
 **属性**：`port`、`baud`、`kind`（`"USB"` / `"RS485"` / `"FAKE"` / `None`）、`link_up`、
-`link_err`、`board_version`（单片机回的版本码）、`version_seen`、`n_tx`、`n_rx`、`n_bad_arm`。
+`link_err`、`board_version`（单片机回的版本码）、`version_seen`、`link_status`（最近一帧 `0x81`）、
+`n_tx`、`n_rx`、`n_bad_arm`。
 
 **`link.stats` 的键**：
 
@@ -105,6 +106,7 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 | `n_bad_arm` | `arm_id` 越界、被丢掉的帧数（单片机的口径也是丢） |
 | `n_err_crc8` / `n_err_crc16` / `n_drop` | CRC 错帧数 / CRC16 错帧数 / 被跳过的字节数 |
 | `board_version` | 版本帧里的版本码；没收到过是 `None`（单片机没握手时每 100 ms 自己发一帧，所以口子通了就立刻有值） |
+| `link_status` | 最近一帧 `LinkStatus`（`0x81` 链路状态帧）。**握手之后才有**，每 100 ms 一帧；没收到过是 `None` |
 
 **`ArmChannel`**（`link.channel(arm_id)`）：`snapshot_feedback()` → `(Feedback, 时刻, 序号)`、
 `snapshot_ack()` → `(SetZeroAck, 时刻, 序号)`、`feedback_age()`、`n_feedback`、`unknown_tids`
@@ -259,6 +261,23 @@ except sdk.ArError as e:
 | `result` | 7 个结果码（索引 0..5 = j1..j6、6 = 夹爪），名字表 `board_defs.ZERO_RES_NAME`：0 未走到 / 1 未确认 / 2 成功 / 3 失败 / 4 超时 / 5 跳过 |
 | `elapsed_ms` | 这一轮花了多少毫秒 |
 
+`LinkStatus`（`link.link_status`）—— **链路级，不挂到某台臂上**：
+
+| 字段 | 说明 |
+|---|---|
+| `rx_total` | 这一窗口里解出来的整帧数（**含**后面那些被丢掉的） |
+| `rx_by_tid` | 12 个分类计数，下标同 `LINK_TID_ORDER`，最后一格 `LINK_TID_OTHER` 是"表外的码"（正常恒 0）。查某个码：`st.rx_by_tid[protocol.LINK_TID_ORDER.index(protocol.TID_ARM_CTRL_POS_VEL)]` |
+| `crc8_err` / `crc16_err` | 校验不过被丢的帧数 |
+| `drop_bytes` | 喂进解析器但**没能组成任何有效帧**的字节数 |
+| `bad_arm` / `over_len` | arm_id 越界 / payload 超长被丢的帧数（都正常恒 0） |
+| `ring_drop` | 收包环满被丢的帧数（单片机处理不过来了） |
+| `gated` | 被握手闸门挡下的帧数（握手前发的非 `0x01` 包都算） |
+| `tx_fail` | 单片机**发**帧失败的次数 |
+| `dt_ms` | 距上一帧 `0x81` 的实际毫秒数（标称 100） |
+
+**每个数都是窗口增量**（窗口 = 单片机发上一帧 `0x81` 到发这一帧之间），不是累计值 —— 两个
+窗口不能直接比大小，要按窗口看；想累计就自己加总。
+
 ## 5. 异常
 
 ```
@@ -316,12 +335,13 @@ ArError
 |---|---|
 | `VERSION_STRING` = `"Intuition-ARX-X5-2023-v0.2"` / `VERSION_CODE` = `0xF91DD3C9` | 握手用；对不上单片机不回你的版本帧（它自己每 100 ms 报一次码） |
 | `DEFAULT_ARM_ID` = 0 | |
-| `TID_VERSION`(0x01) `TID_ARM_INIT`(0x02) `TID_MOTOR_SET_ZERO`(0x10) `TID_MOTOR_SET_ZERO_ACK`(0x11) `TID_ARM_START`(0x12) `TID_ARM_GRAVITY`(0x13) `TID_ARM_STOP`(0x14) `TID_ARM_DAMPING`(0x15) `TID_ARM_CTRL_POS`(0x16) `TID_ARM_CTRL_POS_VEL`(0x17) `TID_ARM_RESET`(0x18) `TID_ARM_FEEDBACK`(0x80) | 码表 |
-| `FEEDBACK` / `SET_ZERO_ACK` 等长度常量 | `FB_LEN`=63、`CTRL_POS_LEN`=28、`CTRL_POS_VEL_LEN`=52、`SET_ZERO_ACK_LEN`=12 |
+| `TID_VERSION`(0x01) `TID_ARM_INIT`(0x02) `TID_MOTOR_SET_ZERO`(0x10) `TID_MOTOR_SET_ZERO_ACK`(0x11) `TID_ARM_START`(0x12) `TID_ARM_GRAVITY`(0x13) `TID_ARM_STOP`(0x14) `TID_ARM_DAMPING`(0x15) `TID_ARM_CTRL_POS`(0x16) `TID_ARM_CTRL_POS_VEL`(0x17) `TID_ARM_RESET`(0x18) `TID_ARM_FEEDBACK`(0x80) `TID_LINK_STATUS`(0x81) | 码表 |
+| `FEEDBACK` / `SET_ZERO_ACK` 等长度常量 | `FB_LEN`=63、`CTRL_POS_LEN`=28、`CTRL_POS_VEL_LEN`=52、`SET_ZERO_ACK_LEN`=12、`LINK_STATUS_LEN`=88 |
+| `LINK_TID_ORDER` / `LINK_TID_OTHER` / `LINK_TID_SLOT_NUM` | `0x81` 里 `rx_by_tid` 的分类顺序（11 个下行码）、"其他"那格的下标、数组长度 |
 | `HEADER_LEN`=6 / `OVERHEAD`=8 / `ARM_ID_OFFSET`=4 / `MAX_DATA`=255 / `MAX_FRAME`=263 | 帧结构 |
 | `encode(tid, payload=b"", arm_id=0)` | 组一帧（`AA 55 │ tid │ len │ arm_id │ crc8 │ payload │ crc16`） |
-| `encode_version(code)` / `encode_ctrl_pos(angles_deg7)` / `encode_ctrl_pos_vel(angles_deg6, vels_deg6, gripper_deg)` / `encode_feedback(...)` | 各 payload |
-| `decode_feedback(payload)` / `decode_setzero_ack(payload)` / `decode_version(payload)` | → `Feedback` / `SetZeroAck` / 版本码。布局不符抛 `ProtocolError`（`link` 里会静默丢掉） |
+| `encode_version(code)` / `encode_ctrl_pos(angles_deg7)` / `encode_ctrl_pos_vel(angles_deg6, vels_deg6, gripper_deg)` / `encode_feedback(...)` / `encode_link_status(...)` | 各 payload |
+| `decode_feedback(payload)` / `decode_setzero_ack(payload)` / `decode_version(payload)` / `decode_link_status(payload)` | → `Feedback` / `SetZeroAck` / 版本码 / `LinkStatus`。布局不符抛 `ProtocolError`（`link` 里会静默丢掉） |
 | `crc8(data)` / `crc16(data)` / `fnv1a32(s)` | CRC-8/MAXIM、反射多项式 `0x8408`、版本码用的 FNV-1a 32 |
 | `FrameParser` | 字节流 → 帧。`feed(chunk)` 吐 `(type_id, arm_id, payload)`；粘包 / 前导噪声 / 半帧 / 坏 CRC 都能重同步。统计 `n_ok` / `n_err_crc8` / `n_err_crc16` / `n_drop` |
 

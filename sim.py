@@ -35,6 +35,7 @@ INIT_S = 3.0              # 0x02：一键复位 + 一键夹爪找零
 CALIB_S = 1.2             # 0x10：一轮设零
 RESET_S = 2.0             # 0x18：ARM_AUTO_RESET_TIME_S
 COMM_TIMEOUT_S = 0.5      # ROBOT_COMM_TIMEOUT_MS：任何有效帧都喂它
+LINK_STATUS_S = 0.1       # ROBOT_LINK_STATUS_PERIOD_MS：0x81 的周期
 INIT_GRIPPER_CLEAR_S = 1.5  # 初始化末段：找零把 motor_inited[夹爪] 先清掉
 FAKE_LOST_PERIOD_S = 5.0  # --fake-lost 的翻转周期
 
@@ -105,6 +106,8 @@ class SimLink(Link):
         self._thr = None
         self._t = 0.0                  # 假板子的时钟（虚拟，只往前走）
         self._last_rx_t = 0.0          # 上一帧收到的时刻；0 = 还没收到过
+        self._last_ls_t = -1.0         # 上一帧 0x81 的时刻；< 0 = 还没起窗口
+        self._rx_by_tid = {}           # tid -> 这一窗口收到的帧数（0x81 就是报它）
 
     # ---- 生命周期 ----
 
@@ -149,6 +152,7 @@ class SimLink(Link):
         ack = None
         with self._lock:
             self.n_tx += 1
+            self._rx_by_tid[tid] = self._rx_by_tid.get(tid, 0) + 1
             # 收到**任意**有效帧都算"上位机还在说话"。注意落点是**离线等待**、不是原状态：
             # 板子会重新走一遍"电机全在线 → 待初始化"。
             self._last_rx_t = self._t
@@ -218,11 +222,40 @@ class SimLink(Link):
                         frames.append(protocol.encode(protocol.TID_ARM_FEEDBACK,
                                                       board.feedback_payload(),
                                                       board.arm_id))
+
+                # 0x81：10 Hz，链路级只一帧，挑第一台握了手的发（板子那边也是"任一臂握手
+                # 就发"，arm_id 是"谁先握的手"）。第一次只是起窗口、这一拍不发，和板子的
+                # Link_Status_Step 同款 —— 于是第一帧报的也是一个完整的 100 ms 窗口。
+                a = next((b for b in self.boards.values() if b.version_ok), None)
+                if a is None:
+                    self._last_ls_t = -1.0
+                elif self._last_ls_t < 0.0:
+                    self._last_ls_t = t
+                elif t - self._last_ls_t >= LINK_STATUS_S:
+                    frames.append(protocol.encode(protocol.TID_LINK_STATUS,
+                                                  self._link_status_payload(),
+                                                  a.arm_id))
+                    self._last_ls_t = t
             for arm_id, ack in acks:
                 self.channel(arm_id).put_ack(ack, time.monotonic())
             for fr in frames:
                 self.inject_bytes(fr)
             time.sleep(self.dt)
+
+    def _link_status_payload(self):
+        """组一帧 0x81。**在 self._lock 里调**（读并清 _rx_by_tid）。
+
+        报的是"上一帧 0x81 到现在"的窗口增量，所以组完就把计数清掉 —— 真板子上那些累计
+        计数器也是靠快照取差的，口径一致。表外的码全落最后一格「其他」。
+        """
+        by = [self._rx_by_tid.pop(tid, 0) for tid in protocol.LINK_TID_ORDER]
+        by.append(sum(self._rx_by_tid.values()))
+        self._rx_by_tid.clear()
+        return protocol.encode_link_status(
+            sum(by), tuple(by),
+            crc8_err=0, crc16_err=0, drop_bytes=0, bad_arm=0, over_len=0,
+            ring_drop=0, gated=0, tx_fail=0,
+            dt_ms=int(round(LINK_STATUS_S * 1000)))
 
     def _step(self, board, t):
         """推一拍某台板子。返回要补发的一帧 0x11（设零反馈帧），没有就 None。"""

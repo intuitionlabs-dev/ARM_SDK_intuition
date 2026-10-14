@@ -36,10 +36,10 @@ from .arm import Arm
 from .errors import (CalibrationError, FeedbackStale, GateRejected,
                      GripperNotCalibrated, NotConnected)
 from .link import Link
-from .protocol import (FB_LEN, SET_ZERO_ACK_LEN, TID_ARM_CTRL_POS,
+from .protocol import (FB_LEN, LINK_STATUS_LEN, SET_ZERO_ACK_LEN, TID_ARM_CTRL_POS,
                        TID_ARM_CTRL_POS_VEL, TID_ARM_DAMPING, TID_ARM_FEEDBACK,
                        TID_ARM_GRAVITY, TID_ARM_INIT, TID_ARM_RESET, TID_ARM_START,
-                       TID_ARM_STOP, TID_MOTOR_SET_ZERO, TID_VERSION)
+                       TID_ARM_STOP, TID_LINK_STATUS, TID_MOTOR_SET_ZERO, TID_VERSION)
 
 # ==================== 结果收集 ====================
 
@@ -259,7 +259,35 @@ def test_roundtrip(c):
             ack.state == 5 and ack.result == (2, 2, 1, 4, 2, 2, 5) and ack.elapsed_ms == 5527,
             "%r" % (ack,))
 
+    # 0x81：22 个 u32（10 + 12 个分类计数），**按 1 字节对齐读**
+    ls_by = tuple(i * 10 for i in range(protocol.LINK_TID_SLOT_NUM))
+    ls_pay = protocol.encode_link_status(1234, ls_by, 1, 2, 3, 4, 5, 6, 7, 8, 100)
+    c.check("0x81 payload 恰好 88 字节", len(ls_pay) == LINK_STATUS_LEN,
+            "实际 %d" % len(ls_pay))
+    ps = protocol.FrameParser()
+    got = ps.feed(protocol.encode(TID_LINK_STATUS, ls_pay, 1))
+    ls = protocol.decode_link_status(got[0][2]) if got else None
+    c.check("0x81 往返（字段逐个对上）",
+            ls is not None and (ls.rx_total, ls.rx_by_tid, ls.crc8_err, ls.crc16_err,
+                                ls.drop_bytes, ls.bad_arm, ls.over_len, ls.ring_drop,
+                                ls.gated, ls.tx_fail, ls.dt_ms)
+            == (1234, ls_by, 1, 2, 3, 4, 5, 6, 7, 8, 100), "%r" % (ls,))
+    # 「其他」必须是最后一格，且 88 字节正好装得下 10 个标量 + 全部分类计数
+    c.check("LINK_TID_OTHER 指向最后一格、槽位数装得下",
+            protocol.LINK_TID_OTHER == protocol.LINK_TID_SLOT_NUM - 1
+            and len(protocol.LINK_TID_ORDER) + 1 == protocol.LINK_TID_SLOT_NUM
+            and LINK_STATUS_LEN == 4 * (10 + protocol.LINK_TID_SLOT_NUM),
+            "OTHER=%d SLOT=%d LEN=%d" % (protocol.LINK_TID_OTHER,
+                                         protocol.LINK_TID_SLOT_NUM, LINK_STATUS_LEN))
+
     # 长度不对必须抛（而不是悄悄解出垃圾）
+    for bad_len in (0, 87, 89):
+        try:
+            protocol.decode_link_status(b"\x00" * bad_len)
+            c.check("0x81 长度 %d 要抛 ValueError" % bad_len, False, "没抛")
+        except ValueError:
+            c.check("0x81 长度 %d 要抛 ValueError" % bad_len, True)
+
     for bad_len in (0, 62, 64):
         try:
             protocol.decode_feedback(b"\x00" * bad_len)
@@ -384,6 +412,19 @@ def test_dispatch(c):
     lb.inject_bytes(protocol.encode(TID_VERSION, protocol.encode_version(), 0))
     c.check("0x01 版本包记在链路上",
             lb.board_version == protocol.VERSION_CODE and lb.version_seen)
+
+    # 0x81 也落在链路上：**不进任何一台臂**，也不许被当成"认不出的 tid"
+    ls_by = tuple(range(protocol.LINK_TID_SLOT_NUM))
+    lb.inject_bytes(protocol.encode(TID_LINK_STATUS,
+                                    protocol.encode_link_status(9, ls_by, 0, 0, 0, 0, 0, 0, 0, 0, 100),
+                                    1))
+    c.check("0x81 记在链路上、不投给某台臂",
+            lb.link_status is not None and lb.link_status.rx_total == 9
+            and lb.link_status.rx_by_tid == ls_by and lb.link_status_t is not None
+            and lb.channel(1).unknown_tids.get(TID_LINK_STATUS) is None,
+            "ls=%r unknown=%r" % (lb.link_status, lb.channel(1).unknown_tids))
+    c.check("stats 里有 link_status",
+            lb.stats.get("link_status") is lb.link_status, "%r" % (lb.stats.get("link_status"),))
 
     # Link.arm() 缓存
     c.check("Link.arm(0) 同一个 arm_id 只建一个对象", lb.arm(0) is lb.arm(0))
@@ -881,6 +922,19 @@ def test_sim(c, tmpdir):
                 ok and a.n_feedback > 0 and b.n_feedback > 0,
                 "A=%s B=%s" % (a.robot_state_name, b.robot_state_name))
 
+        # ---- 0x81：握手后才发，10 Hz，链路级只一帧 ----
+        ok = _sim_wait([a, b], lambda: link.link_status is not None, 2.0)
+        ls = link.link_status
+        c.check("握手过 → 0x81 到（链路级，不挂到某台臂上）",
+                ok and ls is not None and ls.rx_by_tid[protocol.LINK_TID_OTHER] == 0
+                and a.link.channel(0).unknown_tids.get(protocol.TID_LINK_STATUS) is None,
+                "ls=%r unknown=%r" % (ls, a.link.channel(0).unknown_tids))
+        # 报的是窗口增量：它数的是这一窗口里上位机发了什么（保活的 0x01 也在内）
+        c.check("0x81 报的是这一段窗口里收到的帧",
+                ok and ls.rx_total == sum(ls.rx_by_tid)
+                and ls.rx_by_tid[protocol.LINK_TID_ORDER.index(protocol.TID_VERSION)] > 0,
+                "%r" % (ls,))
+
         # ---- 0x02 初始化 ----
         a.init_arm()
         ok = _sim_wait([a, b], lambda: a.robot_state == BD.STATE_NORMAL, 2.0)
@@ -997,6 +1051,7 @@ def test_headers(c):
             ("FRAME_TYPE_ID_ARM_CTRL_POS_VEL", protocol.TID_ARM_CTRL_POS_VEL),
             ("FRAME_TYPE_ID_ARM_RESET", protocol.TID_ARM_RESET),
             ("FRAME_TYPE_ID_ARM_FEEDBACK", protocol.TID_ARM_FEEDBACK),
+            ("FRAME_TYPE_ID_LINK_STATUS", protocol.TID_LINK_STATUS),
         ]
         wrong = []
         for macro, val in pairs:
@@ -1005,14 +1060,35 @@ def test_headers(c):
                 wrong.append("%s 在头文件里没有" % macro)
             elif _int(got) != val:
                 wrong.append("%s：头文件 %s，SDK 0x%02X" % (macro, got, val))
-        c.check("码表 12 个 tid 全部对上", not wrong, "\n".join(wrong))
+        c.check("码表 13 个 tid 全部对上", not wrong, "\n".join(wrong))
 
         # SDK 有的码板上也得有（防"SDK 自己编了个码"）
-        known = {m for m, _ in pairs}
+        known = {m: v for m, v in pairs}
         missing = [m for m in re.findall(r"#define\s+(FRAME_TYPE_ID_\w+)", tid_h)
                    if m not in known and m != "FRAME_TYPE_ID_NONE"]
         c.check("板子上所有 FRAME_TYPE_ID_* 都在 SDK 里有对应", not missing,
                 "SDK 漏了：%s" % missing)
+
+        # 0x81 里 rx_by_tid[] 的下标顺序：**两边各有一份，必须一模一样**。
+        # 错了不会报错，只会让上位机把"收到多少 0x17"读成别的码的数 —— 所以要逐项对。
+        order = []
+        m = re.search(r"#define\s+FRAME_TID_DOWN_LIST\s+(.*?)\n(?!\s)", tid_h, re.S)
+        if m is None:
+            c.check("FRAME_TID_DOWN_LIST 在头文件里能找到", False, "没找到这个宏")
+        else:
+            body = m.group(1).replace("\\", " ")
+            for name in (t.strip() for t in body.split(",")):
+                if name:
+                    order.append(known.get(name, "??%s" % name))
+            c.check("FRAME_TID_DOWN_LIST 的顺序 == SDK 的 LINK_TID_ORDER",
+                    tuple(order) == protocol.LINK_TID_ORDER,
+                    "板子 %r\nSDK %r" % (tuple(order), protocol.LINK_TID_ORDER))
+        for macro, val in [("FRAME_TID_DOWN_NUM", len(protocol.LINK_TID_ORDER)),
+                           ("FRAME_TID_SLOT_NUM", protocol.LINK_TID_SLOT_NUM)]:
+            got = _define(tid_h, macro)
+            c.check("%s == %d" % (macro, val),
+                    got is not None and _int(got) == val,
+                    "头文件 %s" % got)
 
         for macro, val in [("FRAME_PKT_JOINT_NUM", protocol.PKT_JOINT_NUM),
                            ("FRAME_PKT_MOTOR_NUM", protocol.PKT_MOTOR_NUM)]:

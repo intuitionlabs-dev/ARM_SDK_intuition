@@ -285,6 +285,8 @@ class Link:
         self.link_err = None
         self.board_version = None         # 板子回过来的 0x01 里的版本码
         self.version_seen = False
+        self.link_status = None           # 板子报的 0x81（链路级，不挂到某台臂上）
+        self.link_status_t = None         # 收到它的时刻（time.monotonic）
 
         self.parser = protocol.FrameParser()
         self._channels = {}
@@ -472,6 +474,11 @@ class Link:
             elif tid == protocol.TID_VERSION and len(payload) == 4:
                 self.board_version = protocol.decode_version(payload)
                 self.version_seen = True
+            elif tid == protocol.TID_LINK_STATUS and len(payload) == protocol.LINK_STATUS_LEN:
+                # 链路级：**不上 channel**。板子每 100 ms 只发一帧，不带"是哪台臂"的语义
+                # （帧头那个 arm_id 只是"哪台先握的手"），所以存 Link 上，和板子版本码同款。
+                self.link_status = protocol.decode_link_status(payload)
+                self.link_status_t = now
             else:
                 # 认不出来的 tid：计数，不报错、不丢弃连接 —— 板子以后加包不该让老上位机炸
                 self.channel(arm_id).note_unknown(tid)
@@ -511,6 +518,7 @@ class Link:
             "n_err_crc16": self.parser.n_err_crc16,
             "n_drop": self.parser.n_drop,
             "board_version": self.board_version,
+            "link_status": self.link_status,
         }
 
     def describe(self):
