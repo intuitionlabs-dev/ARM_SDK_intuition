@@ -11,8 +11,8 @@ here.
 How it talks to the board (see protocol_doc.md / sdk/README):
 
   * **sends a 0x16 periodically** (6 joint angles + gripper angle), **which is also the
-    keepalive frame** — on the board side, no valid frame for 3 s means
-    comm_lost(damping), and a dropped 0x16 still counts as a valid frame (robot_state.c's
+    keepalive frame** — on the board side, no valid frame for 3 s drops the arm back to
+    damping, and a dropped 0x16 still counts as a valid frame (robot_state.c's
     s_last_rx_ms is refreshed before dispatch), so sending at any time costs nothing.
   * **receives the 0x80 feedback frame** and displays mode / robot_state / joint angles /
     lost mask / gripper angle.
@@ -28,7 +28,8 @@ assume one of them is wrong.
 
 Session flow (the board's state machine, see sdk/README "the life cycle of a session"):
     ① wait for handshake (the board only accepts the 0x01 version frame; a wrong version
-       code **silently locks up**, and only a board reset recovers it)
+       code is **dropped silently**, and the board keeps reporting its own code every
+       100 ms until the host sends the right one)
     ② offline wait (the board advances on its own once all 7 motors are up)
     ③ wait-init — press i to send 0x02
     ④ initializing (the board runs one-key reset → one-key gripper zeroing itself, about
@@ -40,7 +41,9 @@ Session flow (the board's state machine, see sdk/README "the life cycle of a ses
          (Opening the board-side gate up is the convention the user asked for; under run,
          pressing i is still silently dropped.)
     ⑥ press z to send 0x10 set-zero → calibration, then back to ③
-    ⑦ no valid frame for 3 s → comm_lost; one more frame returns it to ②
+    ⑦ no valid frame for 3 s → damping. An arm that finished init **stays in ⑤** (press s
+       to go back to run); one that has not goes to "comm lost", and one more frame
+       returns it to ②, i.e. the init has to be redone
 
 **Two arms**: one board with two boards, two CAN buses and two arms, but the host has only
 **one link**. So a process = one link + two `sdk.Arm`s, and **both are being driven** (each

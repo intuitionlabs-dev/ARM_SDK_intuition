@@ -4,9 +4,8 @@ contract.
 The backend is in [session.py](session.py): the link, the gate pre-checks, the unit
 conversion, the per-beat tick and the event policy all live in `ConsoleSession`. Here we
 only draw the "one consistent view per frame" it hands us, plus **keep feeding tick on the
-blocking path** (the one inside `input_line`) — the board drops into comm_lost if it does
-not get a valid frame within 3 s, and sitting in a dialog would knock the arm out of
-"normal operation".
+blocking path** (the one inside `input_line`) — the arm falls back to damping if it does
+not get a valid frame within 3 s, and sitting in a dialog would knock it out of `run`.
 
 The command-line entry point is in [__main__.py](__main__.py): `python3 -m sdk.tui`.
 """
@@ -283,14 +282,11 @@ class Ui:
                 # getch timed out (the beat is set by --ctrl-hz, 2~17 ms) — **the link must
                 # be fed here**: this function blocks, so the main loop's tick() does not
                 # run for the whole time, and both the 0x16 and the 0x01 keepalive are sent
-                # by tick() — with not a single byte going out, the board drops into
-                # comm_lost when it gets no valid frame for 3 s (robot_state.c's
-                # Fsm_Step). Once the dialog closes and the keepalive resumes, where the
-                # board lands is **offline-wait → wait-init**, i.e. leaving the o
-                # confirmation up for over 3 s knocks out "normal operation", and the 0x18
-                # you send by answering y is silently dropped by the board for "not in
-                # normal operation". tick() now advances both arms, so both arms' keepalives
-                # are on this path.
+                # by tick() — with not a single byte going out, the arm falls back to
+                # damping when the board gets no valid frame for 3 s (robot_state.c's
+                # Fsm_Step / Comm_Lost_Enter), i.e. leaving the o confirmation up for over
+                # 3 s knocks the arm out of `run` and it has to be put back with s.
+                # tick() advances both arms, so both arms' keepalives are on this path.
                 self.sess.tick(time.monotonic())
                 continue
             if ch in (10, 13, curses.KEY_ENTER):

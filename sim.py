@@ -266,7 +266,10 @@ class SimLink(Link):
         if self._last_rx_t > 0.0 and board.state not in (
                 board_defs.STATE_WAIT_HANDSHAKE, board_defs.STATE_COMM_LOST) \
                 and t - self._last_rx_t > COMM_TIMEOUT_S:
-            board.state = board_defs.STATE_COMM_LOST
+            # 落点看初始化跑完了没有：正常运行（跑完过）**留在原地**，上位机补一帧 0x12
+            # 就接着跑；其余状态退到"通信离线"，收到帧后走 离线等待 → 待初始化。
+            if board.state != board_defs.STATE_NORMAL:
+                board.state = board_defs.STATE_COMM_LOST
             board.mode = board_defs.MODE_DAMPING
 
         if board.state == board_defs.STATE_WAIT_HANDSHAKE:

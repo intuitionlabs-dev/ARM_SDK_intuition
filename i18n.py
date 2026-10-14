@@ -238,7 +238,7 @@ _ZH.update({
     "app.help.si3":
         "事件日志里角度一律写 deg（和固件对得上），和面板上差一个 57.3 —— 不是哪个错了。",
     "app.help.gate1": "状态从反馈帧派生，不自己造：0x16 只在「正常运行 + run + 没暂停」时才发；",
-    "app.help.gate2": "其它时候每 150 ms 补一帧 0x01 保活（板子 3 s 无有效帧就进 comm_lost）。",
+    "app.help.gate2": "其它时候每 150 ms 补一帧 0x01 保活（板子 3 s 无有效帧就把臂切回阻尼）。",
     "app.help.gate3":
         "被板子丢弃的 0x16 也算保活（板子的 s_last_rx_ms 在分派之前刷新），所以放心发。",
     "app.help.two1":
@@ -350,8 +350,8 @@ _ZH.update({
                          "确认板子的 ROBOT_LINK 和它是对得上的",
     "main.stopped": "已给 %s 补发 0x14 停止。",
     "main.stop_sep": "、",
-    "main.exit_note": "已停发两台的 0x16（目标冻结、臂保持）。约 3 s 收不到有效帧，板子会进"
-                      " comm_lost → damping；要立刻松劲按 x，或用 --stop-on-exit。",
+    "main.exit_note": "已停发两台的 0x16（目标冻结、臂保持）。约 3 s 收不到有效帧，板子会把"
+                      "臂切回 damping（总模式不变）；要立刻松劲按 x，或用 --stop-on-exit。",
 })
 
 # ---- sdk/tui/selftest.py: self-test item names / section names / summary ----
@@ -565,7 +565,7 @@ _EN.update({
         "in NORMAL + run + not held;",
     "app.help.gate2":
         "otherwise a 0x01 keepalive goes out every 150 ms (3 s without a valid "
-        "frame drops the board to comm_lost).",
+        "frame drops the arm back to damping).",
     "app.help.gate3":
         "a 0x16 the board drops still counts as keepalive (its s_last_rx_ms is "
         "refreshed before dispatch), so sending is always safe.",
@@ -703,7 +703,7 @@ _EN.update({
     "main.stopped": "sent 0x14 stop to %s.",
     "main.stop_sep": ", ",
     "main.exit_note": "stopped 0x16 for both arms (target frozen, arms hold). About 3 s "
-                      "later the board hits comm_lost -> damping on its own; press x for "
+                      "later the board drops the arms to damping on its own; press x for "
                       "slack right away, or use --stop-on-exit.",
 })
 

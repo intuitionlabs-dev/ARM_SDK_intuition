@@ -151,7 +151,7 @@ RESET_POSE_DEG = (0.0, 0.5, 0.5, 0.0, 0.0, 0.0)
 # 任何一个超过这个容差就**拒绝且不回包**。
 ROBOT_INIT_POSE_TOL_DEG = 20.0
 
-# 板子一个有效帧都没收到就进通信离线的时间（robot_state.h）。**隐式保活**：
+# 板子这么久没收到有效帧就把臂切回阻尼的时间（robot_state.h 的 ROBOT_COMM_TIMEOUT_MS）。**隐式保活**：
 # 不是"发心跳包"才算保活，任何有效帧都算；板子自己发的 0x80 **不算**。
 KEEPALIVE_TIMEOUT_S = 3.0
 

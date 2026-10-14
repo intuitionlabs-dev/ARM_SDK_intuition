@@ -988,14 +988,15 @@ def test_sim(c, tmpdir):
 
         # ---- 3 s 看门狗：**全链路一份**，不发帧两台一起掉 ----
         time.sleep(0.4)      # 不泵保活（虚拟时钟 8× ⇒ 这段抵 3.2 s）
-        c.check("不发帧超 3 s → 两台一起进通信离线 + damping",
-                a.robot_state == BD.STATE_COMM_LOST and b.robot_state == BD.STATE_COMM_LOST
-                and a.mode == BD.MODE_DAMPING and b.mode == BD.MODE_DAMPING,
+        c.check("不发帧超 3 s → 两台一起切 damping，总模式按初始化跑完没有各落各的",
+                a.robot_state == BD.STATE_NORMAL and a.mode == BD.MODE_DAMPING
+                and b.robot_state == BD.STATE_COMM_LOST and b.mode == BD.MODE_DAMPING,
                 "A=%s/%s B=%s/%s" % (a.robot_state_name, a.mode_name,
                                      b.robot_state_name, b.mode_name))
-        ok = _sim_wait([a, b], lambda: a.robot_state == BD.STATE_WAIT_INIT, 2.0)
-        c.check("链路回来落点是**离线等待→待初始化**（不会自己回正常运行）", ok,
-                "A=%s" % a.robot_state_name)
+        ok = _sim_wait([a, b], lambda: b.robot_state == BD.STATE_WAIT_INIT, 2.0)
+        c.check("链路回来：初始化跑完过的留在正常运行(damping)，没跑完的走 离线等待→待初始化",
+                ok and a.robot_state == BD.STATE_NORMAL and a.mode == BD.MODE_DAMPING,
+                "A=%s/%s B=%s" % (a.robot_state_name, a.mode_name, b.robot_state_name))
     finally:
         link.close()
 

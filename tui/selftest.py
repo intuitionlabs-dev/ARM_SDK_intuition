@@ -209,10 +209,8 @@ def selftest():
         c.check(i18n.tr("selftest.i_one_warn"),
                 sum(1 for _, lv, _ in sess.events if lv == "warn") == n_warn + 1)
         # Pressing it once more still sends not one frame: the force path is given to the
-        # "pose" gate only.
-        # (This used to match the Chinese substring "可强发" here — under --lang en that
-        #  would be always true and would silently stop testing anything, so it was replaced
-        #  by a language-neutral criterion.)
+        # "pose" gate only. The check is on the warn count, not on the message text — the
+        # text depends on the language, the count does not.
         link.tids.clear()
         sess.send_arm_init()
         c.check(i18n.tr("selftest.i_again"),
