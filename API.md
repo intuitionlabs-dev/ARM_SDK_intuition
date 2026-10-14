@@ -59,7 +59,7 @@ while True:
 
 两处容易漏的：
 
-- **不能干等**：单片机 500 ms 收不到**任何**有效帧就切阻尼、退回「离线等待」——自己发出的
+- **不能干等**：单片机 3 s 收不到**任何**有效帧就切阻尼、退回「离线等待」——自己发出的
   反馈帧不算数。所以每次 `wait_*` 之前都得有东西在发（周期控制帧，或 `keepalive()`，
   它发的是幂等的版本帧）。
 - **切档要等反馈确认**：`start()` 返回只代表帧发出去了，反馈里的 `mode` 还是旧的；紧接着发
@@ -170,7 +170,7 @@ Arm(arm_id=0, link=None, *, calib_store=None)
 | 方法 | 帧 | 闸门 | 备注 |
 |---|---|---|---|
 | `send_version()` | `0x01` | — | 也是保活 |
-| `keepalive()` | `0x01` | — | `send_version` 的别名。**SDK 不会自动发**：单片机 500 ms 收不到任意有效帧就切阻尼、退回离线等待 |
+| `keepalive()` | `0x01` | — | `send_version` 的别名。**SDK 不会自动发**：单片机 3 s 收不到任意有效帧就切阻尼、退回离线等待 |
 | `init_arm(*, force=False)` | `0x02` | state 是**待初始化(2)**，**或**（正常运行(4) 且 mode ∈ 停/阻尼）；**且** 7 台电机全在线；**且** 6 个关节（不含夹爪）与复位位姿偏差 ≤ 20° | 跑完落 `4` + **阻尼**，要再 `start()` 才进 run |
 | `set_zero(*, force=False)` | `0x10` | state 是**待初始化(2)** | **覆盖电机的原零点**，触发前先摆位姿；只管 j1~j6；结果走 `wait_setzero_ack()` |
 | `start(*, force=False)` | `0x12` | state == 正常运行(4) | 进 run 档。切档会作废上一帧控制指令 ⇒ **切过来之后要重发控制帧** |
@@ -316,7 +316,7 @@ ArError
 | `expand_mask(mask)` | 掩码 → `"j3 夹爪"` 这样的名字串 |
 | `RESET_POSE_DEG` / `RESET_POSE_RAD` | `(0, 0.5, 0.5, 0, 0, 0)` 度 |
 | `ROBOT_INIT_POSE_TOL_DEG` / `_RAD` | 20° —— 就是 `init_arm()` 那条姿态闸门 |
-| `KEEPALIVE_TIMEOUT_S` | 0.5：单片机的隐式保活窗口 |
+| `KEEPALIVE_TIMEOUT_S` | 3：单片机的隐式保活窗口 |
 | `ARM_AUTO_RESET_TIME_S` | 2：一键复位的轨迹时长（参考） |
 | `pose_deviation_deg(joint_deg6)` / `all_close_deg(v6, ref6, tol)` | 姿态偏差 / 逐个比 |
 | `state_name(v)` / `mode_name(v)` | 码 → 名字（不认识的码给 `"未知(n)"`） |
@@ -397,7 +397,7 @@ SimLink(port=None, baud=921600, *, arm_ids=(0, 1), lost_mask=0, lost_arm=0,
 `speed > 1` 让它整台时钟走快（时间缩放，运动也跟着快）。
 
 时间常数（对拍固件用）：上电 0.6 s → 离线等待、0.8 s → 待初始化、`0x02` 3 s、`0x10` 1.2 s、
-`0x18` 2 s、通信看门狗 0.5 s（**全链路一份**：给一台发的帧也把另一台喂了）、`--fake-lost`
+`0x18` 2 s、通信看门狗 3 s（**全链路一份**：给一台发的帧也把另一台喂了）、`--fake-lost`
 翻转周期 5 s。
 
 ## 8. 速查

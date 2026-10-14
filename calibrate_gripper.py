@@ -47,7 +47,7 @@ from .link import Link
 # 再快只是白占链路。
 JOG_HZ = 50.0
 
-# 不点动时也要喂链路：板子 500 ms 收不到有效帧就判通信离线、切阻尼。
+# 不点动时也要喂链路：板子 3 s 收不到有效帧就判通信离线、切阻尼。
 ALIVE_HZ = 5.0
 
 # 画面刷新率（别每圈都重画，闪）。
@@ -269,7 +269,7 @@ class Calibrator:
             self.arm.send_ctrl_pos(s.joint_angles, gripper_raw_deg=self.target_deg)
             self._stale_warned = False
             return
-        # 不点动也要喂：0x01 是板子认的有效帧，纯保活用（500 ms 收不到就判通信离线）。
+        # 不点动也要喂：0x01 是板子认的有效帧，纯保活用（3 s 收不到就判通信离线）。
         self.arm.keepalive()
         age = self.arm.feedback_age
         if (self.target_deg is not None and age is not None
@@ -469,9 +469,9 @@ def main(argv=None):
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attr)
         # **不替用户切档**。切阻尼听着"安全"，但它会把电机使能起来 —— 本来在 stop 档（失能）
-        # 的臂会突然被通上电，这是没人要求过的动作。退出就退出：不再发帧之后板子 500 ms
+        # 的臂会突然被通上电，这是没人要求过的动作。退出就退出：不再发帧之后板子 3 s
         # 收不到有效帧，自己进「通信离线」切阻尼，这才是板子上已经验证过的那条兜底路径。
-        print("退出。最后看到的档位是「%s」—— 不再发帧之后板子 500 ms 就会自己进"
+        print("退出。最后看到的档位是「%s」—— 不再发帧之后板子 3 s 就会自己进"
               "「通信离线」切阻尼，不用再做什么。" % (arm.mode_name or "未知"))
         link.close()
 

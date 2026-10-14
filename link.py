@@ -13,7 +13,7 @@ pyserial 报的错是 `device reports readiness to read but returned no data`，
 
 这一层只做三件事：把字节搬进来切成帧、按 arm_id 投进各自的收包槽、把帧组好发出去。
 **它不认识状态机、不做任何闸门**（闸门在 `arm.py`），也不主动发任何帧 —— 心跳要显式发
-（`Arm.keepalive()`），SDK 不起自动保活线程：板子的保活判据是"500 ms 内收到过**任意**
+（`Arm.keepalive()`），SDK 不起自动保活线程：板子的保活判据是"3 s 内收到过**任意**
 有效帧"，你的周期控制帧本身就是保活，再自动加一条只会和它抢时序。
 
 `import sdk` 不会 import pyserial（`serial` 只在 `open()` 里 import），所以没装 pyserial

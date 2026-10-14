@@ -114,12 +114,11 @@ def selftest():
     c.section(i18n.tr("selftest.sec_two"))
     opts = _fake_opts()
     # Fake-board clock ×2: the self-test would wait the 3 s for 0x02, which is too long in
-    # real time. **It must not be speeded up further** — the panel's keepalive is one frame
-    # every **real** 150 ms (tick's last_tx uses time.monotonic), while the fake board's
-    # 500 ms watchdog runs on its own clock: at ×2, 150 ms of real time = 300 ms simulated
-    # (still 40% of margin), but at ×4 that becomes 600 ms > 500 and the board gets kicked
-    # all the way into comm_lost, stuck in "offline wait". For a real-hardware rehearsal use
-    # the default ×1 (the panel then looks exactly the way it should).
+    # real time. The panel's keepalive is one frame every **real** 150 ms (tick's last_tx
+    # uses time.monotonic), while the fake board's 3 s watchdog runs on its own clock: at
+    # ×2, 150 ms of real time = 300 ms simulated, a tenth of the window, so the speed-up
+    # does not starve the board into comm_lost. For a real-hardware rehearsal use the
+    # default ×1 (the panel then looks exactly the way it should).
     link = _RecLink(speed=2.0)
     sess = cb.ConsoleSession(link, opts)
     link.open()

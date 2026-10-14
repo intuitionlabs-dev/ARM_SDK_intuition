@@ -25,7 +25,7 @@
     arm.connect()                       # 开串口 → 发版本包 → 等第一帧反馈
 
     def wait_state(want, timeout=10.0):
-        # 等到 state == want。**等的期间要一直保活** —— 板子 500 ms 收不到任何有效帧
+        # 等到 state == want。**等的期间要一直保活** —— 板子 3 s 收不到任何有效帧
         # 就切阻尼、退回「离线等待」，它自己发的反馈帧不算数。
         end = time.monotonic() + timeout
         while time.monotonic() < end:

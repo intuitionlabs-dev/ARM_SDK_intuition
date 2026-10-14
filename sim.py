@@ -34,7 +34,7 @@ OFFLINE_WAIT_S = 0.8      # 离线等待 → 待初始化（真板子等的是"�
 INIT_S = 3.0              # 0x02：一键复位 + 一键夹爪找零
 CALIB_S = 1.2             # 0x10：一轮设零
 RESET_S = 2.0             # 0x18：ARM_AUTO_RESET_TIME_S
-COMM_TIMEOUT_S = 0.5      # ROBOT_COMM_TIMEOUT_MS：任何有效帧都喂它
+COMM_TIMEOUT_S = 3.0      # ROBOT_COMM_TIMEOUT_MS：任何有效帧都喂它
 LINK_STATUS_S = 0.1       # ROBOT_LINK_STATUS_PERIOD_MS：0x81 的周期
 INIT_GRIPPER_CLEAR_S = 1.5  # 初始化末段：找零把 motor_inited[夹爪] 先清掉
 FAKE_LOST_PERIOD_S = 5.0  # --fake-lost 的翻转周期
@@ -259,7 +259,7 @@ class SimLink(Link):
 
     def _step(self, board, t):
         """推一拍某台板子。返回要补发的一帧 0x11（设零反馈帧），没有就 None。"""
-        # 500 ms 通信看门狗：握手通过之后除了"等待握手"和"已经在离线里"两态，**任何状态**
+        # 3 s 通信看门狗：握手通过之后除了"等待握手"和"已经在离线里"两态，**任何状态**
         # 都算。这一条是"上位机卡住不发帧"的兜底 —— 也是"弹个确认框就把臂打出正常运行"的
         # 元凶，所以必须模拟，否则假板子会假装链路永远不断、面板上的状态就骗人。
         # **判据是全链路一份**（`s_last_rx_ms` 在按 arm_id 分派之前刷新）。

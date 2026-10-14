@@ -11,7 +11,7 @@ here.
 How it talks to the board (see protocol_doc.md / sdk/README):
 
   * **sends a 0x16 periodically** (6 joint angles + gripper angle), **which is also the
-    keepalive frame** — on the board side, no valid frame for 500 ms means
+    keepalive frame** — on the board side, no valid frame for 3 s means
     comm_lost(damping), and a dropped 0x16 still counts as a valid frame (robot_state.c's
     s_last_rx_ms is refreshed before dispatch), so sending at any time costs nothing.
   * **receives the 0x80 feedback frame** and displays mode / robot_state / joint angles /
@@ -40,7 +40,7 @@ Session flow (the board's state machine, see sdk/README "the life cycle of a ses
          (Opening the board-side gate up is the convention the user asked for; under run,
          pressing i is still silently dropped.)
     ⑥ press z to send 0x10 set-zero → calibration, then back to ③
-    ⑦ no valid frame for 500 ms → comm_lost; one more frame returns it to ②
+    ⑦ no valid frame for 3 s → comm_lost; one more frame returns it to ②
 
 **Two arms**: one board with two boards, two CAN buses and two arms, but the host has only
 **one link**. So a process = one link + two `sdk.Arm`s, and **both are being driven** (each
@@ -54,7 +54,7 @@ pair (ROBOT_LINK in robot_state.h) and is physically a single port, so two proce
 same tty would steal bytes from each other and split frames.
 
 **Safety**: by default, exiting does **not** send 0x14 (stop), it just stops sending 0x16 —
-the target freezes, the arm stays where it is, and after about 500 ms the board drops into
+the target freezes, the arm stays where it is, and after about 3 s the board drops into
 damping on its own for lack of frames. To go slack right away, press x by hand or add
 --stop-on-exit.
 

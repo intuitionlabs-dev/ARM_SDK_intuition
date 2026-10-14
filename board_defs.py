@@ -153,7 +153,7 @@ ROBOT_INIT_POSE_TOL_DEG = 20.0
 
 # 板子一个有效帧都没收到就进通信离线的时间（robot_state.h）。**隐式保活**：
 # 不是"发心跳包"才算保活，任何有效帧都算；板子自己发的 0x80 **不算**。
-KEEPALIVE_TIMEOUT_S = 0.5
+KEEPALIVE_TIMEOUT_S = 3.0
 
 # 一键复位的轨迹时长（arm_auto.h 的 ARM_AUTO_RESET_TIME_S），跑完停阻尼。仅作参考。
 ARM_AUTO_RESET_TIME_S = 2

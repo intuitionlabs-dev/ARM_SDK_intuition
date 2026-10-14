@@ -14,7 +14,7 @@
    以及**闸门矩阵**：每个命令在什么状态下该被客户端预检挡下、该发出什么 tid 和 payload、
    `force=True` 会不会真的绕过、以及"**构造完什么都不发**"（证明 SDK 不自动保心跳）。
 4. **假板子的模拟状态机**（`sdk.sim.SimLink`）—— 握手闸门（版本码不符就不回、也不发反馈）、
-   `0→1→2` 时序、`0x02/0x10/0x18` 的闸门与时序、两台互不串台、500 ms 看门狗（全链路一份）、
+   `0→1→2` 时序、`0x02/0x10/0x18` 的闸门与时序、两台互不串台、3 s 看门狗（全链路一份）、
    `--fake-lost`。
 
 第 3 类用 `LoopbackLink`（继承 `Link`、只覆盖收发那三个方法）当替身：SDK 要测的是切帧、
@@ -718,7 +718,7 @@ def test_gates(c, tmpdir):
     arm3 = make_arm(lb3, 0, tmp_calib=os.path.join(str(tmpdir), "no_calib.json"))
     c.check("构造 Arm 本身不写任何帧", lb3.writes == [])
     lb3.inject_feedback(0, robot_state=ST.STATE_NORMAL)
-    time.sleep(0.15)             # 板子的 500 ms 看门狗窗口的一小截
+    time.sleep(0.15)             # 板子的 3 s 看门狗窗口的一小截
     c.check("**空闲 150 ms 零写入**（证明 SDK 不自动发心跳）", lb3.writes == [],
             "写出了 %r" % (lb3.writes,))
     arm3.keepalive()
@@ -986,9 +986,9 @@ def test_sim(c, tmpdir):
                 "state=%s mode=%s joints=%s" % (a.robot_state_name, a.mode_name,
                                                 [round(v, 4) for v in a.joint_angles]))
 
-        # ---- 500 ms 看门狗：**全链路一份**，不发帧两台一起掉 ----
-        time.sleep(0.3)      # 不泵保活（虚拟时钟 8× ⇒ 这段抵 2.4 s）
-        c.check("不发帧超 500 ms → 两台一起进通信离线 + damping",
+        # ---- 3 s 看门狗：**全链路一份**，不发帧两台一起掉 ----
+        time.sleep(0.4)      # 不泵保活（虚拟时钟 8× ⇒ 这段抵 3.2 s）
+        c.check("不发帧超 3 s → 两台一起进通信离线 + damping",
                 a.robot_state == BD.STATE_COMM_LOST and b.robot_state == BD.STATE_COMM_LOST
                 and a.mode == BD.MODE_DAMPING and b.mode == BD.MODE_DAMPING,
                 "A=%s/%s B=%s/%s" % (a.robot_state_name, a.mode_name,
