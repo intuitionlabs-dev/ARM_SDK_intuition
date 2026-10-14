@@ -5,7 +5,7 @@ real board or a fake one.
                   tick-per-beat, key actions), `ArmView` (one piece of state per arm),
                   step presets and the unit/limit convention. **Does not import curses**
     app.py        curses front end: `Ui` (draw / keys / dialogs). Only knows `session`
-    selftest.py   console-side offline self-test (44 items, runs against a fake board)
+    selftest.py   console-side offline self-test (48 items, runs against a fake board)
     __main__.py   argparse + `main()`: `python3 -m sdk.tui [--fake] [--selftest] [--lang en]`
 
 **This package's `__init__` deliberately re-exports the backend only** (the names below)

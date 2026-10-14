@@ -34,8 +34,8 @@ import traceback
 from . import board_defs, gripper, protocol, units
 from .arm import Arm
 from .errors import (CalibrationError, FeedbackStale, GateRejected,
-                     GripperNotCalibrated, NotConnected)
-from .link import Link
+                     GripperNotCalibrated, LinkError, NotConnected)
+from .link import Link, match_ident, same_usb_ident, RECONNECT_MAX_TRIES
 from .protocol import (FB_LEN, LINK_STATUS_LEN, SET_ZERO_ACK_LEN, TID_ARM_CTRL_POS,
                        TID_ARM_CTRL_POS_VEL, TID_ARM_DAMPING, TID_ARM_FEEDBACK,
                        TID_ARM_GRAVITY, TID_ARM_INIT, TID_ARM_RESET, TID_ARM_START,
@@ -1022,8 +1022,231 @@ def test_sim(c, tmpdir):
         link.close()
 
 
+def test_reconnect(c, tmpdir):
+    """掉线自动重连：只把 `serial` 换掉，收包线程 / 退避 / 状态翻转都是真代码。"""
+    c.section("10. 掉线自动重连（假串口，不碰硬件、不需要 pyserial）")
+
+    # ---- 认口：按 USB 身份比对（纯函数）----
+    board = {"idVendor": "0483", "idProduct": "5740", "serial": "ABC"}
+    other = {"idVendor": "0483", "idProduct": "5740", "serial": "XYZ"}
+    c.check("同 VID:PID 同序列号 = 同一台设备", same_usb_ident(board, dict(board)))
+    c.check("同 VID:PID 不同序列号 = 不是同一台", not same_usb_ident(board, other))
+    c.check("设备没烧序列号时只认 VID:PID",
+            same_usb_ident(dict(board, serial=""), dict(board)))
+    c.check("VID:PID 不同就不是同一台",
+            not same_usb_ident(board, {"idVendor": "1a86", "idProduct": "5740"}))
+    c.check("match_ident 在候选里认回同一台（按路径序，可复现）",
+            match_ident(board, [("/dev/ttyACM9", other),
+                                ("/dev/ttyACM1", dict(board))]) == "/dev/ttyACM1")
+    c.check("match_ident 认不到就返回 None",
+            match_ident(board, [("/dev/ttyACM9", other)]) is None)
+    c.check("默认：自动重连开着、上限 %d 次" % RECONNECT_MAX_TRIES,
+            Link().auto_reconnect and Link().reconnect_max_tries == RECONNECT_MAX_TRIES)
+
+    port = os.path.join(tmpdir, "ttyFAKE0")
+    with open(port, "w"):
+        pass                       # 一个真实存在的文件：重连时"原路径还在"那条分支走它
+
+    # ---- 读失败 → 自己重连回来（第一次退避给足，好把"断开期间"那一小段也验掉）----
+    with _fake_serial() as ser:
+        lk = Link(port, reconnect_wait=0.3, reconnect_max_wait=0.3)
+        lk.open()
+        n_open0 = len(ser.opened)
+        c.check("open 之后 link_up 为真、open_gen=1",
+                lk.link_up and lk.is_open and lk.open_gen == 1)
+        ser.fail_reads = 1                     # 拔线：下一次 read 抛错
+        down = _wait(lambda: not lk.link_up, 1.0)
+        try:
+            lk.send(TID_VERSION, struct.pack("<I", protocol.VERSION_CODE))
+            sent_ok = True
+        except NotConnected:
+            sent_ok = False
+        c.check("断开期间：is_open 为假、send() 抛 NotConnected（脚本侧照旧）",
+                down and not sent_ok and not lk.is_open and lk.open_gen == 1)
+        c.check("重连成功：link_up 回来、open_gen+1、句柄换了一条",
+                _wait(lambda: lk.link_up and lk.open_gen == 2, 2.0)
+                and len(ser.opened) == n_open0 + 1 and ser.closed >= 1)
+        c.check("成功次数计上了、放弃标志是假", lk.n_reconnect == 1
+                and not lk.reconnect_gave_up and lk.stats["reconnect_err"] is None)
+        ser.chunks.append(protocol.encode(TID_ARM_FEEDBACK, feedback_payload(), 0))
+        c.check("重连之后的字节照常切帧、进收包槽",
+                _wait(lambda: lk.channel(0).n_feedback >= 1, 1.0))
+        thr = lk._thr
+        lk.close()
+        c.check("close() 停线程、放掉句柄", (not thr.is_alive()) and lk.ser is None)
+
+        # ---- auto_reconnect=False：退回"断了就断着" ----
+        lk2 = Link(port, auto_reconnect=False)
+        lk2.open()
+        n_open1 = len(ser.opened)
+        ser.fail_reads = 1
+        ok = _wait(lambda: not lk2.link_up, 2.0)
+        time.sleep(0.05)
+        c.check("自动重连关掉时：停在断开上、一次都不再开",
+                ok and lk2.n_reconnect == 0 and lk2.open_gen == 1
+                and len(ser.opened) == n_open1, "opened=%d" % len(ser.opened))
+        lk2.close()
+
+        # ---- 试满上限就停手 ----
+        lk3 = Link(port, reconnect_wait=0.01, reconnect_max_wait=0.02,
+                   reconnect_max_tries=3)
+        lk3.open()
+        ser.fail_reads = 1
+        ser.fail_opens = 99                    # 线一直没插回来
+        c.check("试满 3 次都没开上 → 放弃、停在断开上",
+                _wait(lambda: lk3.reconnect_gave_up, 2.0)
+                and lk3.reconnect_tries == 3 and not lk3.link_up)
+        c.check("放弃时记下了最后一次开不上的原因", bool(lk3.reconnect_err))
+        n_try = len(ser.opened)
+        time.sleep(0.15)
+        c.check("放弃之后不再偷偷重试", len(ser.opened) == n_try)
+
+        # ---- 放弃之后按 r（reopen）：照样抛 LinkError，但线程重新起起来接着试 ----
+        try:
+            lk3.reopen()
+            raised = False
+        except LinkError:
+            raised = True
+        c.check("放弃之后 reopen 仍照旧抛 LinkError", raised)
+        ser.fail_opens = 0                     # 线插回来了
+        c.check("reopen 失败之后收包线程会接着试，直到连上",
+                _wait(lambda: lk3.link_up and lk3.open_gen == 2, 2.0))
+        c.check("这一轮成功后计数/标志对上",
+                lk3.n_reconnect == 1 and not lk3.reconnect_gave_up
+                and lk3.reconnect_err is None)
+        lk3.close()
+
+        # ---- 接上的是另一段字节流：残留半帧和板级状态作废 ----
+        lk4 = Link(port, reconnect_wait=0.01, reconnect_max_wait=0.02)
+        lk4.open()
+        ser.chunks.append(protocol.encode(TID_VERSION,
+                                          struct.pack("<I", protocol.VERSION_CODE), 0))
+        c.check("重连前先收到过版本帧", _wait(lambda: lk4.board_version is not None, 1.0))
+        n_drop0 = lk4.parser.n_drop
+        ser.chunks.append(protocol.encode(TID_ARM_FEEDBACK, feedback_payload(), 0)[:5])
+        c.check("半帧先停在解析器里",
+                _wait(lambda: len(lk4.parser.buf) == 5, 1.0))
+        ser.fail_reads = 1
+        c.check("重连把残留半帧清掉、并计进 n_drop（字节去哪了要对得上）",
+                _wait(lambda: lk4.link_up and lk4.open_gen == 2, 2.0)
+                and lk4.parser.buf == b"" and lk4.parser.n_drop == n_drop0 + 5)
+        c.check("上一段流报的版本码/链路状态也作废",
+                lk4.board_version is None and lk4.link_status is None)
+        lk4.close()
+
+    # ---- 退避：第一次等 wait，之后翻倍，有封顶（自己一条假串口，免得被上面的计数串台）----
+    with _fake_serial() as s2:
+        lk5 = Link(port, reconnect_wait=0.1, reconnect_max_wait=2.0,
+                   reconnect_max_tries=3)
+        lk5.open()
+        n5 = len(s2.opened)
+        s2.fail_reads = 1
+        s2.fail_opens = 99
+        gave_up5 = _wait(lambda: lk5.reconnect_gave_up, 3.0)
+        g = _gaps(s2.opened, n5)
+        c.check("退避翻倍：两次尝试之间是 0.1 → 0.2",
+                gave_up5 and len(g) == 2 and g[0] >= 0.07 and g[1] >= g[0] * 1.4,
+                "间隔 %s" % ["%.3f" % v for v in g])
+        lk5.close()
+
+        lk6 = Link(port, reconnect_wait=0.1, reconnect_max_wait=0.12,
+                   reconnect_max_tries=3)
+        s2.fail_opens = 0
+        lk6.open()
+        s2.fail_reads = 1
+        s2.fail_opens = 99
+        t0 = time.monotonic()
+        gave_up = _wait(lambda: lk6.reconnect_gave_up, 3.0)
+        elapsed = time.monotonic() - t0
+        c.check("退避有封顶（三次共等 0.34 s，不是翻倍到底的 0.7 s）",
+                gave_up and 0.28 <= elapsed <= 0.6, "%.3f s" % elapsed)
+        lk6.close()
+
+
+def _gaps(opened, start):
+    """`opened[start:]` 里相邻两次尝试之间隔了多久（每一项是 `(path, 时刻)`）。"""
+    ts = [t for _, t in opened[start:]]
+    return [b - a for a, b in zip(ts, ts[1:])]
+
+
+def _wait(pred, timeout=1.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if pred():
+            return True
+        time.sleep(0.002)
+    return bool(pred())
+
+
+class _FakeSerialHandle:
+    """假串口句柄：读按脚本走（没数据就睡一下，别让收包线程空转），写只记账。"""
+
+    def __init__(self, ctl, port, baud, timeout):
+        self.ctl = ctl
+
+    def read(self, n):
+        with self.ctl.lock:
+            if self.ctl.fail_reads:
+                self.ctl.fail_reads -= 1
+                raise OSError("device reports readiness to read but returned no data")
+            chunk = self.ctl.chunks.pop(0) if self.ctl.chunks else b""
+        if not chunk:
+            time.sleep(0.005)          # 真句柄靠 timeout 阻塞，这里假装一下
+        return chunk
+
+    def write(self, data):
+        with self.ctl.lock:
+            self.ctl.writes.append(bytes(data))
+
+    def close(self):
+        with self.ctl.lock:
+            self.ctl.closed += 1
+
+
+class FakeSerialMod:
+    """`serial` 模块的替身：塞进 `sys.modules` 里，`Link` 的延迟 import 就拿到它。
+
+    `fail_reads` = 拔线（读抛错），`fail_opens` = 线还没插回来（开抛错），`chunks` = 从
+    串口"收到"的字节。于是收包线程、退避重连、状态翻转跑的都是真实现。
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.opened = []           # 每次**尝试**打开的时刻（含开失败的那些）
+        self.closed = 0
+        self.writes = []
+        self.chunks = []
+        self.fail_reads = 0
+        self.fail_opens = 0
+
+    def Serial(self, port, baud, timeout=0.1):
+        with self.lock:
+            self.opened.append((port, time.monotonic()))
+            if self.fail_opens:
+                self.fail_opens -= 1
+                raise OSError("no such file or directory: %s" % port)
+        return _FakeSerialHandle(self, port, baud, timeout)
+
+
+class _fake_serial:
+    """把 `serial` 换成假的，退出时还原（装了 pyserial 的机器上也不会被顶掉）。"""
+
+    def __enter__(self):
+        self.mod = FakeSerialMod()
+        self.old = sys.modules.get("serial")
+        sys.modules["serial"] = self.mod
+        return self.mod
+
+    def __exit__(self, *exc):
+        if self.old is None:
+            sys.modules.pop("serial", None)
+        else:
+            sys.modules["serial"] = self.old
+        return False
+
+
 def test_headers(c):
-    c.section("10. 固件头文件对拍（仓库在的话）")
+    c.section("11. 固件头文件对拍（仓库在的话）")
     root = repo_root()
     if root is None:
         c.skip("固件头文件对拍", "没找到仓库根（这是打包出去的副本吗？）")
@@ -1210,6 +1433,7 @@ def main(argv=None):
         test_gripper(c, tmp)
         test_gates(c, tmp)
         test_sim(c, tmp)
+        test_reconnect(c, tmp)
 
     test_headers(c)
     return c.summary()

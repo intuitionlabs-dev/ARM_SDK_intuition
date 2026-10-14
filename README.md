@@ -98,6 +98,7 @@
 - 上电后的常规路径是 `0 → 1 → 2`，**要到 `2` 才能发初始化**（闸门见第 8 节）。
 - 链路断了不要紧（拔线、串口崩也行）：**初始化跑完过的臂**停在 `4` + 阻尼，链路一回来
   补一帧 `0x12`（`start()`）就接着跑；**没跑完过的**落 `5 → 1`，回来以后按 `2` 那一步重来。
+  SDK 侧还会**自动重连**（见第 12 节），链路在背后自己接回来。
 
 ## 5. 安装
 
@@ -306,6 +307,14 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)     # 或 link.arm(0) / link.arms()
   `wait_setzero_ack()` 等序号更大的那一帧（默认 25 s，超时抛 `TimeoutError`）。
 - 读写失败后属性会停在旧值 —— 用 `link_up` / `feedback_age` / `feedback_ok` 判活，
   可以 `link.reopen()`。
+- **掉线自动重连（默认开）**：读或写一失败，链路就置成断开，RX 线程跟着**退避重开**
+  （0.5 s → 1 → 2 → 2 s…），试满 `reconnect_max_tries` 次（默认 10）还开不上就停手
+  （`reconnect_gave_up`），停在断开状态等你去查线或 `reopen()` —— 所以**一轮掉线最多
+  试 10 次，不会无限打**。断开期间 `is_open` 是假、`send()` 抛 `NotConnected`
+  （`LinkError` 的子类，`except LinkError` 照样接住）。**设备重枚举后 tty 名字会变，
+  重连按 USB 身份（VID:PID + 序列号）重新认口**，不认名字。要"断了就立刻失败"的脚本传
+  `Link(auto_reconnect=False)`；次数和退避是构造参数（`reconnect_max_tries` /
+  `reconnect_wait` / `reconnect_max_wait`，`<=0` 表示不限次）。
 
 ## 13. 注意事项
 
@@ -342,16 +351,17 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)     # 或 link.arm(0) / link.arms()
 
 ```bash
 python3 -m sdk.selftest          # 不需要硬件、不需要 pyserial
-python3 -m sdk.tui --selftest    # 再带上控制台那 44 项（同样不接硬件、不起 curses）
+python3 -m sdk.tui --selftest    # 再带上控制台那 48 项（同样不接硬件、不起 curses）
 ```
 
-178 项：CRC 参考值 + 位运算参考实现逐字节比表、整帧字节锚点、编解码往返、切帧重同步、
+204 项：CRC 参考值 + 位运算参考实现逐字节比表、整帧字节锚点、编解码往返、切帧重同步、
 按 `arm_id` 分流、单位往返、夹爪标定模型、**闸门矩阵**（逐条断言该挡的挡了、该发的发了什么）、
 **假单片机状态机**（`sdk.sim`：握手闸门、时序、两台不串台、看门狗、`--fake-lost`）、
-以及**与固件头文件对拍**（码表、限位、状态个数、档位顺序 —— 仓库在的时候才跑，
-所以 `sdk/` 被拷出去单用也不会失败）。改协议或改板侧常量之后先跑它。
+**掉线自动重连**（把 `serial` 换成假的：退避、试满上限停手、重连后残留半帧作废、
+按 USB 身份认口）、以及**与固件头文件对拍**（码表、限位、状态个数、档位顺序 ——
+仓库在的时候才跑，所以 `sdk/` 被拷出去单用也不会失败）。改协议或改板侧常量之后先跑它。
 
-`python3 -m sdk.tui --selftest` 先跑上面那 178 项，再跑**控制台后端**的 44 项：两台臂的接线
+`python3 -m sdk.tui --selftest` 先跑上面那 204 项，再跑**控制台后端**的 48 项：两台臂的接线
 （一条链路、两个 `Arm`、状态机各跑各的）、单位与软限位、步长档、闸门有没有真拦住、
 命令是不是真写出去了 —— 同样用 `sdk.sim` 的假板子跑。
 
@@ -393,7 +403,7 @@ python3 -m sdk.tui --selftest --lang en      # 英文模板真跑一遍自测
 | `gripper.py` | 夹爪两点标定：m ↔ 原始度的映射 + JSON 存取 |
 | `calibrate_gripper.py` | 交互式标定工具 |
 | `i18n.py` | 语言表（`zh`/`en`）+ `tr()` + 名字表 + 表自检。中文是默认，也是 `board_defs` 的唯一来源 |
-| `tui/` | **上机控制台**（curses 面板）：`python3 -m sdk.tui`，不接硬件用 `--fake`，英文面板用 `--lang en`。`session` = 后端/适配层、`app` = 面板、`selftest` = 控制台那 44 项 |
+| `tui/` | **上机控制台**（curses 面板）：`python3 -m sdk.tui`，不接硬件用 `--fake`，英文面板用 `--lang en`。`session` = 后端/适配层、`app` = 面板、`selftest` = 控制台那 48 项 |
 | `selftest.py` | 离线自测 |
 | `config/` | 运行期数据（`gripper_calib.json`），由工具自动创建 |
 

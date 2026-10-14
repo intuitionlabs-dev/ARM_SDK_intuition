@@ -118,8 +118,19 @@ class Ui:
 
         link = i18n.tr("app.link_line",
                        "OK" if snap["link_up"] else i18n.tr("app.link_down"))
-        if not snap["link_up"] and snap["link_err"]:
-            link += " " + snap["link_err"]
+        if not snap["link_up"]:
+            # What the link is doing about it right now (it retries on its own, and it stops
+            # once it has used up its tries -- then pressing r starts another round).
+            if snap["link_give_up"]:
+                link += i18n.tr("app.link_giveup", snap["link_retry"])
+            elif snap["link_retry"]:
+                link += i18n.tr("app.link_retry", snap["link_retry"], snap["link_retry_max"])
+            elif snap["link_auto"]:
+                link += i18n.tr("app.link_retry_on")
+            else:
+                link += i18n.tr("app.link_manual")
+            if snap["link_err"]:
+                link += " " + snap["link_err"]
         stats = i18n.tr("app.stats", snap["n_rx"], snap["n_rx_fb"], snap["rx_rate"],
                         snap["n_tx"], snap["n_drop"], snap["n_crc_err"])
         self.put(y, 0, link + stats,

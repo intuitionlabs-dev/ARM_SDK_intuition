@@ -86,6 +86,11 @@ _ZH.update({
     "session.stop_all_fail": "[%s] 退出前补发 0x14 失败：%s",
     "session.reopen_fail": "重开链路失败：%s",
     "session.reopened": "链路已重开：%s（两台的目标角会在下一帧反馈后重新对齐）",
+    "session.link_lost": "链路断了：%s（正在自动重连，试满就停手等按 r）",
+    "session.link_lost_manual": "链路断了：%s（自动重连是关的 —— 检查接线后按 r 重开）",
+    "session.relinked": "链路已自动重连：%s（两台的目标角会在下一帧反馈后重新对齐）",
+    "session.relink_giveup":
+        "自动重连已经停手：试满 %d 次都没连上（%s）。插好线按 r 再开一轮。",
     "session.fake_board": "假板子",
     "session.ctrl_tx_fail": "[%s] 控制帧发不出去：%s",
     "session.keepalive_tx_fail": "[%s] 保活帧发不出去：%s",
@@ -170,6 +175,16 @@ _EN.update({
     "session.reopen_fail": "reopening the link failed: %s",
     "session.reopened":
         "link reopened: %s (both arms re-seed their targets on the next feedback frame)",
+    "session.link_lost":
+        "link down: %s (auto-reconnecting; it stops after the retry cap, then press r)",
+    "session.link_lost_manual":
+        "link down: %s (auto-reconnect is off -- check the wiring, then press r)",
+    "session.relinked":
+        "the link came back on its own: %s (both arms re-seed their targets on the next "
+        "feedback frame)",
+    "session.relink_giveup":
+        "auto-reconnect stopped: %d tries, none of them worked (%s). Check the cable, then "
+        "press r for another round.",
     "session.fake_board": "fake board",
     "session.ctrl_tx_fail": "[%s] control frame not sent: %s",
     "session.keepalive_tx_fail": "[%s] keepalive frame not sent: %s",
@@ -253,13 +268,17 @@ _ZH.update({
     "app.fake_tag": "（--fake 假板子）",
     "app.link_line": "链路 %s",
     "app.link_down": "**断开**",
+    "app.link_retry": "（自动重连中 %d/%d）",
+    "app.link_retry_on": "（自动重连中）",
+    "app.link_giveup": "（自动重连已停：试满 %d 次，按 r 再开一轮）",
+    "app.link_manual": "（按 r 重开）",
     "app.stats": "  收%u(0x80 %u, %.0f Hz)  发%u  丢字节%u  CRC错%u",
     "app.streaming": "在发",
     "app.idle": "停发",
     "app.lost_tag": "  **掉线**",
     "app.arms_line": "两台：%s",
     "app.no_fb": "还没收到任何反馈帧……",
-    "app.link_dead": "串口断了。检查接线后按 r 重开。",
+    "app.link_dead": "串口断了：检查接线；自动重连开着的话它自己会回来，也可以按 r 立刻重开。",
     "app.hs_timeout": "握手超时（%ds 没收到一个字节）—— 按顺序查：",
     "app.hs1": "1) 接线方向：适配器 TX → 板子 RX、适配器 RX → 板子 TX、GND 共地"
                "（板子跑 UART 那条时是 RS485 半双工）；",
@@ -409,6 +428,11 @@ _ZH.update({
     "selftest.reopen_cleared": "reopen 后两台的播种都清了（等下一帧反馈）",
     "selftest.reopen_seeded": "reopen 后两台都重新握手+播种（假板子重上电 → 0→1→2）",
     "selftest.stop_two": "退出补 0x14：两台都发、都带各自的 arm_id",
+    "selftest.sec_relink": "掉线自动重连（收包线程接回来的那种）",
+    "selftest.relink_snap": "快照报的是重连状态（断开 / 试到第几次 / 停手了）",
+    "selftest.relink_seeded": "自己重连回来 → 两台重新对齐目标（和按 r 同一套复位）",
+    "selftest.relink_msg": "事件流里报了「已自动重连」",
+    "selftest.relink_giveup": "试满上限停手 → 事件流里报了「已停手」+ 原因",
     "selftest.fail": "自测**没过**：见上面 FAIL。",
     "selftest.table_bad": "语言表有问题（%d 条）：",
     "selftest.fb_counts": "0x80 帧数 臂A=%s 臂B=%s",
@@ -506,6 +530,7 @@ _ZH.update({
     "link.reject_probe_name": "拒绝打开 %s：查不到它的 USB 身份，而名字像 J-Link 的探针口。\n"
                               "  别赌（探针那条多半也在 ttyACM* 上）。\n  %s",
     "link.not_open": "链路还没 open（先 link.open() 或 arm.connect()）",
+    "link.down_reconnecting": "链路断了，正在自动重连（第 %d/%d 次）：这一帧没发出去",
     "link.open_failed": "打不开 %s：%s\n%s",
     "link.write_link_err": "写串口失败: %s",
     "link.write_failed": "写 %s 失败：%s",
@@ -585,13 +610,18 @@ _EN.update({
     "app.fake_tag": "(--fake fake board)",
     "app.link_line": "Link %s",
     "app.link_down": "**DOWN**",
+    "app.link_retry": " (auto-reconnecting %d/%d)",
+    "app.link_retry_on": " (auto-reconnecting)",
+    "app.link_giveup": " (auto-reconnect stopped after %d tries -- press r for another round)",
+    "app.link_manual": " (press r to reopen)",
     "app.stats": "  rx%u(0x80 %u, %.0f Hz)  tx%u  drop bytes%u  crc err%u",
     "app.streaming": "streaming",
     "app.idle": "idle",
     "app.lost_tag": "  **LOST**",
     "app.arms_line": "Arms: %s",
     "app.no_fb": "no feedback frame received yet...",
-    "app.link_dead": "serial link is down. check the wiring, then press r to reopen.",
+    "app.link_dead": "serial link is down: check the wiring; with auto-reconnect on it also "
+                     "comes back by itself, or press r to reopen right away.",
     "app.hs_timeout": "handshake timeout (%ds without a single byte) -- check in order:",
     "app.hs1": "1) wiring: adapter TX -> board RX, adapter RX -> board TX, common GND "
                "(RS485 half-duplex when the board runs the UART link);",
@@ -768,6 +798,14 @@ _EN.update({
     "selftest.reopen_seeded": "after reopen both arms handshake and seed again (the fake "
                               "board reboots -> 0->1->2)",
     "selftest.stop_two": "exit sends 0x14 to both arms, each with its own arm_id",
+    "selftest.sec_relink": "automatic reconnect (the RX thread bringing the link back)",
+    "selftest.relink_snap": "the snapshot reports the reconnect state (down / which try / "
+                            "gave up)",
+    "selftest.relink_seeded": "the link came back by itself -> both arms re-align their "
+                              "targets (same reset as the r key)",
+    "selftest.relink_msg": "the event log says it came back by itself",
+    "selftest.relink_giveup": "after the retry cap the event log says it stopped, with the "
+                              "reason",
     "selftest.fail": "self-test **FAILED**: see the FAIL lines above.",
     "selftest.table_bad": "language table problems (%d):",
     "selftest.fb_counts": "0x80 frames A=%s B=%s",
@@ -878,6 +916,8 @@ _EN.update({
                               "like a J-Link probe.\n"
                               "  Do not gamble (the probe is usually on ttyACM* too).\n  %s",
     "link.not_open": "link is not open yet (call link.open() or arm.connect() first)",
+    "link.down_reconnecting": "link is down and reconnecting automatically (try %d/%d): "
+                              "this frame was not sent",
     "link.open_failed": "cannot open %s: %s\n%s",
     "link.write_link_err": "serial write failed: %s",
     "link.write_failed": "write to %s failed: %s",

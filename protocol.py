@@ -433,6 +433,15 @@ class FrameParser:
             del self.buf[:total]
         return out
 
+    def reset_stream(self):
+        """接上了一条**新的**字节流（串口重开）：丢掉残留半帧，从头开始凑。
+
+        残留的那几个字节属于上一段流，接着解只会把一帧跨在两次连接中间；计进 `n_drop`
+        是为了"字节去哪了"仍然对得上。计数本身**不清零** —— 它们是累计量。
+        """
+        self.n_drop += len(self.buf)
+        self.buf.clear()
+
     @property
     def n_err(self):
         return self.n_err_crc8 + self.n_err_crc16

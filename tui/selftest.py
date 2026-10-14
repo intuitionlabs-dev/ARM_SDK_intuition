@@ -6,7 +6,7 @@ and whether commands really went out. `sdk.sim.SimLink` stands in for the board,
 **real** parsing, routing and gating are exercised. The panel itself (curses layout) is not
 tested here.
 
-Entry point: `python3 -m sdk.tui --selftest` (runs sdk's 165 items first, then these).
+Entry point: `python3 -m sdk.tui --selftest` (runs sdk's 204 items first, then these).
 """
 
 import argparse
@@ -50,7 +50,7 @@ def selftest():
     # Language-table self-check: key sets equal / every value a str / the % conversion
     # specifiers of zh and en agree / no Han characters in en.
     # **Deliberately not a c.check** — it is not a runtime criterion of the "run it once
-    # and you know" kind, and putting it in would change the "44 items" count that is
+    # and you know" kind, and putting it in would change the "48 items" count that is
     # referenced all over the place.
     probs = i18n.check_tables()
     if probs:
@@ -101,7 +101,12 @@ def selftest():
     # ---- two-arm wiring (through the real SimLink: parsing, routing and gates are real) ----
     class _RecLink(SimLink):
         """Records the tid of every frame sent out — to assert "what should have been sent
-        was sent, and nothing that should not have been sent went out at all"."""
+        was sent, and nothing that should not have been sent went out at all".
+
+        It also plays the two states the real `Link` reaches on its own (they are plain
+        attribute moves over there too — the RX thread is the one doing the retrying, and
+        the panel only reads the result).
+        """
 
         def __init__(self, *a, **kw):
             super().__init__(*a, **kw)
@@ -110,6 +115,28 @@ def selftest():
         def send(self, tid, payload=b"", arm_id=protocol.DEFAULT_ARM_ID):
             self.tids.append((tid, arm_id))
             return super().send(tid, payload, arm_id)
+
+        def simulate_reconnect(self):
+            """The RX thread reopened the port by itself after a drop (where a successful
+            `Link._reconnect` lands)."""
+            self.link_up = False
+            self.link_err = "读串口失败: 假"
+            self.open_gen += 1
+            self.n_reconnect += 1
+            self.reconnect_tries = 1
+            self.reconnect_err = None
+            self.reconnect_gave_up = False
+            self.link_up = True
+            self.link_err = None
+
+        def simulate_give_up(self, tries, err):
+            """One round of drops used up the tries and the RX thread stopped (where
+            `Link._reconnect` giving up lands)."""
+            self.link_up = False
+            self.link_err = "读串口失败: 假"
+            self.reconnect_tries = tries
+            self.reconnect_err = err
+            self.reconnect_gave_up = True
 
     c.section(i18n.tr("selftest.sec_two"))
     opts = _fake_opts()
@@ -152,6 +179,7 @@ def selftest():
         fb = snap["fb"]
         c.check(i18n.tr("selftest.snap_keys"),
                 {"fb", "fb_t", "ack", "ack_t", "board_version", "link_up", "link_err",
+                 "link_auto", "link_retry", "link_retry_max", "link_give_up",
                  "n_rx", "n_rx_fb", "rx_rate", "n_tx", "n_drop", "n_crc_err", "n_bad_arm",
                  "unknown_tids", "arm_id", "arms"} <= set(snap))
         c.check(i18n.tr("selftest.fb_keys"),
@@ -253,6 +281,29 @@ def selftest():
                 all(not v.seeded for v in sess.views.values()))
         c.check(i18n.tr("selftest.reopen_seeded"),
                 pump(6.0, lambda: all(v.seeded for v in sess.views.values())))
+
+        # ---- automatic reconnect: the panel only reads the link's state, so the two ends
+        # ---- of it are played by hand here (the retrying itself is tested in sdk's set)
+        c.section(i18n.tr("selftest.sec_relink"))
+        link.simulate_give_up(tries=10, err="打不开假口子")
+        c.check(i18n.tr("selftest.relink_snap"),
+                pump(1.0, lambda: sess.snapshot()["link_give_up"]
+                     and not sess.snapshot()["link_up"]
+                     and sess.snapshot()["link_retry"] == 10
+                     and sess.snapshot()["link_retry_max"] == 10
+                     and sess.snapshot()["link_auto"]))
+        want = i18n.tr("session.relink_giveup", 10, "打不开假口子")
+        c.check(i18n.tr("selftest.relink_giveup"),
+                pump(1.0, lambda: any(t == want for _, _, t in sess.events)),
+                i18n.tr("selftest.sent", [t for _, _, t in list(sess.events)[-3:]]))
+
+        link.simulate_reconnect()
+        c.check(i18n.tr("selftest.relink_seeded"),
+                pump(6.0, lambda: all(v.seeded for v in sess.views.values())))
+        want = i18n.tr("session.relinked", i18n.tr("session.fake_board"))
+        c.check(i18n.tr("selftest.relink_msg"),
+                any(t == want for _, _, t in sess.events),
+                i18n.tr("selftest.sent", [t for _, _, t in list(sess.events)[-3:]]))
 
         # ---- stop_all (--stop-on-exit) ----
         link.tids.clear()

@@ -231,6 +231,11 @@ class ConsoleSession:
         object.__setattr__(self, "t0", time.monotonic())
         object.__setattr__(self, "version_reported", False)
         object.__setattr__(self, "cur_arm_id", opts.arm_id)
+        # The link's three edges are watched in tick() (`_watch_link`): None = "not seen yet",
+        # so the first beat just records the current values instead of reporting them.
+        object.__setattr__(self, "_link_gen", None)
+        object.__setattr__(self, "_link_up", False)
+        object.__setattr__(self, "_link_gave_up", False)
         arms = {}
         views = {}
         for arm_id in (range(N_ARM) if arm_ids is None else arm_ids):
@@ -337,6 +342,10 @@ class ConsoleSession:
             "board_version": st["board_version"],
             "link_up": st["link_up"],
             "link_err": st["link_err"],
+            "link_auto": st["auto_reconnect"],        # will it come back on its own
+            "link_retry": st["reconnect_tries"],      # try number in this round (0 = none yet)
+            "link_retry_max": st["reconnect_max_tries"],
+            "link_give_up": st["reconnect_gave_up"],  # used up the tries, stopped
             "n_rx": st["n_rx"],                     # link level (sum of both arms)
             "n_rx_fb": arm.n_feedback,              # **this arm**'s 0x80 count
             "rx_rate": self._rate(view, now),       # this arm's 0x80 rate
@@ -591,8 +600,33 @@ class ConsoleSession:
         board".
 
         The SDK's `Link.open()` **raises `LinkError`** on failure (not SystemExit), so this
-        catches it and reports an event as usual without tearing the panel down. It also
-        re-reads the gripper calibration — that tends to be done in another process.
+        catches it and reports an event as usual without tearing the panel down. Behind the
+        scenes the link keeps retrying on its own after a failed reopen, so pressing r with
+        the cable still out just starts another round.
+
+        The re-seeding itself lives in `_on_link_back`, which the automatic reconnect also
+        goes through.
+        """
+        try:
+            self.link.reopen()
+        except ArError as e:
+            self.err(i18n.tr("session.reopen_fail", e))
+            self.dirty = True
+            return False
+        self._link_gen = getattr(self.link, "open_gen", 0)
+        self._link_up = True
+        self._link_gave_up = False
+        self._on_link_back("session.reopened")
+        return True
+
+    def _on_link_back(self, key):
+        """The per-arm reset for a link that has (re)connected — the r key and the automatic
+        reconnect both land here.
+
+        **The targets have to be re-aligned with the feedback**: the arm may have been
+        dragged while the link was down, and sending a 0x16 with the old target would yank it
+        back. The gripper calibration is re-read too (that is usually done in another
+        process).
         """
         for view in self.views.values():
             view.handshake_reported = False
@@ -600,25 +634,49 @@ class ConsoleSession:
             view.prev = None
             view.seeded = False
         self.t0 = time.monotonic()
-        try:
-            self.link.reopen()
-        except ArError as e:
-            self.err(i18n.tr("session.reopen_fail", e))
-            self.dirty = True
-            return False
         for view in self.views.values():
             try:
                 view.arm.reload_calibration()
             except ArError:
                 pass
-        self.info(i18n.tr("session.reopened", self.link.describe() if not self.opts.fake
+        self.info(i18n.tr(key, self.link.describe() if not self.opts.fake
                           else i18n.tr("session.fake_board")))
         self.dirty = True
-        return True
+
+    def _watch_link(self):
+        """The link's edges: down / came back on its own / auto-reconnect gave up.
+
+        The retrying runs in the RX thread; the panel only sees the state on `Link`, so it is
+        compared once per beat (tick runs every 2~5 ms, dense enough). A changed `open_gen`
+        means "a new link is up" — pressing r changes it too, so `reopen()` syncs the
+        baseline itself and this only reports the automatic kind.
+        """
+        link = self.link
+        gen = getattr(link, "open_gen", 0)
+        up = bool(link.link_up)
+        gave_up = bool(getattr(link, "reconnect_gave_up", False))
+        if self._link_gen is None:
+            self._link_gen, self._link_up, self._link_gave_up = gen, up, gave_up
+            return
+        if gen != self._link_gen:
+            self._link_gen = gen
+            if up:
+                self._on_link_back("session.relinked")
+        if up != self._link_up:
+            self._link_up = up
+            if not up:
+                err = link.link_err or ""
+                self.warn(i18n.tr("session.link_lost" if link.auto_reconnect
+                                 else "session.link_lost_manual", err))
+        if gave_up and not self._link_gave_up:
+            self.warn(i18n.tr("session.relink_giveup", link.reconnect_tries,
+                              link.reconnect_err or link.link_err or ""))
+        self._link_gave_up = gave_up
 
     # ---- per beat ----
 
     def tick(self, now):
+        self._watch_link()
         for arm_id in sorted(self.views):
             view = self.views[arm_id]
             sp = view.arm.snapshot()

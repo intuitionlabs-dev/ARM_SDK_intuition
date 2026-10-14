@@ -113,6 +113,7 @@ class Calibrator:
         self._last_tx = 0.0
         self._last_draw = 0.0
         self._stale_warned = False
+        self._link_gen = None        # 上一个看到的 open_gen（链路自己重连回来时提一句）
         self._buf = b""
         self._line_shown = False
         self._note_line = ""        # 显示在画面下方的一次性提示（错误、保存结果……）
@@ -241,6 +242,7 @@ class Calibrator:
 
     def _tick(self):
         now = time.monotonic()
+        self._watch_link()
         period = 1.0 / (JOG_HZ if self._jogging() else ALIVE_HZ)
         if now - self._last_tx < period:
             return
@@ -249,6 +251,16 @@ class Calibrator:
             self._send_once()
         except ArError as e:
             self._say("%s" % _first_line(e))
+
+    def _watch_link(self):
+        """链路自己重连回来时提一句 —— 这个界面没有事件流，只有画面下方那一行提示。"""
+        gen = getattr(self.arm.link, "open_gen", 0)
+        if self._link_gen is None:
+            self._link_gen = gen
+            return
+        if gen != self._link_gen:
+            self._link_gen = gen
+            self._say("链路已自动重连，接着点动就行（位置从下一帧反馈重新对齐）。")
 
     def _jogging(self):
         """这一拍该发**控制帧**了吗（否则只喂保活）。

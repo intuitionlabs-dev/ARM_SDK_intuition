@@ -78,9 +78,9 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 
 | 成员 | 说明 |
 |---|---|
-| `Link(port=None, baud=921600, *, timeout=0.1, verify_on_open=True)` | `timeout` 是串口读超时（收包线程多久醒一次）；`port=None` 时 `open()` 会调 `pick_default_port()` |
-| `open(port=None)` | 打开串口 + 起 RX 线程。**幂等**。第一次在这里 `import pyserial`；打不开或查出是 J-Link 探针口 → `LinkError` |
-| `close()` / `reopen(port=None)` | 关 / 关掉再开（拔线、适配器重枚举之后用 `reopen`） |
+| `Link(port=None, baud=921600, *, timeout=0.1, verify_on_open=True, auto_reconnect=True, reconnect_wait=0.5, reconnect_max_wait=2.0, reconnect_max_tries=10)` | `timeout` 是串口读超时（收包线程多久醒一次）；`port=None` 时 `open()` 会调 `pick_default_port()`。后面几个是**掉线自动重连**：开不开、第一次等多久、退避封顶、一轮最多试几次（`<=0` = 不限次） |
+| `open(port=None)` | 打开串口 + 起 RX 线程。**幂等**。第一次在这里 `import pyserial`；打不开或查出是 J-Link 探针口 → `LinkError`（连上之后再掉线才走自动重连） |
+| `close()` / `reopen(port=None)` | 关 / 关掉再开（拔线、适配器重枚举之后用 `reopen`）。`reopen` 开不上照样抛 `LinkError`，但会把 RX 线程重新起起来接着退避重试 |
 | `with sdk.Link() as link:` | 进 `with` 就 open，出来就 close |
 | `is_open` | 串口开着 |
 | `send(tid, payload=b"", arm_id=0)` | 组一帧发出去，返回**发出的字节数**。写有锁（多线程写会撕帧）。**返回只代表字节出去了，不代表受理** |
@@ -93,7 +93,16 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 
 **属性**：`port`、`baud`、`kind`（`"USB"` / `"RS485"` / `"FAKE"` / `None`）、`link_up`、
 `link_err`、`board_version`（单片机回的版本码）、`version_seen`、`link_status`（最近一帧 `0x81`）、
-`n_tx`、`n_rx`、`n_bad_arm`。
+`n_tx`、`n_rx`、`n_bad_arm`、`auto_reconnect`、`open_gen`（每成功 open 一次 +1）、
+`n_reconnect`（自动重连成功过的次数）、`reconnect_tries`（这一轮掉线试到第几次）、
+`reconnect_err`、`reconnect_gave_up`。
+
+**掉线自动重连**（默认开）：读/写出错就把 `link_up` 置假，RX 线程接着**退避重开**
+（`reconnect_wait` 起、逐次翻倍、封顶 `reconnect_max_wait`），试满 `reconnect_max_tries`
+次还开不上就停手（`reconnect_gave_up=True`），之后 `reopen()` 可以再开一轮。断开期间
+`is_open` 是假、`send()` 抛 `NotConnected`。设备重枚举后 tty 名字会变，所以重连**按 USB
+身份重新认口**（`_reconnect_port()` 内部用 `match_ident()`）；`auto_reconnect=False`
+就退回"断了就断着"。
 
 **`link.stats` 的键**：
 
@@ -107,6 +116,10 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 | `n_err_crc8` / `n_err_crc16` / `n_drop` | CRC 错帧数 / CRC16 错帧数 / 被跳过的字节数 |
 | `board_version` | 版本帧里的版本码；没收到过是 `None`（单片机没握手时每 100 ms 自己发一帧，所以口子通了就立刻有值） |
 | `link_status` | 最近一帧 `LinkStatus`（`0x81` 链路状态帧）。**握手之后才有**，每 100 ms 一帧；没收到过是 `None` |
+| `auto_reconnect` / `reconnect_tries` / `reconnect_max_tries` | 自动重连开不开 / 这一轮试到第几次 / 这一轮的上限 |
+| `reconnect_err` | 最近一次重连**开串口**失败的原因（一行）；没失败过是 `None` |
+| `reconnect_gave_up` | 这一轮试满上限、停手了（等 `reopen()` 再开一轮） |
+| `n_reconnect` | 自动重连成功过的次数（累计） |
 
 **`ArmChannel`**（`link.channel(arm_id)`）：`snapshot_feedback()` → `(Feedback, 时刻, 序号)`、
 `snapshot_ack()` → `(SetZeroAck, 时刻, 序号)`、`feedback_age()`、`n_feedback`、`unknown_tids`
@@ -119,7 +132,8 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 | `pick_default_port()` | 自动挑：单片机 USB(`0483:5740`) → RS485 适配器(`1a86`) → 兜底路径。**永远排除 J-Link 探针(`1366`)** |
 | `list_links()` | `[(path, kind, ident), ...]`：机器上现在的候选链路 |
 | `describe_port(path)` | 一行描述（带"这是哪种链路"） |
-| `usb_identity(path)` | 顺着 `/sys/class/tty` 往上找 `idVendor` / `idProduct` / `product` / `manufacturer`；查不到 `None` |
+| `usb_identity(path)` | 顺着 `/sys/class/tty` 往上找 `idVendor` / `idProduct` / `serial` / `product` / `manufacturer`；查不到 `None` |
+| `same_usb_ident(a, b)` / `match_ident(ident, candidates)` | 两个身份是不是同一台设备 / 在候选里认回同一台（自动重连认口用）。**纯函数** |
 
 ## 3. `Arm` —— 一台臂
 
@@ -357,14 +371,14 @@ ArError
 ## 7. 不接硬件跑
 
 ```bash
-python3 -m sdk.selftest               # 离线自测（165 项，不需要 pyserial）
+python3 -m sdk.selftest               # 离线自测（204 项，不需要 pyserial）
 python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085   # 交互式标定
 python3 -m sdk.tui --fake             # 上机控制台（curses 面板），假单片机；真机去掉 --fake
 python3 -m sdk.tui --fake --lang en   # 同上，英文面板（`--lang` 见 sdk/README「界面语言」）
 ```
 
 `sdk.tui` 就是控制台，`--fake` 等于给下面这个假单片机配了个交互界面；`--selftest` 跑 sdk
-165 项 + 控制台 44 项。**面板自己不会使能电机**（`0x16` 只在板子已经在「正常运行 + run」
+204 项 + 控制台 48 项。**面板自己不会使能电机**（`0x16` 只在板子已经在「正常运行 + run」
 时才发，那要用户自己按键）。
 
 界面语言：默认中文，`--lang en` 切英文（**同一份代码 + 一张语言表** `sdk/i18n.py`，中文路径
