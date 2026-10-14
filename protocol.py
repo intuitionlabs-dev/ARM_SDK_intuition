@@ -122,7 +122,7 @@ def parse_version_string(text):
 #
 # v0.1 → v0.2：帧头在 datalen 之后插了一字节 arm_id（payload 起点 5→6、开销 7→8）。
 # 这是**不兼容改版**，所以版本串必须跟着改 —— 一段 v0.1 的上位机拿 v0.2 的帧会整体错位，
-# 换码能让它在 0x01 上就被板子挡下来锁死，而不是拿旧布局去解析新帧。
+# 换码能让它在 0x01 上就被板子挡下来（板子不回它的版本帧），而不是拿旧布局去解析新帧。
 VERSION_STRING = "Intuition-ARX-X5-2023-v0.2"
 VERSION_CODE = fnv1a32(VERSION_STRING)
 

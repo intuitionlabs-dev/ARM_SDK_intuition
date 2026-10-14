@@ -13,7 +13,7 @@
 3. **SDK 语义** —— 单位换算往返、夹爪标定模型（含未标定抛异常）、
    以及**闸门矩阵**：每个命令在什么状态下该被客户端预检挡下、该发出什么 tid 和 payload、
    `force=True` 会不会真的绕过、以及"**构造完什么都不发**"（证明 SDK 不自动保心跳）。
-4. **假板子的模拟状态机**（`sdk.sim.SimLink`）—— 握手闸门（版本码不符就一个字节都不回）、
+4. **假板子的模拟状态机**（`sdk.sim.SimLink`）—— 握手闸门（版本码不符就不回、也不发反馈）、
    `0→1→2` 时序、`0x02/0x10/0x18` 的闸门与时序、两台互不串台、500 ms 看门狗（全链路一份）、
    `--fake-lost`。
 
@@ -869,7 +869,7 @@ def test_sim(c, tmpdir):
                 "实际 A=%d B=%d" % (a.n_feedback, b.n_feedback))
         link.send(TID_VERSION, struct.pack("<I", 0xDEADBEEF), 0)
         time.sleep(0.3)
-        c.check("版本码不符 → 静默锁死、一个字节都不回",
+        c.check("版本码不符 → 不回这一帧、也不发反馈（下一项发对版本码就握手）",
                 a.n_feedback == 0 and link.board_version is None,
                 "实际 A=%d 板子版本 %r" % (a.n_feedback, link.board_version))
 

@@ -104,7 +104,7 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 | `n_rx` | 收到的**整链路段**帧数（两台臂之和） |
 | `n_bad_arm` | `arm_id` 越界、被丢掉的帧数（单片机的口径也是丢） |
 | `n_err_crc8` / `n_err_crc16` / `n_drop` | CRC 错帧数 / CRC16 错帧数 / 被跳过的字节数 |
-| `board_version` | 版本帧里的版本码；没收到过是 `None`（对不上 → 单片机锁死，只能复位） |
+| `board_version` | 版本帧里的版本码；没收到过是 `None`（单片机没握手时每 100 ms 自己发一帧，所以口子通了就立刻有值） |
 
 **`ArmChannel`**（`link.channel(arm_id)`）：`snapshot_feedback()` → `(Feedback, 时刻, 序号)`、
 `snapshot_ack()` → `(SetZeroAck, 时刻, 序号)`、`feedback_age()`、`n_feedback`、`unknown_tids`
@@ -314,7 +314,7 @@ ArError
 
 | 名字 | 说明 |
 |---|---|
-| `VERSION_STRING` = `"Intuition-ARX-X5-2023-v0.2"` / `VERSION_CODE` = `0xF91DD3C9` | 握手用；对不上单片机一个字节都不回 |
+| `VERSION_STRING` = `"Intuition-ARX-X5-2023-v0.2"` / `VERSION_CODE` = `0xF91DD3C9` | 握手用；对不上单片机不回你的版本帧（它自己每 100 ms 报一次码） |
 | `DEFAULT_ARM_ID` = 0 | |
 | `TID_VERSION`(0x01) `TID_ARM_INIT`(0x02) `TID_MOTOR_SET_ZERO`(0x10) `TID_MOTOR_SET_ZERO_ACK`(0x11) `TID_ARM_START`(0x12) `TID_ARM_GRAVITY`(0x13) `TID_ARM_STOP`(0x14) `TID_ARM_DAMPING`(0x15) `TID_ARM_CTRL_POS`(0x16) `TID_ARM_CTRL_POS_VEL`(0x17) `TID_ARM_RESET`(0x18) `TID_ARM_FEEDBACK`(0x80) | 码表 |
 | `FEEDBACK` / `SET_ZERO_ACK` 等长度常量 | `FB_LEN`=63、`CTRL_POS_LEN`=28、`CTRL_POS_VEL_LEN`=52、`SET_ZERO_ACK_LEN`=12 |

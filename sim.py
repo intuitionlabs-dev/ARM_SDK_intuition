@@ -12,7 +12,7 @@
 板子的口径建模 —— `s_last_rx_ms` 是**全链路一份**（收到给臂 A 的帧也把臂 B 喂了），所以
 只指挥一台的时候，另一台不会凭空掉进通信离线。
 
-**握手也是照抄的**：版本码对不上就一个字节都不回、也不发反馈（真板子就是这样）。所以
+**握手也是照抄的**：版本码对不上就不回那一帧、也不发反馈（真板子就是这样）。所以
 "面板上一直没反馈"这个现象在 `--fake` 下同样能复现出来，前提是上位机发的 0x01 版本码
 确实对不上。
 
@@ -161,7 +161,10 @@ class SimLink(Link):
                     board.version_ok = True
                     reply = protocol.encode(protocol.TID_VERSION,
                                             protocol.encode_version(), arm_id)
-                # 版本码不符：板子**一个字节都不回**，而且之后什么都不发（要复位板子）
+                # 版本码不符：板子**不回这一帧**，状态一动不动；之后发对版本码就能握手。
+                # 假板子**不模拟**真板子那"没握手时每 100 ms 自己发一帧 0x01"的行为：
+                # 下游没有一处按它判事（面板的握手播报走的是第一帧反馈），加了只会让
+                # 自测里的"握手前收到几个字节"这类断言跟着动。
             elif tid == protocol.TID_ARM_INIT and (
                     board.state == board_defs.STATE_WAIT_INIT
                     or (board.state == board_defs.STATE_NORMAL

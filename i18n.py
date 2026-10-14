@@ -90,12 +90,13 @@ _ZH.update({
     "session.ctrl_tx_fail": "[%s] 控制帧发不出去：%s",
     "session.keepalive_tx_fail": "[%s] 保活帧发不出去：%s",
     "session.hs_fb_only":
-        "已收到反馈帧（版本回复还没到 —— 板子被版本码锁死时就是一个字节都不回，"
-        "本机版本码 0x%08X 可对照）",
+        "已收到反馈帧，但一帧版本包都没看到（板子握手前每 100 ms 自己发一帧版本包，"
+        "多半是那几帧丢了；本机版本码 0x%08X 可对照）",
     "session.hs_ok": "已握手：板子版本码 0x%08X 相符（%s）",
     "session.hs_bad":
-        "版本码不符：板子 0x%08X / 本机 0x%08X —— 板子会静默丢弃一切，"
-        "只能复位板子，或把两边版本串改回一致",
+        "版本码不符：板子 0x%08X / 本机 0x%08X —— 板子不回你的版本帧"
+        "（它自己每 100 ms 报一次版本码）；把两边版本串改一致后重发就能握手，"
+        "不用复位板子",
     "session.why.first_fb": "首帧反馈",
     "session.grip_uncal":
         "[%s] 夹爪没标定：面板上那一行显原始角，想要米就在终端跑 "
@@ -173,13 +174,14 @@ _EN.update({
     "session.ctrl_tx_fail": "[%s] control frame not sent: %s",
     "session.keepalive_tx_fail": "[%s] keepalive frame not sent: %s",
     "session.hs_fb_only":
-        "feedback frame received (version reply not in yet -- with a mismatched "
-        "version code the board answers nothing at all; local version code 0x%08X "
-        "to compare)",
+        "feedback frame received, but not a single version packet (before handshake "
+        "the board sends one by itself every 100 ms -- those frames were probably "
+        "lost; local version code 0x%08X to compare)",
     "session.hs_ok": "handshake done: board version code 0x%08X matches (%s)",
     "session.hs_bad":
-        "version code mismatch: board 0x%08X / local 0x%08X -- the board silently "
-        "drops everything; reset the board, or make the version strings match again",
+        "version code mismatch: board 0x%08X / local 0x%08X -- the board does not "
+        "answer your version frame (it announces its own code every 100 ms); make "
+        "the two version strings match and send again -- no board reset needed",
     "session.why.first_fb": "first feedback frame",
     "session.grip_uncal":
         "[%s] gripper not calibrated: that panel row shows the raw angle; for "
@@ -262,7 +264,9 @@ _ZH.update({
     "app.hs1": "1) 接线方向：适配器 TX → 板子 RX、适配器 RX → 板子 TX、GND 共地"
                "（板子跑 UART 那条时是 RS485 半双工）；",
     "app.hs2": "2) 波特率 921600；3) 板子上跑的是不是这份固件（比对版本码 0x%08X / 版本串 %s）；",
-    "app.hs3": "4) 版本码不符时板子**静默不回包**，只能复位板子重来；",
+    "app.hs3": "4) 版本码不符时板子不回你的版本帧，但它**自己每 100 ms 发一帧**"
+               "（对不上事件区会报「版本码不符」）；把版本串改对再发就能握手，"
+               "不用复位板子；",
     "app.hs4": "5) 板子的 ROBOT_LINK 是编译期二选一（UART/USB），和插的那个口子要对得上；",
     "app.hs5": "6) 这两条查完还没字节，看下面事件里「版本码不符」那一条。",
     "app.lost_prefix": "  掉线: ",
@@ -427,10 +431,10 @@ _ZH.update({
         "现在没有含义。先做一次初始化（0x02，里面带夹爪找零）再标。",
     "arm.no_feedback_yet": "  （现在一帧反馈都没收到，先 connect()）",
     "arm.arm_id_range": "arm_id 只能是 0..%d（板上 ARM_NUM=%d），收到 %r",
-    "arm.no_version": "(没收到 —— 板子连版本包都没回)",
+    "arm.no_version": "(没收到 —— 板子一个字节都没发)",
     "arm.ver_ok": "0x%08X（和 SDK 一致）",
-    "arm.ver_mismatch": "0x%08X  ← **和 SDK 的 0x%08X 不一致，板子会锁死不再回任何帧，"
-                        "要复位板子**",
+    "arm.ver_mismatch": "0x%08X  ← **和 SDK 的 0x%08X 不一致，板子不会握手**"
+                        "（左边这个码就是它自己每 100 ms 报上来的）",
     "arm.connect_timeout": "%.1fs 内没等到 %s 的反馈帧。",
     "arm.connect_port": "  口子：%s",
     "arm.no_port": "(没挑到口子)",
@@ -439,8 +443,8 @@ _ZH.update({
     "arm.connect_rx": "  收到 %d 帧（CRC8 错 %d、CRC16 错 %d、丢弃字节 %d）",
     "arm.connect_board_ver": "  板子回的版本码：%s",
     "arm.connect_zero_bytes": "  一个字节都没收到：口子挑错 / 线没插 / 板子跑的是另一条链路。",
-    "arm.bytes_no_version": "  收到了字节但没有版本包：版本码很可能对不上（板子锁死），"
-                            "或者收到的是噪声。",
+    "arm.bytes_no_version": "  收到了字节但没有版本包：多半是噪声（板子没握手时"
+                            "每 100 ms 会自己发一帧版本包）。",
     "arm.joint_angle": "关节角(rad)",
     "arm.joint_vel": "关节角速度(rad/s)",
     "arm.gate_init_state": "总模式不对：现在 %s / %s。要能在「%s」，或「%s」+ mode 是 "
@@ -593,8 +597,10 @@ _EN.update({
                "(RS485 half-duplex when the board runs the UART link);",
     "app.hs2": "2) baud 921600; 3) is the board running this firmware (compare version "
                "code 0x%08X / version string %s);",
-    "app.hs3": "4) on a version-code mismatch the board **answers nothing at all** -- "
-               "reset the board and start over;",
+    "app.hs3": "4) on a version-code mismatch the board does not answer your version "
+               "frame, but it **sends one by itself every 100 ms** (a mismatch is "
+               "reported in the event area); fix the version string and send again -- "
+               "no board reset needed;",
     "app.hs4": "5) the board's ROBOT_LINK is a compile-time either/or (UART/USB) and "
                "must match the port you plugged in;",
     "app.hs5": "6) still no bytes after all that: look for the \"version code mismatch\" "
@@ -780,10 +786,10 @@ _EN.update({
         "includes gripper homing) before calibrating.",
     "arm.no_feedback_yet": "  (no feedback frame at all yet -- call connect() first)",
     "arm.arm_id_range": "arm_id must be 0..%d (ARM_NUM=%d on the board), got %r",
-    "arm.no_version": "(none -- the board did not even answer the version packet)",
+    "arm.no_version": "(none -- the board sent not a single byte)",
     "arm.ver_ok": "0x%08X (matches the SDK)",
-    "arm.ver_mismatch": "0x%08X  <- **does not match the SDK's 0x%08X: the board locks up "
-                        "and answers nothing, reset the board**",
+    "arm.ver_mismatch": "0x%08X  <- **does not match the SDK's 0x%08X: the board will not "
+                        "handshake** (the code on the left is what it reports every 100 ms)",
     "arm.connect_timeout": "%.1fs without a feedback frame from %s.",
     "arm.connect_port": "  port: %s",
     "arm.no_port": "(no port picked)",
@@ -793,8 +799,8 @@ _EN.update({
     "arm.connect_board_ver": "  version code from the board: %s",
     "arm.connect_zero_bytes": "  not a single byte: wrong port / cable not plugged in / "
                               "the board runs the other link.",
-    "arm.bytes_no_version": "  bytes arrived but no version packet: the version code very "
-                            "likely does not match (board locked up), or what came in is noise.",
+    "arm.bytes_no_version": "  bytes arrived but no version packet: most likely noise "
+                            "(before handshake the board sends one by itself every 100 ms).",
     "arm.joint_angle": "joint angles (rad)",
     "arm.joint_vel": "joint velocities (rad/s)",
     "arm.gate_init_state": "wrong overall state: now %s / %s. Allowed in \"%s\", or in "
