@@ -14,7 +14,7 @@
    以及**闸门矩阵**：每个命令在什么状态下该被客户端预检挡下、该发出什么 tid 和 payload、
    `force=True` 会不会真的绕过、以及"**构造完什么都不发**"（证明 SDK 不自动保心跳）。
 4. **假板子的模拟状态机**（`sdk.sim.SimLink`）—— 握手闸门（版本码不符就不回、也不发反馈）、
-   `0→1→2` 时序、`0x02/0x10/0x18` 的闸门与时序、两台互不串台、3 s 看门狗（全链路一份）、
+   `0→1→2` 时序、`0x02/0x10/0x18` 的闸门与时序、两台互不串台、3 s 看门狗（**每台一份**）、
    `--fake-lost`。
 
 第 3 类用 `LoopbackLink`（继承 `Link`、只覆盖收发那三个方法）当替身：SDK 要测的是切帧、
@@ -174,7 +174,7 @@ def test_crc(c):
             "实际 0x%02X" % protocol.crc8(b"123456789"))
     c.check("crc16(\"123456789\") == 0x6F91", protocol.crc16(b"123456789") == 0x6F91,
             "实际 0x%04X" % protocol.crc16(b"123456789"))
-    c.check("版本码 == 0xF91DD3C9", protocol.VERSION_CODE == 0xF91DD3C9,
+    c.check("版本码 == 0xF81DD236", protocol.VERSION_CODE == 0xF81DD236,
             "实际 0x%08X（版本串 %s）" % (protocol.VERSION_CODE, protocol.VERSION_STRING))
 
 
@@ -184,10 +184,10 @@ def test_anchors(c):
     c.section("2. 整帧逐字节锚点（板上 FrameEncode 的真实输出）")
     cases = [
         ("版本帧 arm_id=0", protocol.encode(TID_VERSION, protocol.encode_version(), 0),
-         "aa550104008ec9d31df91e20"),
+         "aa550104008e36d21df899ae"),
         ("版本帧 arm_id=1（只差 arm_id 和两个 CRC）",
          protocol.encode(TID_VERSION, protocol.encode_version(), 1),
-         "aa55010401d0c9d31df9ef30"),
+         "aa55010401d036d21df868be"),
         ("0x02 空包", protocol.encode(TID_ARM_INIT), "aa5502000051f088"),
         ("0x18 空包", protocol.encode(TID_ARM_RESET), "aa5518000071fdb6"),
     ]
@@ -986,7 +986,7 @@ def test_sim(c, tmpdir):
                 "state=%s mode=%s joints=%s" % (a.robot_state_name, a.mode_name,
                                                 [round(v, 4) for v in a.joint_angles]))
 
-        # ---- 3 s 看门狗：**全链路一份**，不发帧两台一起掉 ----
+        # ---- 3 s 看门狗：**每台各一份**，两台都没喂 → 各自超时 ----
         time.sleep(0.4)      # 不泵保活（虚拟时钟 8× ⇒ 这段抵 3.2 s）
         c.check("不发帧超 3 s → 两台一起切 damping，总模式按初始化跑完没有各落各的",
                 a.robot_state == BD.STATE_NORMAL and a.mode == BD.MODE_DAMPING
@@ -997,6 +997,16 @@ def test_sim(c, tmpdir):
         c.check("链路回来：初始化跑完过的留在正常运行(damping)，没跑完的走 离线等待→待初始化",
                 ok and a.robot_state == BD.STATE_NORMAL and a.mode == BD.MODE_DAMPING,
                 "A=%s/%s B=%s" % (a.robot_state_name, a.mode_name, b.robot_state_name))
+
+        # ---- 每台一份：只喂 A、把 B 晾着 → 只有 B 超时 ----
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 0.4:      # 只泵 A（虚拟时钟 8× ⇒ 抵 3.2 s）
+            a.keepalive()
+            time.sleep(0.005)
+        c.check("只喂一台 → 没喂的那台自己超时进通信离线，被喂的那台不受影响",
+                a.robot_state == BD.STATE_NORMAL
+                and b.robot_state == BD.STATE_COMM_LOST,
+                "A=%s B=%s" % (a.robot_state_name, b.robot_state_name))
     finally:
         link.close()
 

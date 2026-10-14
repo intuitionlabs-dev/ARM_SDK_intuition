@@ -6,7 +6,7 @@ and whether commands really went out. `sdk.sim.SimLink` stands in for the board,
 **real** parsing, routing and gating are exercised. The panel itself (curses layout) is not
 tested here.
 
-Entry point: `python3 -m sdk.tui --selftest` (runs sdk's 204 items first, then these).
+Entry point: `python3 -m sdk.tui --selftest` (runs sdk's 205 items first, then these).
 """
 
 import argparse

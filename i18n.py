@@ -11,7 +11,7 @@ Two tables, identical key sets, keyed `<module>.<name>`:
 Name tables (state / mode / axis / arm labels) live here too, because `sdk/arm.py` and
 `sdk/link.py` put them inside exception messages. The `zh` branches delegate straight to
 `board_defs`, so there is exactly one Chinese source of truth; only the English side is a
-second table here. `board_defs` itself is deliberately untouched -- `ArmSnapshot.mode_name`
+second table here. `board_defs` itself is deliberately untouched -- `Snapshot.mode_name`
 and friends are public API and must keep returning Chinese.
 
 A missing key never raises at runtime: `tr()` falls back to the Chinese entry (and to a
@@ -442,7 +442,7 @@ _ZH.update({
 # ---- sdk/arm.py: gate rejections / send_* errors / handshake diagnostics (printed
 # ---- straight into the panel's event area) ----
 #
-# Note: the **public fields** `ArmSnapshot.robot_state_name` / `mode_name` / `lost_names`
+# Note: the **public fields** `Snapshot.robot_state_name` / `mode_name` / `lost_names`
 # / `inited_names` still go through board_defs and are still Chinese (see the class
 # docstring), so arm.py's `Arm.*_name` properties are unchanged too; only the rendering
 # **inside messages** goes through i18n, computed on the spot from the numeric codes.

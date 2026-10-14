@@ -9,8 +9,8 @@
 所以"假板子上好好的、真板子上坏了"这类差别只剩固件本身，模拟这边不会各抄一套。
 
 **两台臂都在**：一块板子两块板卡、两条 CAN 总线 = 两台臂，每台一份 `_Board`。看门狗按
-板子的口径建模 —— `s_last_rx_ms` 是**全链路一份**（收到给臂 A 的帧也把臂 B 喂了），所以
-只指挥一台的时候，另一台不会凭空掉进通信离线。
+板子的口径建模 —— **每台各一份**（板子上是 `arm->last_rx_ms`，按帧头 `arm_id` 刷），
+所以只给一台喂帧的时候，另一台会（正确地）掉进通信离线。
 
 **握手也是照抄的**：版本码对不上就不回那一帧、也不发反馈（真板子就是这样）。所以
 "面板上一直没反馈"这个现象在 `--fake` 下同样能复现出来，前提是上位机发的 0x01 版本码
@@ -64,6 +64,7 @@ class _Board:
         self.init_end = None
         self.calib_end = None
         self.reset_end = None
+        self.last_rx_t = 0.0           # 上一帧收到的时刻（**每台一份**）；0 = 还没收到过
 
     def feedback_payload(self):
         return protocol.encode_feedback(self.mode, self.state, self.lost, self.inited,
@@ -105,7 +106,6 @@ class SimLink(Link):
         self._alive = False
         self._thr = None
         self._t = 0.0                  # 假板子的时钟（虚拟，只往前走）
-        self._last_rx_t = 0.0          # 上一帧收到的时刻；0 = 还没收到过
         self._last_ls_t = -1.0         # 上一帧 0x81 的时刻；< 0 = 还没起窗口
         self._rx_by_tid = {}           # tid -> 这一窗口收到的帧数（0x81 就是报它）
 
@@ -119,7 +119,6 @@ class SimLink(Link):
         self.link_up = True
         self.link_err = None
         self._t = 0.0
-        self._last_rx_t = 0.0
         self.boards = {a: _Board(a) for a in self.arm_ids}   # 重开 = 板子重新上电
         self._thr = threading.Thread(target=self._gen, name="sdk-sim", daemon=True)
         self._thr.start()
@@ -153,9 +152,10 @@ class SimLink(Link):
         with self._lock:
             self.n_tx += 1
             self._rx_by_tid[tid] = self._rx_by_tid.get(tid, 0) + 1
-            # 收到**任意**有效帧都算"上位机还在说话"。注意落点是**离线等待**、不是原状态：
-            # 板子会重新走一遍"电机全在线 → 待初始化"。
-            self._last_rx_t = self._t
+            # 收到**任意**有效帧都算"上位机还在说话"，而且**只喂这一台**（板子按 arm_id 刷
+            # 各自那份）。注意落点是**离线等待**、不是原状态：板子会重新走一遍"电机全在线
+            # → 待初始化"。
+            board.last_rx_t = self._t
             if board.state == board_defs.STATE_COMM_LOST:
                 board.state = board_defs.STATE_OFFLINE_WAIT
                 board.wait_end = self._t + OFFLINE_WAIT_S
@@ -262,10 +262,10 @@ class SimLink(Link):
         # 3 s 通信看门狗：握手通过之后除了"等待握手"和"已经在离线里"两态，**任何状态**
         # 都算。这一条是"上位机卡住不发帧"的兜底 —— 也是"弹个确认框就把臂打出正常运行"的
         # 元凶，所以必须模拟，否则假板子会假装链路永远不断、面板上的状态就骗人。
-        # **判据是全链路一份**（`s_last_rx_ms` 在按 arm_id 分派之前刷新）。
-        if self._last_rx_t > 0.0 and board.state not in (
+        # **每台各一份**（板子上是 `arm->last_rx_ms`，按 arm_id 刷）。
+        if board.last_rx_t > 0.0 and board.state not in (
                 board_defs.STATE_WAIT_HANDSHAKE, board_defs.STATE_COMM_LOST) \
-                and t - self._last_rx_t > COMM_TIMEOUT_S:
+                and t - board.last_rx_t > COMM_TIMEOUT_S:
             # 落点看初始化跑完了没有：正常运行（跑完过）**留在原地**，上位机补一帧 0x12
             # 就接着跑；其余状态退到"通信离线"，收到帧后走 离线等待 → 待初始化。
             if board.state != board_defs.STATE_NORMAL:
