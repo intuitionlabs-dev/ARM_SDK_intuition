@@ -13,6 +13,43 @@
 - **做闸门判断用的反馈超过 100 ms 就不再使用**（`arm.FEEDBACK_STALE_S`）→ 抛 `FeedbackStale`。
   读属性不抛异常，读不到就是 `None`。
 
+## 控制后端
+
+`sdk.Arm` 接收外部链路对象。
+单位、反馈读取和控制方法由 `sdk.Arm` 提供。
+
+| 后端 | 创建方式 | 连接要求 |
+| --- | --- | --- |
+| H7 串口 | `sdk.Link(...)` | 板载 USB 或 RS485 串口 |
+| PC 本地 | `LocalLink(motor_io, configurations=...)` | 每臂一条 USB-CAN 通道 |
+
+PC 本地后端导入方式：
+
+```python
+from arx_x5_control import ArmConfig, CANChannel, ProcessCANMotorIO
+from arx_x5_control.sdk_adapter import LocalLink
+```
+
+`LocalLink` 由 `arx-x5-control` 发行包提供。
+构造参数和异常说明见 [本地后端文档](../arx_x5_control/SDK_LOCAL.md)。
+双臂完整代码见 [双臂实机例程](../arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
+
+| 本地调用 | 含义 |
+| --- | --- |
+| `LocalLink(motor_io, configurations=[ArmConfig(), ArmConfig()])` | 创建双臂控制核心 |
+| `sdk.Arm(0, link)` / `sdk.Arm(1, link)` | 创建对应 CAN 通道的臂对象 |
+| `link.check_health()` | 检查控制线程和链路故障 |
+| `link.drain_events()` | 取走控制事件 |
+| `link.close()` | 停止控制线程并交付停机请求 |
+
+`LocalLink` 的输入命令队列每臂容量为 7。
+队列满时抛出 `sdk.LinkError`。
+本地命令拒绝结果可通过控制事件读取。
+`force=True` 只跳过 SDK 预检。
+控制核心仍检查命令执行条件。
+串口自动重连参数适用于 `sdk.Link`。
+本地后端的生命周期由应用程序管理。
+
 ## 1. 顶层入口
 
 `import sdk` 导出的名字（**不 import pyserial**）：
@@ -67,6 +104,9 @@ while True:
   控制帧会抛 `GateRejected`，因为预检使用的就是那帧旧反馈。等 `mode` 变过来再发。
 
 ## 2. `Link` —— 一条链路
+
+本节描述 `sdk.Link` 串口后端。
+PC 本地后端使用上文的 `LocalLink`。
 
 一条链路承载**所有**臂的帧（靠帧头 `arm_id` 分），因此两台臂必须**共享一个 `Link`**；
 两个进程争用同一个串口会导致字节流交错。
