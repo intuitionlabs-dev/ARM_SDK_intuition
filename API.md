@@ -31,8 +31,8 @@ from arx_x5_control.sdk_adapter import LocalLink
 ```
 
 `LocalLink` 由 `arx-x5-control` 发行包提供。
-构造参数和异常说明见 [本地后端文档](../arx_x5_control/SDK_LOCAL.md)。
-双臂完整代码见 [双臂实机例程](../arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
+构造参数和异常说明见 [本地后端文档](arx_x5_control/SDK_LOCAL.md)。
+双臂完整代码见 [双臂实机例程](arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
 
 | 本地调用 | 含义 |
 | --- | --- |

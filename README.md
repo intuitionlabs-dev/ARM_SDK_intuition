@@ -15,10 +15,10 @@ SDK 提供 `sdk.Arm` 机械臂控制接口。
 使用 PC 本地后端时，安装 `arx-x5-control`。
 安装包包含 SDK、控制核心和 `arx_x5_control.usb2can`。
 
-双臂实机接入见 [完整例程](../arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
+双臂实机接入见 [完整例程](arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
 例程包含初始化、保活、运动、复位及退出。
-设备配置见 [CAN 接口](../arx_x5_control/CAN_IO.md)。
-传输扩展见 [USB-CAN 接口](../arx_x5_control/usb2can/README.md)。
+设备配置见 [CAN 接口](arx_x5_control/CAN_IO.md)。
+传输扩展见 [USB-CAN 接口](arx_x5_control/usb2can/README.md)。
 
 第 1 节说明两种后端的硬件配置。
 第 3、10、12 节描述 H7 串口协议和收发。
@@ -52,7 +52,6 @@ PC 通过一条链路发送双臂目标并接收反馈。
 | `ROBOT_LINK_USB` | PC USB 口连接 H7 板载 USB CDC 口 |
 | `ROBOT_LINK_UART` | PC USB 转 RS485 适配器连接 H7 的 USART3 RS485 端子 |
 
-固件配置见 `App/inc/robot_state.h`。
 接线须与设备运行的固件配置一致。
 H7 将 `arm_id=0` 映射到 CAN1。
 H7 将 `arm_id=1` 映射到 CAN2。
@@ -78,7 +77,7 @@ USB-CAN 适配器负责 CAN 帧收发。
 
 支持的设备接口包括 SocketCAN 和 SLCAN。
 通道打开时，传输后端自动配置通信参数。
-设备驱动、权限和配置见 [CAN 接口](../arx_x5_control/CAN_IO.md)。
+设备驱动、权限和配置见 [CAN 接口](arx_x5_control/CAN_IO.md)。
 
 ### 电机与总线
 
@@ -176,10 +175,9 @@ PC 本地后端在 `ControlSystem` 中执行状态机。
 ### 完整控制包
 
 Python 版本须为 3.10 或更高。
-在控制工程根目录执行：
+在 SDK 仓库根目录执行：
 
 ```bash
-git submodule update --init --recursive sdk
 python3 -m pip install '.[can]'
 ```
 
@@ -191,19 +189,19 @@ SocketCAN 使用 Python 标准库收发。
 ### H7 串口依赖
 
 SDK 源码支持 Python 3.8 或更高。
-使用 H7 串口后端时，在工程根目录执行：
+使用 H7 串口后端时，在 SDK 仓库根目录执行：
 
 ```bash
-python3 -m pip install -r sdk/requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 SDK 在打开串口时加载 pySerial。
-源码运行时，工程根目录须在 Python 导入路径中。
+源码开发使用 `python3 -m pip install -e '.[can]'`。
 
 ## 6. 快速开始
 
 本节使用 H7 串口后端。
-USB-CAN 双臂控制见 [实机例程](../arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
+USB-CAN 双臂控制见 [实机例程](arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
 
 ```python
 import sdk, time
@@ -441,7 +439,7 @@ if __name__ == "__main__":
 
 通道打开时自动配置为 1 Mbps。
 SocketCAN 驱动须创建接口，运行用户须有配置权限。
-初始化和运动步骤见 [双臂完整例程](../arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
+初始化和运动步骤见 [双臂完整例程](arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
 
 `LocalLink` 在后台执行控制核心。
 `ProcessCANMotorIO` 在独立进程中执行 CAN 收发。
@@ -458,7 +456,7 @@ SocketCAN 驱动须创建接口，运行用户须有配置权限。
 先退出 `LocalLink`，再退出 `ProcessCANMotorIO`。
 关闭链路时，控制核心交付双臂停机请求。
 `Arm.close()` 保留外部传入的共享链路。
-`LocalLink` 的故障处理和重开要求见 [SDK 本地后端](../arx_x5_control/SDK_LOCAL.md#调度退出和故障)。
+`LocalLink` 的故障处理和重开要求见 [SDK 本地后端](arx_x5_control/SDK_LOCAL.md#调度退出和故障)。
 
 ## 12. 线程与反馈帧
 
@@ -494,7 +492,7 @@ PC 本地后端的线程和故障处理见第 11 节。
    使用 H7 上位机控制前，关闭遥控器。
 3. **通过 `Arm` 提交机械臂命令。** `Arm` 提供参数换算和预检。
    H7 自定义帧可以使用 `send_raw()`。
-   本地后端支持的命令见 [方法映射](../arx_x5_control/SDK_LOCAL.md#sdk-方法映射)。
+   本地后端支持的命令见 [方法映射](arx_x5_control/SDK_LOCAL.md#sdk-方法映射)。
 4. **双臂分别保活。** 每台臂的有效命令间隔须小于 3 s。
    周期控制命令和 `keepalive()` 都构成保活。
    已初始化的臂超时后进入阻尼模式。
@@ -514,7 +512,7 @@ PC 本地后端的线程和故障处理见第 11 节。
     温度值为 0 时，结合在线状态判断数据是否有效。
 11. **按后端检查通信。** SDK 保存 H7 反馈的主机到达时间。
     应用通过 `feedback_age` 判断时效。
-    本地后端的 CAN、控制周期和日志指标见 [运行日志](../arx_x5_control/LOGGING.md)。
+    本地后端的 CAN、控制周期和日志指标见 [运行日志](arx_x5_control/LOGGING.md)。
 12. **按后端选择设备。** H7 串口由 `sdk.Link` 选择。
     `list_links()` 列出候选串口，USB CDC 身份为 `0483:5740`。
     PC 本地后端通过 `CANChannel` 指定设备路径或 SocketCAN 接口名。
@@ -562,6 +560,16 @@ python3 -m sdk.tui --selftest --lang en      # 英文模板实际执行一次自
 
 ## 15. 文件清单
 
+| 文档入口 | 内容 |
+| --- | --- |
+| [PC 控制包](arx_x5_control/README.md) | 安装、运行和模块索引 |
+| [双臂实机接入](arx_x5_control/SDK_LOCAL.md#双臂实机接入例程) | 双通道、初始化、运动和退出 |
+| [CAN 接口](arx_x5_control/CAN_IO.md) | 通道配置和电机收发 |
+| [USB-CAN 传输](arx_x5_control/usb2can/README.md) | 后端接口和 JSON 配置 |
+| [动力学来源与许可证](arx_x5_control/gravity_compensation/PROVENANCE.md) | Python 动力学实现和 URDF 模型 |
+| [运行日志](arx_x5_control/LOGGING.md) | TUI 日志和性能指标 |
+
+
 | 文件 | 职责 |
 |---|---|
 | [`README.md`](README.md) | **本文**：会话流程、状态机、闸门、注意事项 —— 先看它 |
@@ -579,6 +587,8 @@ python3 -m sdk.tui --selftest --lang en      # 英文模板实际执行一次自
 | `i18n.py` | 语言表（`zh`/`en`）+ `tr()` + 名字表 + 表自检。中文是默认，也是 `board_defs` 的唯一来源 |
 | `tui/` | **上机控制台**（curses 面板）：`python3 -m sdk.tui`，不接硬件用 `--fake`，英文面板用 `--lang en`。`session` = 后端/适配层、`app` = 面板、`selftest` = 控制台那 48 项 |
 | `selftest.py` | 离线自测 |
+| `arx_x5_control/` | PC 控制核心、SDK 适配层和 USB-CAN 传输 |
+| `pyproject.toml` | SDK 与 PC 控制包的统一安装配置 |
 | `config/` | 运行期数据（`gripper_calib.json`），由工具自动创建 |
 
 异常层级（`errors.py`）：根是 `ArError`，下面分 `LinkError`（`NotConnected` 是它的子类）、
