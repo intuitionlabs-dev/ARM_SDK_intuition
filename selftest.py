@@ -988,9 +988,13 @@ def test_sim(c, tmpdir):
                                                 [round(v, 4) for v in a.joint_angles]))
 
         # ---- 3 s 看门狗：**每台各一份**，两台都没喂 → 各自超时 ----
-        time.sleep(0.4)      # 不泵保活（虚拟时钟 8× ⇒ 这段抵 3.2 s）
+        # SimLink advances a fixed virtual dt per worker iteration, not per
+        # wall-clock second. A loaded CI runner may need more than 0.4 s to
+        # execute 3 virtual seconds. Wait for feedback without sending frames.
+        ok = _sim_wait([], lambda: b.robot_state == BD.STATE_COMM_LOST
+                       and b.mode == BD.MODE_DAMPING, 2.0)
         c.check("不发帧超 3 s → 两台一起切 damping，总模式按初始化跑完没有各落各的",
-                a.robot_state == BD.STATE_NORMAL and a.mode == BD.MODE_DAMPING
+                ok and a.robot_state == BD.STATE_NORMAL and a.mode == BD.MODE_DAMPING
                 and b.robot_state == BD.STATE_COMM_LOST and b.mode == BD.MODE_DAMPING,
                 "A=%s/%s B=%s/%s" % (a.robot_state_name, a.mode_name,
                                      b.robot_state_name, b.mode_name))
@@ -1000,12 +1004,9 @@ def test_sim(c, tmpdir):
                 "A=%s/%s B=%s" % (a.robot_state_name, a.mode_name, b.robot_state_name))
 
         # ---- 每台一份：只喂 A、把 B 晾着 → 只有 B 超时 ----
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < 0.4:      # 只泵 A（虚拟时钟 8× ⇒ 抵 3.2 s）
-            a.keepalive()
-            time.sleep(0.005)
+        ok = _sim_wait([a], lambda: b.robot_state == BD.STATE_COMM_LOST, 2.0)
         c.check("只喂一台 → 没喂的那台自己超时进通信离线，被喂的那台不受影响",
-                a.robot_state == BD.STATE_NORMAL
+                ok and a.robot_state == BD.STATE_NORMAL
                 and b.robot_state == BD.STATE_COMM_LOST,
                 "A=%s B=%s" % (a.robot_state_name, b.robot_state_name))
     finally:
