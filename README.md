@@ -42,6 +42,17 @@ assert a.board_defs is sdk.board_defs.metal_arm
 
 同一条 H7 链路的两台臂共用所选参数，不同链路可分别选择。选择影响 SDK 的姿态预检及 TUI 的限位和复位参考显示；不会把参数下发到 H7，也不会切换固件中的电机驱动、控制流程或协议版本。H7 固件需要自行支持对应机械臂。夹爪米制换算仍使用 H7 链路原有的标定配置。
 
+串口 TUI 使用相同选项，启动日志会显示所选参数：
+
+```bash
+python3 -m sdk.tui --port /dev/ttyACM0 --robot-type metal_arm
+python3 -m sdk.tui --port /dev/ttyACM0 --robot-type arx_x5
+# 不连接硬件，检查所选参数下的界面和复位参考：
+python3 -m sdk.tui --fake --robot-type metal_arm
+```
+
+`--init-tol` 未指定时取所选参数中的初始化容差。`--fake` 模拟 H7 串口状态机，复位目标跟随所选参数；Metal PC 控制流程的模拟仍使用 `metal-arm-tui --simulate`。
+
 Metal 的非零复位角待用户从 TUI 读取后提供；目前仍保留旧的六轴零角，不能把它当成已确认的厂家复位姿态。
 
 ## 选择控制后端

@@ -66,6 +66,7 @@ Usage (run it at the repository root — `sdk` is a package in the repo, not ins
                                              # (the board's USB first, falling back to a
                                              # 1a86 RS485 adapter), 921600
     python3 -m sdk.tui --port /dev/ttyACM0   # a specific port
+    python3 -m sdk.tui --robot-type metal_arm  # H7 host parameters (default arx_x5)
     python3 -m sdk.tui --arm-id 1            # current arm watches the CAN2 one at startup
                                              # (a switches it)
     python3 -m sdk.tui --fake                # fake board: walk the panel/keys/state machine
@@ -83,7 +84,7 @@ import os
 import sys
 
 from .. import i18n
-from ..board_defs import arx_x5 as board_defs
+from ..board_defs import ROBOT_TYPES, get_profile
 from ..errors import LinkError
 from ..link import (assert_port_allowed, describe_port, link_hint,
                     list_links, pick_default_port)
@@ -109,7 +110,7 @@ def _pre_lang(argv):
         return i18n.set_lang(None)
 
 
-def main(argv=None, prog=None):
+def parse_options(argv=None, prog=None):
     _pre_lang(argv)
     ap = argparse.ArgumentParser(
         prog=prog or "python3 -m sdk.tui",   # under -m, omitting it shows "__main__.py"
@@ -118,6 +119,8 @@ def main(argv=None, prog=None):
         epilog=i18n.tr("main.epilog"))
     ap.add_argument("--port", default=None, help=i18n.tr("main.help.port"))
     ap.add_argument("--baud", type=int, default=921600, help=i18n.tr("main.help.baud"))
+    ap.add_argument("--robot-type", choices=ROBOT_TYPES, default="arx_x5",
+                    help=i18n.tr("main.help.robot_type"))
     ap.add_argument("--arm-id", type=parse_arm_id, default=DEFAULT_ARM_ID,
                     help=i18n.tr("main.help.arm_id", DEFAULT_ARM_ID))
     ap.add_argument("--ctrl-hz", type=float, default=100.0, help=i18n.tr("main.help.ctrl_hz"))
@@ -128,11 +131,8 @@ def main(argv=None, prog=None):
                                  DEFAULT_STEP_RAD))
     ap.add_argument("--handshake-timeout", type=float, default=3.0,
                     help=i18n.tr("main.help.handshake"))
-    ap.add_argument("--init-tol", type=float, default=board_defs.ROBOT_INIT_POSE_TOL_RAD,
-                    help=i18n.tr("main.help.init_tol",
-                                 board_defs.ROBOT_INIT_POSE_TOL_RAD,
-                                 board_defs.ROBOT_INIT_POSE_TOL_DEG,
-                                 board_defs.ROBOT_INIT_POSE_TOL_DEG))
+    ap.add_argument("--init-tol", type=float, default=None,
+                    help=i18n.tr("main.help.init_tol"))
     ap.add_argument("--fake", action="store_true", help=i18n.tr("main.help.fake"))
     ap.add_argument("--fake-lost", type=lambda s: int(s, 0), default=0,
                     help=i18n.tr("main.help.fake_lost"))
@@ -143,6 +143,13 @@ def main(argv=None, prog=None):
     ap.add_argument("--lang", nargs="?", choices=i18n.LANGS, default=i18n.get_lang(),
                     help=i18n.tr("main.help.lang"))
     opts = ap.parse_args(argv)
+    if opts.init_tol is None:
+        opts.init_tol = get_profile(opts.robot_type).ROBOT_INIT_POSE_TOL_RAD
+    return opts
+
+
+def main(argv=None, prog=None):
+    opts = parse_options(argv, prog)
 
     if opts.selftest:
         return selftest()
@@ -200,6 +207,7 @@ def main(argv=None, prog=None):
     sess.info(i18n.tr("main.link_info",
                       describe_port(opts.port) if not opts.fake
                       else i18n.tr("main.fake_link")))
+    sess.info(i18n.tr("main.robot_type", opts.robot_type))
     # Two arms over one link, so "which one is being watched right now" has to be visible
     # at the first glance after power-up
     sess.info(i18n.tr("main.two_arms", i18n.arm_label(0), i18n.arm_label(1),

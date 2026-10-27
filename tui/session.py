@@ -861,10 +861,11 @@ class ConsoleSession:
 def build_session(opts):
     """Build the link + session from opts. **Both arms are built**: one link, one sdk.Arm
     each."""
+    robot_type = getattr(opts, "robot_type", None)
     if opts.fake:
         # the --fake-lost mask lands on the arm in opts.arm_id (the other stays as a
         # control)
-        link = SimLink(lost_mask=opts.fake_lost, lost_arm=opts.arm_id)
+        link = SimLink(lost_mask=opts.fake_lost, lost_arm=opts.arm_id, robot_type=robot_type)
     else:
-        link = Link(opts.port, opts.baud)
+        link = Link(opts.port, opts.baud, robot_type=robot_type)
     return ConsoleSession(link, opts)

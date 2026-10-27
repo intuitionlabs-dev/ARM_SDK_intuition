@@ -41,7 +41,7 @@
 
 | 入口 | 职责或本次变化 |
 | --- | --- |
-| [arm.py](arm.py)、[tui/session.py](tui/session.py)、[tui/app.py](tui/app.py) | 读取链路选择的独立机械臂参数模块及可选的 `link.gripper_calib_store`；H7 链路明确选择 ARX 配置 |
+| [arm.py](arm.py)、[tui/session.py](tui/session.py)、[tui/app.py](tui/app.py) | 读取链路选择的独立机械臂参数模块及可选的 `link.gripper_calib_store`；H7 链路通过 `Link(robot_type="arx_x5"/"metal_arm")` 或串口 TUI 的 `--robot-type` 选择上位机参数，默认 ARX，不修改 H7 固件 |
 | [metal_arm_control/sdk_adapter/link.py](metal_arm_control/sdk_adapter/link.py) | `LocalLink`、共享 SDK 协议适配、单位转换、每臂配置、调度与反馈 |
 | [metal_arm_control/system.py](metal_arm_control/system.py)、[arm.py](metal_arm_control/arm.py) | 单臂或双臂管理、状态机、命令门控和故障处理 |
 | [command.py](metal_arm_control/command.py)、[trajectory.py](metal_arm_control/trajectory.py) | 目标处理、TD 和五次轨迹、初始化及复位流程 |
