@@ -16,4 +16,6 @@ https://github.com/makermods-robotics/metal-python-ros/tree/bccf3c8
 
 模型链为 `base_link → Link6`，世界重力为 `(0,0,-9.81)`。SDK 缩放时前馈为 scaled G + scaled C + viscous friction，不使用加速度前馈。纯模型模式仍可计算 M*qdd+C+G。没有把 ARX 的 0.8/1.32 缩放带入 Metal。
 
-复位六轴零角、250 Hz 调度、0.16 s 关节参考轨迹和状态机是本仓库接口/控制策略，不是厂家的收纳姿态或 400 Hz 控制循环。镜像结构来自 ARM_SDK_intuition 的 f6937f0。
+复位参考由用户于 2026-10-27 确认为 J1～J6 全 0°，记录在 [board_defs/metal_arm.py](../../board_defs/metal_arm.py)，不是从 URDF 或原厂运动示例推导。初始化和 `reset()` 共用它，复位不写入电机零点。
+
+250 Hz 电机调度、0.16 s 关节参考轨迹和状态机采用本仓库的接口/控制策略，不等同于原厂 C++ 的 400 Hz 循环。Metal 初始化的夹爪校准阶段已删除，STOP 按当前需求周期使能并输出零增益帧。镜像结构来自 ARM_SDK_intuition 的 `f6937f0`；这些控制策略变更不改变原厂参数、模型及许可证的来源。

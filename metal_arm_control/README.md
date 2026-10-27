@@ -1,5 +1,7 @@
 # metal_arm_control
 
+当前发行包为 `arx-x5-control 0.6.0`，源码位于 `intuitionlabs-dev/ARM_SDK_intuition` 的 `feat/metal-arm-control` 分支。安装与直接提交推送约定见 [仓库手册](../README.md)；本包没有单独的 `metal-arm-control` 发行包名。
+
 Metal Arm 的 PC Python 控制后端，与 `arx_x5_control` 保持相同的 Python 模块布局、公开类/方法、状态编号和 `sdk.Arm` 接入方式。每条总线为 6 个关节加 1 个夹爪，支持单臂或双臂。
 
 这是在 ARM_SDK_intuition 的控制架构内实现的 Metal 后端，不加载原厂二进制、不依赖 ROS，也不直接运行原厂 C++ 控制线程。控制参数、MIT 帧布局、模型和夹爪查表来自 `metal-python-ros` 的固定提交，见 [来源](gravity_compensation/PROVENANCE.md)。
@@ -32,6 +34,8 @@ with LocalLink.simulated() as link:
 
 业务代码继续使用 `init_arm()`、`start()`、`send_ctrl_pos()`、`send_ctrl_pos_vel()`、`gravity()`、`damping()`、`stop()`、`reset()`、`set_zero()` 和反馈属性。仅更换后端导入和设备配置。见 [完整流程](SDK_LOCAL.md)。
 
+`arm.board_defs` / `link.board_defs` 指向 `sdk.board_defs.metal_arm`，控制核心也引用这份限位和复位参考。使用 H7 串口时通过 `sdk.Link(robot_type="metal_arm")` 或 `python3 -m sdk.tui --robot-type metal_arm` 选择上位机参数；这不会加载 PC 控制核心、切换 H7 固件或启用厂家夹爪查表。
+
 ## Metal 硬件参数
 
 | 项目 | Metal |
@@ -47,6 +51,7 @@ with LocalLink.simulated() as link:
 | 关节下限（deg） | -160、-180、0、-123、-85、-145 |
 | 关节上限（deg） | 160、0、180、81、85、145 |
 | 夹爪原始角 | 0..2.4 rad |
+| 复位参考（deg） | J1～J6 全 0，用户已确认 |
 | 动力学链 | `base_link → Link6` |
 
 PMAX/VMAX/TMAX 是协议归一化范围，不是额定性能。CAN 反馈已是关节输出轴坐标，不能再除以原厂配置里的机械减速比。
@@ -66,3 +71,5 @@ PMAX/VMAX/TMAX 是协议归一化范围，不是额定性能。CAN 反馈已是�
 ## 验证边界
 
 离线测试覆盖帧编解码、状态机、SDK 单位、双臂隔离、故障停机、夹爪出厂零点保留、模型数值和目录/API 对齐。模拟器是理想控制对象，不能证明实机稳定性、负载能力或碰撞安全。尚未进行 Metal 真机验证。
+
+当前仓库测试为 33 项；SDK 自测通过 178 项并跳过外部 H7 头文件检查 1 项，TUI 自测通过 48 项。复现命令和已验证提交见 [交接文档](../HANDOFF_METAL_ARM.md#已完成的验证)。

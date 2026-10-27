@@ -1,7 +1,7 @@
 # USB-CAN 传输接口
 
 包路径：`metal_arm_control.usb2can`。
-发行包：`metal-arm-control 0.5.0`。
+发行包：`arx-x5-control 0.6.0`，版本定义见 [pyproject.toml](../../pyproject.toml)。`metal-arm-control` 是命令行入口，不是独立发行包名。
 Python 版本：3.10 或更高。
 该子包提供经典 CAN 标准数据帧收发。
 

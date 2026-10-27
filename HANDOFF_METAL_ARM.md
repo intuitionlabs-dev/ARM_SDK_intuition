@@ -6,7 +6,7 @@
 
 后续更新：Metal STOP 已恢复周期使能加零增益输出；初始化仅执行六轴复位，夹爪校准阶段已删除，入口保留夹爪当前反馈角。设备参数已拆为 `sdk.board_defs.arx_x5` 和 `sdk.board_defs.metal_arm`，通过 `arm.board_defs` / `link.board_defs` 读取。包根不再暴露默认设备参数。用户已于 2026-10-27 确认 Metal 的复位角为 J1～J6 全 0°，已移除待确认标记，初始化参考和复位目标共用这组参数。
 
-本文记录的功能实现基线为 `5b76a9b`；后续交接文档提交不属于该功能基线。接手时先核对分支和远端最新状态。
+当前运行代码的完整验证基线为 `119c01b`；`a85fcb6` 随后记录用户确认的全零复位角，`5e60f50` 记录不使用 PR 的交付方式。后续文档更新不改变控制逻辑。接手时核对任务分支最新提交，不要按早期移植基线继续工作。
 
 ## 任务背景和当前状态
 
@@ -18,22 +18,24 @@
 | 本机目录 | `/home/zhaosuya/ARM_SDK_intuition` |
 | 任务分支 | `feat/metal-arm-control` |
 | 交付方式 | 直接 commit/push 到任务分支，不使用 PR |
-| 历史 PR（已关闭，未合并） | https://github.com/intuitionlabs-dev/ARM_SDK_intuition/pull/1 |
 | 本机 `origin` | `https://github.com/intuitionlabs-dev/ARM_SDK_intuition.git` |
 | 原厂源码目录 | `/home/zhaosuya/metal-python-ros` |
 | 原厂分支及固定版本 | `humble`，`bccf3c82a21453a7b1784a94966456e16ff0f008` |
 
 仓库迁移已经完成，无需再次发起 transfer。旧的 `Crystal-1438/ARM_SDK_intuition` 地址会重定向；后续使用新组织地址。用户于 2026-10-27 要求不使用 PR，已关闭 PR #1，保留 `feat/metal-arm-control` 分支及全部提交。继续在任务分支直接提交和推送，不新建、重开或更新 PR；当前 `master` 尚未包含本次 Metal 实现。
 
-三个功能提交按依赖顺序为：
+当前已经完成的功能为：
 
-| 提交 | 内容 |
+| 范围 | 当前行为 |
 | --- | --- |
-| `0687af3` | 为共享 SDK 和 TUI 增加按链路提供限位、复位参数及夹爪标定存储的能力 |
-| `5c1311e` | 新增 Metal 镜像包、设备协议与参数、模型、文档、测试及安装入口 |
-| `5b76a9b` | 增加原厂 C++ 编码对照、CAN 线程和进程生命周期测试及 CI |
+| Metal 控制后端 | 与 ARX 对齐模块布局和公开接口，使用独立协议、模型、增益和夹爪换算 |
+| 机械臂参数 | `sdk.board_defs.arx_x5` / `metal_arm`；控制核心、SDK 与 TUI 引用对应模块 |
+| H7 类型选择 | `sdk.Link(robot_type="metal_arm")` 和 TUI `--robot-type`，默认 ARX，仅选择上位机参数 |
+| Metal 初始化与复位 | 六轴复位到用户确认的全 0°；无夹爪校准阶段，保持入口夹爪反馈角 |
+| Metal STOP | 周期使能加零增益输出；标零参与电机隔离；关闭时全部禁用 |
+| 交付方式 | 直接提交并推送任务分支，不创建、重开或维护 PR |
 
-这三个提交基于 `f6937f0`。最初三个提交未修改 `arx_x5_control/`；后续参数拆分也更新了 ARX 配置导入和本地链路，硬件参数与控制行为保持原值。不要为统一两个后端而覆盖 ARX 原有默认值。
+移植结构来自 `f6937f0`。参数拆分也更新了 ARX 配置导入和本地链路，ARX 的硬件参数与控制行为保持原值。不要为统一两个后端而覆盖 ARX 的默认值。
 
 ## 代码入口和设计边界
 
@@ -41,7 +43,8 @@
 
 | 入口 | 职责或本次变化 |
 | --- | --- |
-| [arm.py](arm.py)、[tui/session.py](tui/session.py)、[tui/app.py](tui/app.py) | 读取链路选择的独立机械臂参数模块及可选的 `link.gripper_calib_store`；H7 链路通过 `Link(robot_type="arx_x5"/"metal_arm")` 或串口 TUI 的 `--robot-type` 选择上位机参数，默认 ARX，不修改 H7 固件 |
+| [arm.py](arm.py)、[tui/session.py](tui/session.py)、[tui/app.py](tui/app.py) | 读取链路选择的独立机械臂参数模块及可选的 `link.gripper_calib_store`；H7 通过 `Link(robot_type="metal_arm")` 或串口 TUI `--robot-type` 选择上位机参数，默认 ARX，不修改 H7 固件 |
+| [board_defs](board_defs)、[link.py](link.py) | `ROBOT_TYPES`、`get_profile()` 和每条链路的参数选择；同一 H7 链路两臂共用配置 |
 | [metal_arm_control/sdk_adapter/link.py](metal_arm_control/sdk_adapter/link.py) | `LocalLink`、共享 SDK 协议适配、单位转换、每臂配置、调度与反馈 |
 | [metal_arm_control/system.py](metal_arm_control/system.py)、[arm.py](metal_arm_control/arm.py) | 单臂或双臂管理、状态机、命令门控和故障处理 |
 | [command.py](metal_arm_control/command.py)、[trajectory.py](metal_arm_control/trajectory.py) | 目标处理、TD 和五次轨迹、初始化及复位流程 |
@@ -58,6 +61,8 @@
 Metal 后端直接实现于本仓库的控制架构内，不加载原厂二进制，也不依赖 ROS。未增加原厂 `SetArmEndPose` 一类笛卡尔 IK 接口，因为目标 ARX SDK 没有该接口。
 
 安装分发名称仍是 `arx-x5-control`，不是新的 PyPI 包名。新增命令为 `metal-arm-control`、`metal-arm-sdk-demo`、`metal-arm-can-check`、`metal-arm-tui`。
+
+类型由入口、后端导入或 H7 `robot_type` 显式指定，没有硬件型号自动识别。TUI 的 `vcode 0xF81DD236` 是公共协议字符串的 FNV-1a 哈希；PC 握手字段由本地填充，H7 从版本帧读取。它不代表电机固件或源码提交，发行包版本当前为 `0.6.0`。
 
 ## 控制流程和单位
 
@@ -130,21 +135,23 @@ Metal 初始化仅执行六轴复位，结束后直接进入正常阻尼模式�
 
 ## 已完成的验证
 
-以下结果对应功能基线 `5b76a9b`。GitHub Actions 的 Python 3.10 和 3.12 两组均成功，可查看 [验证记录](https://github.com/intuitionlabs-dev/ARM_SDK_intuition/actions/runs/40483599307)。本次交接文档不改变控制代码。
+以下结果对应运行代码基线 `119c01b`。GitHub Actions 的 Python 3.10 和 3.12 两组均成功，可查看 [直接推送的验证记录](https://github.com/intuitionlabs-dev/ARM_SDK_intuition/actions/runs/40500128894)。后续复位角确认及本文档更新只修改注释和说明。
 
 | 验证 | 结果和覆盖范围 |
 | --- | --- |
-| `unittest discover -s tests -v` | 24 项通过；覆盖共享配置隔离、模块/API 对齐、状态机、协议、夹爪、SDK 单位、TUI 和动力学 |
-| 原厂 C++ 编码对照 | 七个电机各 100 组固定随机输入，共 700 组命令字节一致；包含在上述 24 项中 |
+| `unittest discover -s tests -v` | 33 项通过；覆盖参数隔离、H7/TUI 选择、模拟复位、模块/API 对齐、Metal 状态机、STOP、夹爪保持、SDK 单位和动力学 |
+| 原厂 C++ 编码对照 | 七个电机各 100 组固定随机输入，共 700 组命令字节一致；包含在上述 33 项中 |
 | CAN 生命周期 | 真实线程及 spawn 子进程配合 `EchoTransport` 假传输，覆盖只读查询、双臂路由、故障退出及全部电机禁用 |
 | 现有 SDK 自测 | 178 通过、0 失败、1 跳过；跳过项依赖仓库之外的 H7 固件头文件 |
 | TUI 自测 | 48 通过、0 失败 |
 | 安装后离线演示 | Metal 控制核心、Metal 双臂 SDK、原有 ARX 演示均 `sequence_complete: true` |
-| 本机独立 wheel 验证 | `0.6.0` wheel 在独立环境、源码目录之外完成测试与资源加载检查 |
+| CI 安装验证 | Python 3.10/3.12 安装当前包后执行全部测试；三种模拟入口在源码目录之外运行 |
 
 目录/API 测试比较全部相对 `.py` 路径和 `__all__`，并比较 `arm`、`system`、`motor`、`can_io`、`can_process`、`sdk_adapter.link` 中公开类方法的参数名与默认值；它不证明两个设备的硬件语义完全相同。
 
 原厂对照测试需要 `c++` 编译器，缺失时会跳过；本机和上述 CI 运行时均具备编译器。CAN 测试使用模拟传输，不代表真实总线测试。模拟器和动力学数值测试不能证明实机稳定性、负载能力或碰撞安全。
+
+原 ARX 文档保留的 nuc3 实机数据和固件 C/Python 对照属于上游工程的历史记录；不要计入本次 Metal 实机验证或当前仓库的 33 项测试。
 
 ## 接手后的复现步骤
 
@@ -157,13 +164,15 @@ git remote -v
 git fetch origin
 git log -5 --oneline
 git diff --stat origin/master...HEAD
-gh pr view 1 --repo intuitionlabs-dev/ARM_SDK_intuition \
-  --json url,state,isDraft,headRefName,baseRefName,statusCheckRollup
+gh run list --repo intuitionlabs-dev/ARM_SDK_intuition \
+  --branch feat/metal-arm-control --event push --limit 5
 ```
 
 新环境可从新组织克隆 `feat/metal-arm-control` 分支。使用 Python >=3.10；已有 `.venv` 时可直接使用，无需重建：
 
 ```bash
+git clone --branch feat/metal-arm-control https://github.com/intuitionlabs-dev/ARM_SDK_intuition.git
+cd ARM_SDK_intuition
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[can]'
 .venv/bin/python -m unittest discover -s tests -v
@@ -181,7 +190,7 @@ python3 -m venv .venv
 
 1. 评审 Metal 必要行为差异，尤其是初始化、六轴零角复位、禁用电机退出，以及共享 SDK 配置不污染 ARX 的约束。
 2. 在具备对应设备和调试条件后，先确认 CAN ID、固件协议范围、反馈单位、零点和夹爪出厂标定。不能与原厂驱动或 MakerMods Lab 同时控制同一总线。
-3. 再安排实机初始化、低幅关节控制、夹爪换算、重力补偿、超时停机和退出行为验证；记录设备型号、固件版本、负载、参数和结果。重点确认零角复位策略、250 Hz 时序和真实负载下的补偿参数。
+3. 再安排实机初始化、低幅关节控制、夹爪换算、重力补偿、超时停机和退出行为验证；记录设备型号、固件版本、负载、参数和结果。复位目标已确认为全 0°，待验证的是实际执行效果、250 Hz 时序和真实负载下的补偿参数。
 4. 按用户要求直接提交和推送，不使用 PR。保留实机验证边界，不因模拟通过就将实现描述为已完成硬件验收。
 
 用户已持续授权任务相关的小步提交和推送：每个完整小改动及相关检查完成后及时 commit/push，较长任务有可保存成果时约每 5–10 分钟保存一次。只提交本任务文件，检查 diff，保护无关工作和凭据；沿用任务分支及配置远端，不 force-push。每次验证推送结果；若受阻，保留本地提交并报告具体原因。
