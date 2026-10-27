@@ -1,55 +1,25 @@
 # SDK API 参考
 
-逐符号参考：每个类有哪些方法、参数什么单位、受什么闸门、抛什么异常。
-**概念与注意事项见 [README.md](README.md)**（状态机、闸门、保活、夹爪标定、注意事项）。
+`sdk.Arm` 为 Python 程序与 TUI 提供公共控制方法。两类后端分别为 H7 单片机和 PC 本地；机械臂型号在创建链路时选择，之后的常规操作使用本页接口。
 
-三条贯穿全文的约定：
+| 约定 | 内容 |
+| --- | --- |
+| 单位 | 关节 rad / rad/s，夹爪 m，温度 ℃；`Feedback` 与协议 payload 使用 deg / deg/s |
+| 预检 | 命令使用最近反馈和 `arm.board_defs`；反馈缺失或超过 100 ms 抛 `FeedbackStale` |
+| 拒绝 | 预检不满足条件抛 `GateRejected`，命令不提交 |
+| `force=True` | 只跳过上位机预检，后端执行条件仍生效 |
+| 结果 | 提交成功不代表执行完成，通过状态、模式与反馈判断 |
 
-- **单位是 SI**：关节角 rad、角速度 rad/s、夹爪开口 m、温度 ℃。只有 `protocol` 模块和
-  `Feedback` 对象是**线上单位**（deg），那是供协议层对拍使用的，日常不涉及。
-- **命令方法先预检、再提交**：预检使用最近一帧反馈和所选机械臂参数。不通过就抛
-  `GateRejected`。`force=True` 只跳过 SDK 预检，H7 固件或 PC 控制核心的执行条件仍生效；它不能绕过 H7 遥控器接管。
-- **做闸门判断用的反馈超过 100 ms 就不再使用**（`arm.FEEDBACK_STALE_S`）→ 抛 `FeedbackStale`。
-  读属性不抛异常，读不到就是 `None`。
+完整调用见 [Python 示例](docs/PYTHON.md)，按键与启动参数见 [TUI](docs/TUI.md)。
 
 ## 控制后端
 
-`sdk.Arm` 接收外部链路对象。
-单位、反馈读取和控制方法由 `sdk.Arm` 提供。
-
-| 后端 | 创建方式 | 连接要求 |
+| 类别 | 创建入口 | 配置 |
 | --- | --- | --- |
-| H7 串口 | `sdk.Link(..., robot_type="metal_arm")`；默认 ARX | 板载 USB 或 RS485 串口；H7 固件须支持对应设备 |
-| ARX PC 本地 | `arx_x5_control.sdk_adapter.LocalLink(motor_io, ...)` | 每臂一条 USB-CAN 通道 |
-| Metal PC 本地 | `metal_arm_control.sdk_adapter.LocalLink(motor_io, ...)` | 每臂一条 USB-CAN 通道 |
+| H7 单片机 | `sdk.Link(port, robot_type=...)` | 上位机参数选 `arx_x5` / `metal_arm`；固件须与机械臂匹配 |
+| PC 本地 | 机械臂包中的 `LocalLink(motor_io, ...)` | 从 `arx_x5_control` 或 `metal_arm_control` 导入成套配置与 CAN 类 |
 
-PC 本地后端导入方式：
-
-```python
-from arx_x5_control import ArmConfig, CANChannel, ProcessCANMotorIO
-from arx_x5_control.sdk_adapter import LocalLink
-```
-
-Metal 使用 `metal_arm_control` 中对应的 `ArmConfig`、CAN 类和 `LocalLink`，不要混用两包的控制配置。两个后端均由 `arx-x5-control` 发行包提供（当前 `0.6.0`）。
-构造参数和异常说明见 [本地后端文档](arx_x5_control/SDK_LOCAL.md)。
-双臂完整代码见 [双臂实机例程](arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
-Metal 的流程、厂家夹爪换算和 STOP 行为见 [Metal SDK 文档](metal_arm_control/SDK_LOCAL.md)。类型由导入或显式配置决定；`arm_id` 和协议版本码都不识别机械臂型号。
-
-| 本地调用 | 含义 |
-| --- | --- |
-| `LocalLink(motor_io, configurations=[ArmConfig(), ArmConfig()])` | 创建双臂控制核心 |
-| `sdk.Arm(0, link)` / `sdk.Arm(1, link)` | 创建对应 CAN 通道的臂对象 |
-| `link.check_health()` | 检查控制线程和链路故障 |
-| `link.drain_events()` | 取走控制事件 |
-| `link.close()` | 停止控制线程并交付停机请求 |
-
-`LocalLink` 的输入命令队列每臂容量为 7。
-队列满时抛出 `sdk.LinkError`。
-本地命令拒绝结果可通过控制事件读取。
-`force=True` 只跳过 SDK 预检。
-控制核心仍检查命令执行条件。
-串口自动重连参数适用于 `sdk.Link`。
-本地后端的生命周期由应用程序管理。
+PC 的 `LocalLink` 是 `sdk.Link` 子类。构造代码见 [创建链路](docs/PYTHON.md#创建链路)，本地扩展方法见 [PC 链路参考](docs/PC_LOCAL.md)。通信、关闭、重连和诊断差异见 [后端对照](docs/BACKENDS.md#生命周期与诊断差异)，硬件相关差异见 [型号对照](docs/ROBOTS.md)。
 
 ## 1. 顶层入口
 
@@ -58,7 +28,7 @@ Metal 的流程、厂家夹爪换算和 STOP 行为见 [Metal SDK 文档](metal_
 | 名字 | 是什么 |
 |---|---|
 | `sdk.Arm` | 一台臂。**主入口**，见第 3 节 |
-| `sdk.Link` | 一条链路（真串口 / 假单片机）。见第 2 节 |
+| `sdk.Link` | H7 串口链路及 PC `LocalLink` 的基类。见第 2 节 |
 | `sdk.Snapshot` | 同一帧里换算好的一致视图（第 4 节） |
 | `sdk.Feedback` / `sdk.SetZeroAck` / `sdk.LinkStatus` | 原始帧数据（**线上单位**） |
 | `sdk.GripperCalibration` / `sdk.GripperCalibStore` | 夹爪标定模型和文件存取（第 6 节） |
@@ -67,47 +37,12 @@ Metal 的流程、厂家夹爪换算和 STOP 行为见 [Metal SDK 文档](metal_
 | `sdk.PROTOCOL_VERSION` / `sdk.VERSION_CODE` | 协议版本串 / 版本码 |
 | `sdk.protocol` / `board_defs` / `units` / `gripper` | 子模块 |
 
-最小的完整流程（单台臂；`Arm(0)` 会自行创建一条 `Link`，`connect()` 时才打开）：
-
-```python
-import sdk, time
-
-arm = sdk.Arm(0)
-arm.connect()                                  # 开串口 → 发版本帧 → 等第一帧反馈
-
-def wait_state(want, timeout=10.0):
-    """等到 state == want。**等待期间必须持续保活** —— 见下面的说明。"""
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        arm.keepalive()
-        if arm.wait_for(lambda a: a.robot_state == want, timeout=0.05):
-            return True
-    return False
-
-wait_state(2)                                  # 待初始化
-arm.init_arm()                                 # 0x02 初始化（闸门见表），执行数秒
-wait_state(4)                                  # 正常运行（落点是阻尼档）
-arm.start()                                    # 0x12 进 run 档，控制帧只在这个档被接受
-arm.wait_for(lambda a: a.mode == a.board_defs.MODE_RUN, timeout=1.0)   # 等反馈确认切档
-
-while True:
-    arm.send_ctrl_pos(arm.joint_angles)        # 关节沿用反馈值（不动）、夹爪不给（保持）
-    time.sleep(0.01)                           # 这一帧本身就算保活
-```
-
-两项容易遗漏的约定：
-
-- **等待期间必须保活**：单片机 3 s 收不到**任何**有效帧就切阻尼。没初始化过的落到「通信离线」，
-  收到下一帧才进「离线等待」。它自身发出的反馈帧不计入，**而且每台臂各算各的**：只对一台保活，
-  另一台照样超时。因此每台在每次 `wait_*` 之前都必须有帧持续发出：周期控制帧，或者
-  `keepalive()`（它发的是幂等的版本帧）。
-- **切档要等反馈确认**：`start()` 返回只代表帧已发出，反馈里的 `mode` 仍是旧值。紧接着发
-  控制帧会抛 `GateRejected`，因为预检使用的就是那帧旧反馈。等 `mode` 变过来再发。
+链路创建后，使用同一个 `sdk.Arm(arm_id, link)` 接口。单臂和双臂的初始化、保活、运动及退出示例见 [公共控制流程](docs/PYTHON.md#公共控制流程)。
 
 ## 2. `Link` —— 一条链路
 
 本节描述 `sdk.Link` 串口后端。
-PC 本地后端使用上文的 `LocalLink`。
+PC 本地后端的同名方法及扩展参数见 [PC 链路参考](docs/PC_LOCAL.md)。
 
 一条链路承载**所有**臂的帧（靠帧头 `arm_id` 分），因此两台臂必须**共享一个 `Link`**；
 两个进程争用同一个串口会导致字节流交错。
@@ -199,7 +134,7 @@ Arm(arm_id=0, link=None, *, calib_store=None)
 
 | 方法 | 说明 |
 |---|---|
-| `connect(timeout=3.0, port=None)` | 必要时开链路 → 发 `0x01` → 等**这一台**的第一帧反馈。等不到抛 `LinkError`，消息里带串口路径、链路统计、单片机回的版本码 |
+| `connect(timeout=3.0, port=None)` | 必要时打开链路，提交握手并等待本臂第一帧反馈；超时抛 `LinkError`，附链路诊断信息 |
 | `close()` | 关闭自己创建的那条链路（共享链路时无动作） |
 | `describe()` | 日志用的一行；没有收到反馈时也能输出 |
 
@@ -210,7 +145,7 @@ Arm(arm_id=0, link=None, *, calib_store=None)
 | `feedback` | 最近一帧 `Feedback`（**线上单位**，deg）；没收到过 `None` |
 | `feedback_age` | 最近一帧距今**秒**；没收到过 `None` |
 | `feedback_ok` | 手上有 ≤ 100 ms 的反馈 |
-| `link_up` | 链路本身正常（**不代表单片机在回帧** —— 后者以 `feedback_ok` 为准） |
+| `link_up` | 链路本身正常；机械臂反馈的新鲜度以 `feedback_ok` 为准 |
 | `n_feedback` | 累计收到的反馈帧数 |
 | `snapshot()` | 同一帧里换算好的 `Snapshot`；没收到过 `None`（第 4 节） |
 
@@ -230,33 +165,33 @@ Arm(arm_id=0, link=None, *, calib_store=None)
 
 ### 3.3 发命令
 
-**闸门列写的是单片机的受理条件**（SDK 的预检逐条复算，不通过则完全不发送）。
+下表列出公共 SDK 的预检条件。H7 使用串口帧，PC 本地链路将同样的 payload 转为核心命令；帧号用于协议对照。H7 的遥控器接管和固件执行条件另见 [H7 接入](docs/H7.md)。
 
 | 方法 | 帧 | 闸门 | 备注 |
 |---|---|---|---|
 | `send_version()` | `0x01` | — | 也是保活 |
-| `keepalive()` | `0x01` | — | `send_version` 的别名。**SDK 不会自动发送**：单片机 3 s 收不到任意有效帧就把臂切回阻尼（每台各算各的；没初始化过的落到通信离线，收到下一帧才进离线等待） |
+| `keepalive()` | `0x01` | — | `send_version` 的别名。**SDK 不会自动发送**：后端 3 s 收不到有效命令时，已初始化的臂切回阻尼（每台各算各的；没初始化过的落到通信离线，收到下一帧才进离线等待） |
 | `init_arm(*, force=False)` | `0x02` | state 是**待初始化(2)**，**或**（正常运行(4) 且 mode ∈ 停/阻尼）；**且** 7 台电机全在线；**且** 6 个关节（不含夹爪）与复位位姿偏差 ≤ 20° | 完成后落 `4` + **阻尼**，要再 `start()` 才进 run |
 | `set_zero(*, force=False)` | `0x10` | state 是**待初始化(2)** | **覆盖电机的原零点**，触发前先调整位姿；只管 j1~j6；结果走 `wait_setzero_ack()` |
 | `start(*, force=False)` | `0x12` | state == 正常运行(4) | 进 run 档。切档会作废上一帧控制指令 ⇒ **切档完成后必须重发控制帧** |
 | `gravity(*, force=False)` | `0x13` | 同 `start` | 重力补偿档 |
-| `stop(*, force=False)` | `0x14` | 同 `start` | STOP / 软停机，不保持位置或重力补偿；Metal PC 继续周期使能及零增益输出 |
+| `stop(*, force=False)` | `0x14` | 同 `start` | STOP / 软停机，不保持位置或重力补偿；电机输出策略见 [行为表](docs/ROBOTS.md#控制行为) |
 | `damping(*, force=False)` | `0x15` | 同 `start` | 阻尼档 |
 | `reset(*, force=False)` | `0x18` | state == 正常运行(4) **且** 7 台全在线（**不检查位姿** —— 位姿偏离时才需要复位） | 走约 2 s 轨迹回复复位位姿，**不做夹爪找零**，完成后停在阻尼 |
 | `send_ctrl_pos(joint_rad, gripper_m=None, *, gripper_raw_deg=None, force=False)` | `0x16` | state == 4 **且** mode == run | `joint_rad` 是 6 个数（rad） |
 | `send_ctrl_pos_vel(joint_rad, joint_vel_rad_s, gripper_m=None, *, gripper_raw_deg=None, force=False)` | `0x17` | 同上 | 速度前馈的起点建议对齐 `arm.joint_velocities`，否则起步处会出现速度突变 |
-| `send_raw(tid, payload=b"")` | 任意 | **无预检、无换算** | 通用透传入口（单片机新增帧类型时使用）。`payload` 不是 `bytes` → `TypeError` |
+| `send_raw(tid, payload=b"")` | 任意 | **无预检、无换算** | 底层 payload 入口；H7 支持透传，PC 仅支持已定义命令。`payload` 不是 `bytes` → `TypeError` |
 
 **夹爪目标三选一**（`gripper_m` / `gripper_raw_deg` 都不给 = **保持当前**）：
 
 ```python
-arm.send_ctrl_pos(joints, gripper_m=0.03)        # 按标定换算成原始角（要先标定）
-arm.send_ctrl_pos(joints, gripper_raw_deg=-141.5)  # 直接给原始电机角（不需要标定）
+arm.send_ctrl_pos(joints, gripper_m=0.03)        # 使用当前换算模型：文件标定或厂家查表
+arm.send_ctrl_pos(joints, gripper_raw_deg=arm.raw_gripper_angle_deg)  # 直接给原始电机角（不需要标定）
 arm.send_ctrl_pos(joints)                        # 保持当前（取最近一帧反馈里的原始角）
 ```
 
 两个都给 → `ValueError`；都没给又没收到过反馈 → `FeedbackStale`。
-**软限位不在此处限幅**。需要限幅时由调用方调用 `board_defs.clamp_axis()`（第 6 节）。
+**软限位不在此处限幅**。需要限幅时由调用方调用 `arm.board_defs.clamp_axis()`（第 6 节）。
 
 **公共异常**：`FeedbackStale`（没有反馈或反馈过旧，无法判断闸门）、`GateRejected`
 （预检不通过，**帧未发出**）、`ValueError` / `TypeError`（参数本身不合法）、`LinkError`
@@ -280,19 +215,17 @@ except sdk.ArError as e:
 | `wait_setzero_ack(timeout=25.0, *, after=None)` | 等这一轮设零的 `0x11`。超时抛 `TimeoutError`。`after=None` 用 `set_zero()` 记下的序号（"这一轮"） |
 | `last_setzero_ack` | 最近一帧 `0x11`；没收到过 `None` |
 
-一轮设零实测几秒到十几秒（`0x11` 在**完成后才发送**）。`result=1（未确认）`**不是故障**：它表示
-"帧已发出、位置本来就在容差内"。臂本来就停在零位时，结果必然是这个。
+设零结果在流程结束后返回。结果码依赖电机确认机制，应用应逐项检查 ACK；等待时持续保活，流程和协议差异见 [型号对照](docs/ROBOTS.md#控制行为)。
 
 ### 3.5 夹爪标定
 
 | 成员 | 说明 |
 |---|---|
-| `calibration` | 当前夹爪换算对象；ARX/H7 通常是 `GripperCalibration`，Metal PC 默认是厂家查表对象。没有可用换算时为 `None`，第一次访问时加载 |
+| `calibration` | 当前夹爪换算对象；具体模型由所选存储提供，见夹爪换算表。没有可用换算时为 `None`，第一次访问时加载 |
 | `require_calibration()` | 同上，未标定抛 `GripperNotCalibrated`（消息里带着该执行哪条命令） |
 | `reload_calibration()` | 从所选存储重新加载换算；文件标定被其他进程更新后需要调用它或重启 |
 
-用法和注意事项见 README 的「夹爪标定」一节。
-Metal 的厂家查表对象提供 `opening_from_raw_deg()` 和 `raw_deg_from_opening()`，不提供两点标定的 `full_open_m`、`direction` 等字段。默认米制范围为 `0..0.1 m`，依赖有效的出厂零点。初始化时夹爪保持入口反馈角。
+文件标定与厂家查表均提供 `opening_from_raw_deg()` 和 `raw_deg_from_opening()`。适用连接、范围和模型特有字段见 [夹爪换算表](docs/ROBOTS.md#夹爪换算)，文件管理见 [配置说明](config/README.md)。
 
 ## 4. 数据结构
 
@@ -381,11 +314,11 @@ ArError
 | `GRIPPER_ANGLE_MIN` / `MAX`（deg） | ARX 为 `-142..142°`；Metal 为 `0..degrees(2.4)`，对应 `0..2.4 rad` |
 | `GRIPPER_STROKE_DEG` | 所选配置的 `MAX - MIN` |
 | `AXIS_MIN` / `AXIS_MAX` / `axis_lo(i)` / `axis_hi(i)` | 上面两套拼起来的 7 轴版本 |
-| `clamp_axis(axis, value)` | → `(限幅后的值, 是否发生限幅)`。**SDK 不自动调用它**：单片机是静默限幅的，上位机再次限幅会导致期望角与实际不符 |
+| `clamp_axis(axis, value)` | → `(限幅后的值, 是否发生限幅)`。**SDK 不自动调用它**：控制核心按其参数限幅；调用方可显式检查限幅标志 |
 | `expand_mask(mask)` | 掩码 → `"j3 夹爪"` 这样的名字串 |
 | `RESET_POSE_DEG` / `RESET_POSE_RAD` | ARX 为 `(0, 0.5, 0.5, 0, 0, 0)`°；Metal 为六轴全 0°，`_RAD` 为对应弧度 |
 | `ROBOT_INIT_POSE_TOL_DEG` / `_RAD` | 20° —— 即 `init_arm()` 的位姿闸门 |
-| `KEEPALIVE_TIMEOUT_S` | 3：单片机的隐式保活窗口 |
+| `KEEPALIVE_TIMEOUT_S` | 3：每台臂的有效命令保活窗口 |
 | `ARM_AUTO_RESET_TIME_S` | 2：一键复位的轨迹时长（参考） |
 | `pose_deviation_deg(joint_deg6)` / `all_close_deg(v6, ref6, tol)` | 位姿偏差 / 逐元素比较 |
 | `state_name(v)` / `mode_name(v)` | 码 → 名字（无法识别的码返回 `"未知(n)"`） |
@@ -429,21 +362,21 @@ ArError
 
 ```bash
 python3 -m sdk.selftest               # 离线自测，不需要 pyserial
-python3 -m unittest discover -s tests -v  # 两种后端及 H7 参数选择
+python3 -m unittest discover -s tests -v  # PC 型号适配及 H7 参数选择
 python3 -m sdk.tui --fake             # 上机控制台（curses 面板），假单片机；真机去掉 --fake
-python3 -m sdk.tui --fake --lang en   # 同上，英文面板（`--lang` 见 sdk/README「界面语言」）
+python3 -m sdk.tui --fake --lang en   # 同上，英文面板（`--lang` 见 [TUI 语言说明](docs/TUI.md#参数与诊断差异)）
 python3 -m sdk.tui --fake --robot-type metal_arm  # H7 模拟器使用 Metal 参考参数
 metal-arm-tui --simulate             # Metal PC 控制核心模拟
 ```
 
 `sdk.tui` 即控制台，`--fake` 等于为下面这个假单片机配了交互界面；`--selftest` 运行 sdk
-自测和控制台自测。当前结果为 SDK 178 项通过、1 项外部 H7 头文件检查跳过，控制台 48 项通过，仓库 `unittest` 33 项通过。H7 TUI 只在「正常运行 + run」时发送 `0x16`；Metal PC 后端在 STOP 中也会周期使能并发送零增益帧。
+自测和控制台自测。两类后端的 TUI 都在正常运行 / RUN 时提交运动目标，其他模式持续保活。电机输出由对应控制器执行。测试入口见 [验证说明](HANDOFF_METAL_ARM.md#验证)。
 
 串口 TUI 的 `--robot-type {arx_x5,metal_arm}` 默认 `arx_x5`，`--init-tol` 默认读取所选配置。TUI 显示的 `vcode` 是本地协议字符串的 FNV-1a 32 位哈希，不代表软件包版本、提交号或电机固件。两种 PC 后端的握手版本字段由本地适配层填充，H7 则从版本帧读取。
 
 界面语言：默认中文，`--lang en` 切英文（**同一份代码 + 一张语言表** `sdk/i18n.py`）。
 `board_defs` 的名字表、`python3 -m sdk.selftest` 自身的输出、`calibrate_gripper` 的交互
-提示**仍是中文**，边界见 sdk/README「界面语言」。SDK 侧的用户可见消息（闸门拒绝、串口打不开）
+提示**仍是中文**，边界见 [TUI 语言说明](docs/TUI.md#参数与诊断差异)。SDK 侧的用户可见消息（闸门拒绝、串口打不开）
 跟着 `--lang` 走，改语言用 `sdk.i18n.set_lang()`。
 
 `python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085` 是连接 ARX H7 的交互式硬件标定，不属于离线测试，也没有 `--robot-type` 参数。工具选项为：`--arm-id`（0=CAN1，1=CAN2）、`--full-open-m`（完全张开的
@@ -475,38 +408,16 @@ SimLink(port=None, baud=921600, *, arm_ids=(0, 1), lost_mask=0, lost_arm=0,
 `0x18` 2 s、通信看门狗 3 s（**每台一份**：发往某台的帧只为该台保活，另一台照常超时）、
 `--fake-lost` 翻转周期 5 s。
 
-## 8. 速查
+## 8. 操作速查
 
-```python
-import sdk, time
-
-link = sdk.Link(); link.open()
-a, b = sdk.Arm(0, link), sdk.Arm(1, link)
-a.connect(); b.connect()
-
-def wait_state(arm, want, timeout=10.0):       # 等待期间必须持续保活
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        for current in (a, b):
-            current.keepalive()
-        if arm.wait_for(lambda x: x.robot_state == want, timeout=0.05):
-            return True
-    return False
-
-wait_state(a, 2)                               # 待初始化
-a.init_arm()
-wait_state(a, 4)                               # 正常运行（落点是阻尼档）
-a.start()                                      # 进 run 档，才能发控制帧
-a.wait_for(lambda x: x.mode == x.board_defs.MODE_RUN, timeout=1.0)   # 等反馈确认切档
-
-s = a.snapshot()                               # 一帧里的一致视图（`__str__` 已格式化）
-print(s, s.gripper_opening)                    # 未标定时 gripper_opening 是 None
-
-a.send_ctrl_pos(s.joint_angles)                      # 关节沿用反馈值、夹爪保持
-a.send_ctrl_pos(s.joint_angles, gripper_m=0.02)      # 按标定给开口（需要标定过）
-a.send_ctrl_pos_vel(s.joint_angles, [0.0]*6)         # 位置 + 速度前馈
-a.keepalive()                                        # 不在控制循环中运行时不要遗漏
-
-a.damping(); a.stop()                          # 阻尼 / STOP
-link.close()
-```
+| 任务 | 公共调用 |
+| --- | --- |
+| 创建设备 | [链路创建](docs/PYTHON.md#创建链路) |
+| 创建臂对象 | `sdk.Arm(arm_id, link)` |
+| 连接与初始化 | `connect()` → 等待待初始化 → `init_arm()` → 等待正常运行 |
+| 开始运动 | `start()` → 等待 RUN → `send_ctrl_pos()` / `send_ctrl_pos_vel()` |
+| 读取一致反馈 | `snapshot()` |
+| 等待时保活 | 为每台臂周期调用 `keepalive()` |
+| 复位 | `reset()`，观察复位中再等待正常运行 |
+| 模式 | `damping()` / `gravity()` / `stop()` |
+| 退出 | [生命周期与诊断差异](docs/BACKENDS.md#生命周期与诊断差异) |

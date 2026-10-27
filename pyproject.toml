@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "arx-x5-control"
 version = "0.6.0"
 description = "Transport-independent ARX X5 and Metal Arm control cores with a shared SDK"
-readme = "arx_x5_control/README.md"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
 
@@ -35,7 +35,7 @@ packages = ["sdk", "sdk.board_defs", "sdk.tui", "arx_x5_control", "arx_x5_contro
 "arx_x5_control" = ["*.md"]
 "arx_x5_control.usb2can" = ["transports.json", "README.md"]
 "arx_x5_control.gravity_compensation" = ["models/*.urdf", "models/LICENSE", "LICENSE", "PROVENANCE.md"]
-"sdk" = ["README.md", "API.md", "config/README.md"]
+"sdk" = ["README.md", "API.md", "HANDOFF_METAL_ARM.md", "docs/*.md", "config/README.md"]
 
 "metal_arm_control" = ["*.md"]
 "metal_arm_control.usb2can" = ["transports.json", "README.md"]
