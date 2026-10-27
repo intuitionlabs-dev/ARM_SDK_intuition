@@ -21,7 +21,7 @@ self-test calls.
 """
 import re
 
-from . import board_defs
+from .board_defs import common as board_defs
 
 LANGS = ("zh", "en")
 DEFAULT_LANG = "zh"

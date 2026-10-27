@@ -31,7 +31,8 @@ import threading
 import time
 import traceback
 
-from . import board_defs, gripper, protocol, units
+from . import gripper, protocol, units
+from .board_defs import arx_x5 as board_defs
 from .arm import Arm
 from .errors import (CalibrationError, FeedbackStale, GateRejected,
                      GripperNotCalibrated, LinkError, NotConnected)

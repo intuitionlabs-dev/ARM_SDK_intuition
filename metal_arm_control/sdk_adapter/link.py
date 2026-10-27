@@ -1,22 +1,21 @@
 """通过现有 sdk.Arm 接口运行 Python 机械臂控制核心。
 
 仅转换 SDK 命令参数，不使用串口、完整字节帧或进程间通信。
-需要 SDK 接入时显式导入 LocalLink，控制核心自身无需导入 SDK。
+SDK 接入时显式导入 LocalLink；设备参数来自 sdk.board_defs 的对应机械臂模块。
 """
 
 from collections import deque
 import struct
-from types import SimpleNamespace
 from math import radians, degrees, isfinite
 from bisect import bisect_left
 import threading
 import time
 
-from sdk import Link, LinkError, NotConnected, ProtocolError, protocol, board_defs as sdk_defs
+from sdk import Link, LinkError, NotConnected, ProtocolError, protocol
+from sdk.board_defs import metal_arm as board_defs
 from sdk.errors import CalibrationError
 
-from ..config import (ArmConfig, JOINT_MIN, JOINT_MAX, RESET_ANGLE,
-                      GRIPPER_MIN, GRIPPER_MAX, GRIPPER_DISTANCES_MM, GRIPPER_ANGLES_RAD)
+from ..config import ArmConfig, GRIPPER_DISTANCES_MM, GRIPPER_ANGLES_RAD
 from ..diagnostics import ControlTrace
 from ..interfaces import MotorIO
 from ..performance import PerformanceProbe
@@ -58,22 +57,6 @@ def _command(tid, payload, arm_id):
         raise ValueError(f"unsupported local command tid: {tid:#x}")
     except (ValueError, struct.error) as exc:
         raise ProtocolError(str(exc)) from exc
-
-
-BOARD_DEFS = SimpleNamespace(**{k: getattr(sdk_defs, k) for k in dir(sdk_defs) if k.isupper()})
-BOARD_DEFS.JOINT_ANGLE_MIN = JOINT_MIN
-BOARD_DEFS.JOINT_ANGLE_MAX = JOINT_MAX
-BOARD_DEFS.JOINT_ANGLE_MIN_RAD = tuple(map(radians, JOINT_MIN))
-BOARD_DEFS.JOINT_ANGLE_MAX_RAD = tuple(map(radians, JOINT_MAX))
-BOARD_DEFS.RESET_POSE_DEG = RESET_ANGLE
-BOARD_DEFS.RESET_POSE_RAD = tuple(map(radians, RESET_ANGLE))
-BOARD_DEFS.GRIPPER_ANGLE_MIN = GRIPPER_MIN
-BOARD_DEFS.GRIPPER_ANGLE_MAX = GRIPPER_MAX
-BOARD_DEFS.GRIPPER_ANGLE_MIN_RAD = radians(GRIPPER_MIN)
-BOARD_DEFS.GRIPPER_ANGLE_MAX_RAD = radians(GRIPPER_MAX)
-BOARD_DEFS.AXIS_MIN = JOINT_MIN + (GRIPPER_MIN,)
-BOARD_DEFS.AXIS_MAX = JOINT_MAX + (GRIPPER_MAX,)
-BOARD_DEFS.GRIPPER_STROKE_DEG = GRIPPER_MAX-GRIPPER_MIN
 
 
 class _FactoryGripperCalibration:
@@ -124,7 +107,7 @@ class LocalLink(Link):
     打开和关闭由调用者负责，本链路只交付控制及停机请求。
     """
 
-    board_defs = BOARD_DEFS
+    board_defs = board_defs
 
     def __init__(self, motor_io: MotorIO, *, configurations=None, background=True, collect_performance=False,
                  collect_trace=False):
@@ -132,7 +115,7 @@ class LocalLink(Link):
         if not all(callable(getattr(motor_io, name, None)) for name in
                    ("poll_feedback", "write_motor_requests")):
             raise TypeError("motor_io must implement MotorIO")
-        self.board_defs = BOARD_DEFS
+        self.board_defs = board_defs
         self.gripper_calib_store = _FactoryGripperStore()
         self.configurations = tuple(configurations) if configurations is not None else (ArmConfig(), ArmConfig())
         self.controller = ControlSystem(self.configurations)

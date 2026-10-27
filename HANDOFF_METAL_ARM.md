@@ -2,7 +2,11 @@
 
 本次已将 MakerMods Metal Arm 适配为 `ARM_SDK_intuition` 的独立 PC 控制后端 `metal_arm_control`，沿用 `arx_x5_control` 的模块结构、控制流程及 `sdk.Arm` 接口。实现和离线验证已提交推送，仓库也已迁移到 `intuitionlabs-dev`。尚未进行 Metal 真机验证，PR 保持草稿。
 
-交接日期：2026-10-27。本文记录的功能实现基线为 `5b76a9b`；后续交接文档提交不属于该功能基线。接手时先核对分支和远端最新状态。
+交接日期：2026-10-27。
+
+后续更新：设备参数已拆为 `sdk.board_defs.arx_x5` 和 `sdk.board_defs.metal_arm`，通过 `arm.board_defs` / `link.board_defs` 读取。包根不再暴露默认设备参数。用户将通过 TUI 读取并提供 Metal 复位角；当前仍保留旧六轴零角，复位角替换待该数据提供后完成。
+
+本文记录的功能实现基线为 `5b76a9b`；后续交接文档提交不属于该功能基线。接手时先核对分支和远端最新状态。
 
 ## 任务背景和当前状态
 
@@ -29,7 +33,7 @@
 | `5c1311e` | 新增 Metal 镜像包、设备协议与参数、模型、文档、测试及安装入口 |
 | `5b76a9b` | 增加原厂 C++ 编码对照、CAN 线程和进程生命周期测试及 CI |
 
-这三个提交基于 `f6937f0`。现有 `arx_x5_control/` 文件未改动；兼容性改动位于共享 SDK/TUI 层。不要为统一两个后端而覆盖 ARX 原有默认值。
+这三个提交基于 `f6937f0`。最初三个提交未修改 `arx_x5_control/`；后续参数拆分也更新了 ARX 配置导入和本地链路，硬件参数与控制行为保持原值。不要为统一两个后端而覆盖 ARX 原有默认值。
 
 ## 代码入口和设计边界
 
@@ -37,7 +41,7 @@
 
 | 入口 | 职责或本次变化 |
 | --- | --- |
-| [arm.py](arm.py)、[tui/session.py](tui/session.py)、[tui/app.py](tui/app.py) | 读取可选的 `link.board_defs` 和 `link.gripper_calib_store`；缺省仍使用 ARX 配置 |
+| [arm.py](arm.py)、[tui/session.py](tui/session.py)、[tui/app.py](tui/app.py) | 读取链路选择的独立机械臂参数模块及可选的 `link.gripper_calib_store`；H7 链路明确选择 ARX 配置 |
 | [metal_arm_control/sdk_adapter/link.py](metal_arm_control/sdk_adapter/link.py) | `LocalLink`、共享 SDK 协议适配、单位转换、每臂配置、调度与反馈 |
 | [metal_arm_control/system.py](metal_arm_control/system.py)、[arm.py](metal_arm_control/arm.py) | 单臂或双臂管理、状态机、命令门控和故障处理 |
 | [command.py](metal_arm_control/command.py)、[trajectory.py](metal_arm_control/trajectory.py) | 目标处理、TD 和五次轨迹、初始化及复位流程 |

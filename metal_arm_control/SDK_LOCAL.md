@@ -65,4 +65,4 @@ if __name__ == '__main__':
 
 应用须每台臂 3 s 内提交有效命令/保活。命令超时进入阻尼；反馈丢失/故障进入停止。停止不维持重力补偿。关闭链路会发送禁用电机请求。
 
-SDK 的默认 Metal 夹爪查表与 ARX 标定文件分离。`sdk.Arm(..., calib_store=...)` 可明确提供实测标定存储。`link.board_defs` 提供该后端的限位和复位常量；`sdk.board_defs` 仍是兼容旧程序的 ARX 默认值，不会被全局修改。
+SDK 的默认 Metal 夹爪查表与 ARX 标定文件分离。`sdk.Arm(..., calib_store=...)` 可明确提供实测标定存储。`link.board_defs` 和 `arm.board_defs` 指向 `sdk.board_defs.metal_arm`，包含该后端的限位、复位常量和限幅函数。ARX 参数独立位于 `sdk.board_defs.arx_x5`；`sdk.board_defs` 仅作为包入口，不再直接提供某台机械臂的参数。

@@ -15,6 +15,22 @@ python3 -m metal_arm_control --demo --seconds 8
 metal-arm-tui --simulate
 ```
 
+## 每种机械臂的参数
+
+`sdk.board_defs` 现在是按机械臂拆分的包，不再提供默认的全局限位：
+
+```python
+from sdk.board_defs import arx_x5, metal_arm
+
+# 已创建 arm 时，使用它所属链路的配置。
+defs = arm.board_defs
+angle_deg, clipped = defs.clamp_axis(1, -30.0)
+```
+
+ARX/H7 和 ARX PC 后端使用 `sdk.board_defs.arx_x5`；Metal PC 后端使用 `sdk.board_defs.metal_arm`。控制核心和 SDK 引用同一份限位与复位角。旧的 `sdk.board_defs.MODE_RUN` 等访问请改为 `arm.board_defs.MODE_RUN`，或显式选择机械臂模块。
+
+Metal 的非零复位角待用户从 TUI 读取后提供；目前仍保留旧的六轴零角，不能把它当成已确认的厂家复位姿态。
+
 ## 选择控制后端
 
 | 连接方式 | 链路对象 | 电机控制执行位置 |
@@ -234,7 +250,7 @@ wait_state(2)                                    # 等到「待初始化」
 arm.init_arm()                                   # 初始化（先看第 8 节的闸门！）
 wait_state(4)                                    # 等到「正常运行」（落点是阻尼档）
 arm.start()                                      # 切进 run 档；控制帧只在这个档被接受
-arm.wait_for(lambda a: a.mode == sdk.board_defs.MODE_RUN)   # 等反馈确认切档（见下）
+arm.wait_for(lambda a: a.mode == a.board_defs.MODE_RUN)   # 等反馈确认切档（见下）
 
 while True:
     # 夹爪目标三选一：gripper_m=0.03（要标定过）/ gripper_raw_deg=-141.5（不用标定）/ 都不给 = 保持当前
@@ -563,7 +579,7 @@ python3 -m sdk.tui --selftest --lang en      # 英文模板实际执行一次自
 
 英文只覆盖**面向读者的文本**。下面这些**保持中文**，这是有意设计：
 
-* `sdk/board_defs.py` 的名字表。它是公开字段 `Snapshot.robot_state_name` / `mode_name` /
+* `sdk/board_defs/arx_x5.py` 的名字表。它是公开字段 `Snapshot.robot_state_name` / `mode_name` /
   `lost_names` / `inited_names` 的来源，保持中文；英文名并列在 `i18n` 里；
 * `python3 -m sdk.selftest` 自己的小节标题与汇总行，以及 `--selftest` 里那一段 sdk 自测的
   同名部分；
@@ -588,7 +604,7 @@ python3 -m sdk.tui --selftest --lang en      # 英文模板实际执行一次自
 | `__init__.py` | 包入口，只 re-export；`import sdk` 不碰 pyserial、不起线程 |
 | `errors.py` | 异常层级（单独一个文件，避免各模块互相 import） |
 | `protocol.py` | 协议层：CRC / 版本码的 FNV 哈希 / 码表 / 组帧 / `FrameParser` / payload 编解码（**线上单位**） |
-| `board_defs.py` | 板侧常量镜像：软限位、复位位姿、状态 / 档位名字表 |
+| `board_defs/` | `arx_x5.py` / `metal_arm.py` 分别提供各机械臂限位与复位姿态；`common.py` 保存共同协议编号 |
 | `units.py` | 度 ↔ rad 换算策略 |
 | `link.py` | 串口 + RX 线程 + 按 `arm_id` 分流 + 写锁 + 串口选择 |
 | `arm.py` | `Arm`：全部帧接口 + 闸门预检 + 单位换算（**SI**） |

@@ -4,7 +4,7 @@
 
     errors.py        异常层级
     protocol.py      线上协议：CRC、码表、组帧 / 切帧、payload 编解码（**deg 为单位**）
-    board_defs.py    板侧常量镜像：软限位、复位位姿、状态 / 模式名字表
+    board_defs/      每种机械臂一份参数：arx_x5.py / metal_arm.py
     units.py         deg↔rad 换算策略（SDK 对外用 SI）
     link.py          串口 + 后台收包线程 + 按 arm_id 分流 + 口子挑选
     arm.py           `Arm`：全部帧接口 + 闸门预检 + 单位换算（**rad / m**）
@@ -38,7 +38,7 @@
     arm.init_arm()                      # 一键复位 + 夹爪找零（先确认臂在复位位姿附近）
     wait_state(4)                       # 等「正常运行」（落点是阻尼档）
     arm.start()                         # 进 run 档，才能发控制帧
-    arm.wait_for(lambda a: a.mode == sdk.board_defs.MODE_RUN)   # 等反馈确认切档，
+    arm.wait_for(lambda a: a.mode == a.board_defs.MODE_RUN)   # 等反馈确认切档，
                                         # 否则紧接着发的第一帧控制帧会被闸门挡下
     while True:
         arm.send_ctrl_pos(arm.joint_angles, gripper_m=0.0)   # 照抄现在的位置、夹爪闭合

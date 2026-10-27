@@ -13,7 +13,8 @@ The command-line entry point is in [__main__.py](__main__.py): `python3 -m sdk.t
 import curses
 import time
 
-from .. import board_defs, i18n, protocol
+from .. import i18n, protocol
+from ..board_defs import arx_x5 as board_defs
 from .session import GRIPPER, N_AXIS, axis_hi_rad, axis_lo_rad, short_label
 
 

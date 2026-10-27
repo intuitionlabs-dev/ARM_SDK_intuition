@@ -12,7 +12,8 @@ Entry point: `python3 -m sdk.tui --selftest` (runs sdk's 205 items first, then t
 import argparse
 import time
 
-from .. import board_defs, i18n, protocol
+from .. import i18n, protocol
+from ..board_defs import arx_x5 as board_defs
 from ..selftest import Checker, main as sdk_selftest_main
 from ..sim import SimLink
 from . import session as cb

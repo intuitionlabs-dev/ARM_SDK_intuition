@@ -32,7 +32,8 @@ import os
 import threading
 import time
 
-from . import board_defs, i18n, protocol
+from . import i18n, protocol
+from .board_defs import arx_x5 as board_defs
 from .errors import LinkError, NotConnected
 
 # ==================== 口子挑选 ====================
@@ -324,6 +325,8 @@ class Link:
     `r`（`reopen()`）可以再开一轮。`auto_reconnect=False` 就退回"断了就断着"的老样子。
     """
 
+    board_defs = board_defs
+
     def __init__(self, port=None, baud=921600, *, timeout=0.1, verify_on_open=True,
                  auto_reconnect=True, reconnect_wait=RECONNECT_WAIT_S,
                  reconnect_max_wait=RECONNECT_MAX_WAIT_S,
@@ -596,9 +599,9 @@ class Link:
 
     def channel(self, arm_id):
         """拿（必要时建）某一台臂的收包槽。arm_id 越界直接报错 —— 越界的帧板子会静默丢弃。"""
-        if not 0 <= arm_id < board_defs.ARM_NUM:
+        if not 0 <= arm_id < self.board_defs.ARM_NUM:
             raise ValueError(i18n.tr("link.arm_id_range",
-                                     board_defs.ARM_NUM - 1, board_defs.ARM_NUM, arm_id))
+                                     self.board_defs.ARM_NUM - 1, self.board_defs.ARM_NUM, arm_id))
         with self._chan_lock:
             ch = self._channels.get(arm_id)
             if ch is None:
@@ -672,7 +675,7 @@ class Link:
         now = time.monotonic()
         for tid, arm_id, payload in frames:
             self.n_rx += 1
-            if arm_id >= board_defs.ARM_NUM:
+            if arm_id >= self.board_defs.ARM_NUM:
                 # 越界 arm_id：和板子同一个口径 —— 丢弃、计数、不报错
                 self.n_bad_arm += 1
                 continue

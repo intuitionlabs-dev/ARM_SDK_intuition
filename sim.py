@@ -24,7 +24,8 @@ import struct
 import threading
 import time
 
-from . import board_defs, protocol
+from . import protocol
+from .board_defs import arx_x5 as board_defs
 from .errors import NotConnected
 from .link import Link
 

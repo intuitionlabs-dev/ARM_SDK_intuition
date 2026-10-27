@@ -87,7 +87,7 @@ wait_state(2)                                  # 待初始化
 arm.init_arm()                                 # 0x02 初始化（闸门见表），执行数秒
 wait_state(4)                                  # 正常运行（落点是阻尼档）
 arm.start()                                    # 0x12 进 run 档，控制帧只在这个档被接受
-arm.wait_for(lambda a: a.mode == sdk.board_defs.MODE_RUN, timeout=1.0)   # 等反馈确认切档
+arm.wait_for(lambda a: a.mode == a.board_defs.MODE_RUN, timeout=1.0)   # 等反馈确认切档
 
 while True:
     arm.send_ctrl_pos(arm.joint_angles)        # 关节沿用反馈值（不动）、夹爪不给（保持）
@@ -353,7 +353,9 @@ ArError
 
 ## 6. 常量与工具模块
 
-### `sdk.board_defs` —— 单片机侧常量的镜像
+### `sdk.board_defs` —— 按机械臂拆分的参数包
+
+使用 `from sdk.board_defs import arx_x5 as board_defs` 或 `metal_arm as board_defs`。已创建机械臂对象时直接使用 `arm.board_defs`。包根不再提供 `JOINT_ANGLE_MIN`、`MODE_RUN` 等属性；下面列出的参数和辅助函数均属于所选机械臂模块。
 
 | 名字 | 值 / 说明 |
 |---|---|
@@ -477,7 +479,7 @@ wait_state(a, 2)                               # 待初始化
 a.init_arm()
 wait_state(a, 4)                               # 正常运行（落点是阻尼档）
 a.start()                                      # 进 run 档，才能发控制帧
-a.wait_for(lambda x: x.mode == sdk.board_defs.MODE_RUN, timeout=1.0)   # 等反馈确认切档
+a.wait_for(lambda x: x.mode == x.board_defs.MODE_RUN, timeout=1.0)   # 等反馈确认切档
 
 s = a.snapshot()                               # 一帧里的一致视图（`__str__` 已格式化）
 print(s, s.gripper_opening)                    # 未标定时 gripper_opening 是 None

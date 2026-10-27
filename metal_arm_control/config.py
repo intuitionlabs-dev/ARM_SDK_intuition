@@ -6,11 +6,12 @@ from .numerics import PIDConfig
 from .types import finite_tuple
 
 # Vendor MIT ranges are encoding scales, not rated torque/speed.
-JOINT_MIN = (-160.0, -180.0, 0.0, -123.0, -85.0, -145.0)
-JOINT_MAX = (160.0, 0.0, 180.0, 81.0, 85.0, 145.0)
-GRIPPER_MIN, GRIPPER_MAX = 0.0, 2.4 * 180.0 / 3.141592653589793
-# SDK-compatible reset policy: mechanical zero, NOT a vendor resting pose.
-RESET_ANGLE = (0.0,) * 6
+from sdk.board_defs import metal_arm as board_defs
+
+JOINT_MIN = board_defs.JOINT_ANGLE_MIN
+JOINT_MAX = board_defs.JOINT_ANGLE_MAX
+GRIPPER_MIN, GRIPPER_MAX = board_defs.GRIPPER_ANGLE_MIN, board_defs.GRIPPER_ANGLE_MAX
+RESET_ANGLE = board_defs.RESET_POSE_DEG
 TD_R = (1000.0, 4000.0, 4000.0, 2000.0, 2000.0, 2000.0)
 JOINT_QUINTIC_DURATION_S = 0.16
 PLAN_SPEED_COMP_COEF = (1.0,) * 6

@@ -6,7 +6,8 @@ import locale
 from math import isfinite
 import time
 
-from sdk import board_defs, i18n
+from sdk import i18n
+from sdk.board_defs import metal_arm as board_defs
 from sdk.tui.session import ConsoleSession, DEFAULT_STEP_RAD, STEP_CHOICES_RAD, parse_arm_id
 
 from .. import log

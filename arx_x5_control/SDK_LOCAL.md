@@ -78,7 +78,7 @@ with LocalLink.simulated(configurations=[ArmConfig()]) as link:
     arm.init_arm()
     wait_arms(link, [arm], lambda a: a.robot_state == sdk.board_defs.STATE_NORMAL)
     arm.start()
-    wait_arms(link, [arm], lambda a: a.mode == sdk.board_defs.MODE_RUN)
+    wait_arms(link, [arm], lambda a: a.mode == a.board_defs.MODE_RUN)
     arm.send_ctrl_pos_vel(
         arm.joint_angles,            # 6 个关节角，rad
         (0.0,) * 6,                   # 6 个关节速度，rad/s

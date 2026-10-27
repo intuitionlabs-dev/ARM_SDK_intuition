@@ -21,7 +21,7 @@ shim that forwards to `python3 -m sdk.tui`.
 Panel language: Chinese by default, `--lang en` for English. That is **one code path plus
 the language table in `sdk/i18n.py`**, not two panels, and the Chinese output is
 byte-for-byte what it was before the table existed. The name tables in
-`sdk/board_defs.py`, the sdk-side self-test's own output and `calibrate_gripper.py`'s own
+`sdk/board_defs/arx_x5.py`, the sdk-side self-test's own output and `calibrate_gripper.py`'s own
 prompts stay Chinese on purpose — see sdk/README, the "UI language" section.
 """
 

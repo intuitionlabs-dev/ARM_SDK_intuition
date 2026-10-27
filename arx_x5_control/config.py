@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from .numerics import PIDConfig
 from .types import finite_tuple
 
-JOINT_MIN = (-115.0, 0.5, 0.5, -90.0, -90.0, -112.87)
-JOINT_MAX = (90.0, 206.26, 171.88, 90.0, 90.0, 119.17)
-GRIPPER_MIN, GRIPPER_MAX = -142.0, 142.0
-RESET_ANGLE = (0.0, 0.5, 0.5, 0.0, 0.0, 0.0)
+from sdk.board_defs import arx_x5 as board_defs
+
+JOINT_MIN = board_defs.JOINT_ANGLE_MIN
+JOINT_MAX = board_defs.JOINT_ANGLE_MAX
+GRIPPER_MIN, GRIPPER_MAX = board_defs.GRIPPER_ANGLE_MIN, board_defs.GRIPPER_ANGLE_MAX
+RESET_ANGLE = board_defs.RESET_POSE_DEG
 TD_R = (1000.0, 4000.0, 4000.0, 2000.0, 2000.0, 2000.0)
 JOINT_QUINTIC_DURATION_S = 0.16
 PLAN_SPEED_COMP_COEF = (1.0,) * 6

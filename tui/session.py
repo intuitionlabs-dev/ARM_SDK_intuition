@@ -26,7 +26,8 @@ import argparse
 import time
 from collections import deque
 
-from .. import board_defs, i18n, protocol, units
+from .. import i18n, protocol, units
+from ..board_defs import arx_x5 as board_defs
 from ..errors import ArError, FeedbackStale, GateRejected
 from ..link import Link
 from ..sim import SimLink

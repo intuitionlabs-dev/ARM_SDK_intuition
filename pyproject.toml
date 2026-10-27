@@ -25,7 +25,7 @@ metal-arm-can-check = "metal_arm_control.can_check:main"
 metal-arm-tui = "metal_arm_control.sdk_adapter.tui:main"
 
 [tool.setuptools]
-packages = ["sdk", "sdk.tui", "arx_x5_control", "arx_x5_control.sdk_adapter", "arx_x5_control.usb2can", "arx_x5_control.gravity_compensation", "metal_arm_control", "metal_arm_control.sdk_adapter", "metal_arm_control.usb2can", "metal_arm_control.gravity_compensation"]
+packages = ["sdk", "sdk.board_defs", "sdk.tui", "arx_x5_control", "arx_x5_control.sdk_adapter", "arx_x5_control.usb2can", "arx_x5_control.gravity_compensation", "metal_arm_control", "metal_arm_control.sdk_adapter", "metal_arm_control.usb2can", "metal_arm_control.gravity_compensation"]
 
 [tool.setuptools.package-dir]
 "sdk" = "."

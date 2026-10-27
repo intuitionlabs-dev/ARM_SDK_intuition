@@ -82,7 +82,8 @@ import locale
 import os
 import sys
 
-from .. import board_defs, i18n
+from .. import i18n
+from ..board_defs import arx_x5 as board_defs
 from ..errors import LinkError
 from ..link import (assert_port_allowed, describe_port, link_hint,
                     list_links, pick_default_port)
