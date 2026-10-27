@@ -1,6 +1,6 @@
 # Metal Arm SDK 适配交接
 
-本次已将 MakerMods Metal Arm 适配为 `ARM_SDK_intuition` 的独立 PC 控制后端 `metal_arm_control`，沿用 `arx_x5_control` 的模块结构、控制流程及 `sdk.Arm` 接口。实现和离线验证已提交推送，仓库也已迁移到 `intuitionlabs-dev`。尚未进行 Metal 真机验证，PR 保持草稿。
+本次已将 MakerMods Metal Arm 适配为 `ARM_SDK_intuition` 的独立 PC 控制后端 `metal_arm_control`，沿用 `arx_x5_control` 的模块结构、控制流程及 `sdk.Arm` 接口。实现和离线验证已提交推送，仓库也已迁移到 `intuitionlabs-dev`。尚未进行 Metal 真机验证。用户要求不使用 PR，现有草稿 PR 已关闭，后续通过直接提交和推送交付。
 
 交接日期：2026-10-27。
 
@@ -17,13 +17,13 @@
 | 仓库 | https://github.com/intuitionlabs-dev/ARM_SDK_intuition |
 | 本机目录 | `/home/zhaosuya/ARM_SDK_intuition` |
 | 任务分支 | `feat/metal-arm-control` |
-| 合并目标 | `master` |
-| 草稿 PR | https://github.com/intuitionlabs-dev/ARM_SDK_intuition/pull/1 |
+| 交付方式 | 直接 commit/push 到任务分支，不使用 PR |
+| 历史 PR（已关闭，未合并） | https://github.com/intuitionlabs-dev/ARM_SDK_intuition/pull/1 |
 | 本机 `origin` | `https://github.com/intuitionlabs-dev/ARM_SDK_intuition.git` |
 | 原厂源码目录 | `/home/zhaosuya/metal-python-ros` |
 | 原厂分支及固定版本 | `humble`，`bccf3c82a21453a7b1784a94966456e16ff0f008` |
 
-仓库迁移已经完成，无需再次发起 transfer。旧的 `Crystal-1438/ARM_SDK_intuition` 地址会重定向；后续使用新组织地址。PR 尚未合并，`master` 尚未包含本次 Metal 实现。用户没有要求将 PR 转为正式评审或合并。
+仓库迁移已经完成，无需再次发起 transfer。旧的 `Crystal-1438/ARM_SDK_intuition` 地址会重定向；后续使用新组织地址。用户于 2026-10-27 要求不使用 PR，已关闭 PR #1，保留 `feat/metal-arm-control` 分支及全部提交。继续在任务分支直接提交和推送，不新建、重开或更新 PR；当前 `master` 尚未包含本次 Metal 实现。
 
 三个功能提交按依赖顺序为：
 
@@ -177,11 +177,11 @@ python3 -m venv .venv
 
 ## 后续工作及交接约定
 
-当前没有已确认但未修复的离线测试失败。接下来主要是代码评审和实机确认，不应将交接请求理解为已经授权新的硬件运动或 PR 合并。
+当前没有已确认但未修复的离线测试失败。接下来主要是代码检查和实机确认，不应将交接请求理解为已经授权新的硬件运动。
 
 1. 评审 Metal 必要行为差异，尤其是初始化、六轴零角复位、禁用电机退出，以及共享 SDK 配置不污染 ARX 的约束。
 2. 在具备对应设备和调试条件后，先确认 CAN ID、固件协议范围、反馈单位、零点和夹爪出厂标定。不能与原厂驱动或 MakerMods Lab 同时控制同一总线。
 3. 再安排实机初始化、低幅关节控制、夹爪换算、重力补偿、超时停机和退出行为验证；记录设备型号、固件版本、负载、参数和结果。重点确认零角复位策略、250 Hz 时序和真实负载下的补偿参数。
-4. 按后续用户指示处理 PR 评审和合并。保留实机验证边界，不因模拟通过就将实现描述为已完成硬件验收。
+4. 按用户要求直接提交和推送，不使用 PR。保留实机验证边界，不因模拟通过就将实现描述为已完成硬件验收。
 
 用户已持续授权任务相关的小步提交和推送：每个完整小改动及相关检查完成后及时 commit/push，较长任务有可保存成果时约每 5–10 分钟保存一次。只提交本任务文件，检查 diff，保护无关工作和凭据；沿用任务分支及配置远端，不 force-push。每次验证推送结果；若受阻，保留本地提交并报告具体原因。
