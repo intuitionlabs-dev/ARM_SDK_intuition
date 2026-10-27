@@ -53,7 +53,7 @@ python3 -m sdk.tui --fake --robot-type metal_arm
 
 `--init-tol` 未指定时取所选参数中的初始化容差。`--fake` 模拟 H7 串口状态机，复位目标跟随所选参数；Metal PC 控制流程的模拟仍使用 `metal-arm-tui --simulate`。
 
-Metal 的非零复位角待用户从 TUI 读取后提供；目前仍保留旧的六轴零角，不能把它当成已确认的厂家复位姿态。
+Metal 的复位角已由用户确认：J1～J6 均为 0°，即 `(0, 0, 0, 0, 0, 0)`。初始化参考和 `reset()` 目标共用 `board_defs/metal_arm.py` 中的这组角度；复位不写入电机零点。
 
 ## 选择控制后端
 

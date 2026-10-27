@@ -1,4 +1,4 @@
-"""Metal Arm limits from metal-python-ros bccf3c8; reset pose pending confirmation."""
+"""Metal Arm limits from metal-python-ros bccf3c8; user-confirmed reset pose."""
 
 import math
 
@@ -12,8 +12,8 @@ GRIPPER_STROKE_DEG = GRIPPER_ANGLE_MAX - GRIPPER_ANGLE_MIN
 AXIS_MIN = JOINT_ANGLE_MIN + (GRIPPER_ANGLE_MIN,)
 AXIS_MAX = JOINT_ANGLE_MAX + (GRIPPER_ANGLE_MAX,)
 
-# TODO: replace the legacy zero-angle target after the user supplies the measured
-# reset pose. This is NOT a confirmed vendor reset/resting pose.
+# User confirmed the J1-J6 reset reference as all zero on 2026-10-27.
+# These are joint target angles; resetting does not rewrite motor zero points.
 RESET_POSE_DEG = (0.0,) * 6
 
 
