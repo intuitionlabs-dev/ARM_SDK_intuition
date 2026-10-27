@@ -33,7 +33,7 @@ import threading
 import time
 
 from . import i18n, protocol
-from .board_defs import arx_x5 as board_defs
+from .board_defs import arx_x5 as board_defs, get_profile
 from .errors import LinkError, NotConnected
 
 # ==================== 口子挑选 ====================
@@ -316,6 +316,10 @@ class ArmChannel:
 class Link:
     """真串口。写加锁（多线程往同一个口写会把帧拆散），读在后台线程。
 
+    `robot_type="arx_x5"` / `"metal_arm"` 选择整条链路的上位机参数。
+    不传时沿用类的 `board_defs`（本类默认 ARX，PC 子类保留各自参数）。
+    参数选择不会修改 H7 固件或线上协议；两台臂共用所选参数。
+
     统计量（`stats()`）：`n_tx` / `n_rx` / `n_bad_arm` / `n_err_crc8` / `n_err_crc16` /
     `n_drop`。注意 **`n_tx` 是"字节写出去了"，不是"板子收到了"** —— 板子对所有命令帧都是
     静默的，受理与否只能看反馈帧里的状态有没有变。
@@ -330,7 +334,8 @@ class Link:
     def __init__(self, port=None, baud=921600, *, timeout=0.1, verify_on_open=True,
                  auto_reconnect=True, reconnect_wait=RECONNECT_WAIT_S,
                  reconnect_max_wait=RECONNECT_MAX_WAIT_S,
-                 reconnect_max_tries=RECONNECT_MAX_TRIES):
+                 reconnect_max_tries=RECONNECT_MAX_TRIES, robot_type=None):
+        self.board_defs = type(self).board_defs if robot_type is None else get_profile(robot_type)
         self.port = port                  # None = open() 时自动挑
         self.baud = baud
         self.ser_timeout = timeout        # 读超时，决定收包线程多久醒一次

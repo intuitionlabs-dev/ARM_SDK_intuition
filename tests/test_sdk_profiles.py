@@ -16,6 +16,34 @@ class ProfileTests(unittest.TestCase):
         self.assertIs(arm.board_defs, board_defs)
         self.assertEqual(axis_lo_rad(1), board_defs.JOINT_ANGLE_MIN_RAD[1])
 
+    def test_serial_profile_selection_and_feedback_routing(self):
+        arx = Link(robot_type="arx_x5")
+        metal = Link(robot_type="metal_arm")
+        self.assertIs(arx.board_defs, board_defs)
+        self.assertIs(metal.board_defs, metal_arm)
+        for arm_id in (0, 1):
+            arm = metal.arm(arm_id)
+            self.assertIs(arm.board_defs, metal_arm)
+            self.assertIs(arx.arm(arm_id).board_defs, board_defs)
+            payload = sdk.protocol.encode_feedback(
+                metal_arm.MODE_STOP, metal_arm.STATE_WAIT_INIT, 0, 0x7F,
+                (0., -19.75, 0., 0., 0., 0.), (0.,) * 6, 0., (30,) * 7)
+            frame = sdk.protocol.encode(sdk.protocol.TID_ARM_FEEDBACK, payload, arm_id)
+            metal.inject_bytes(frame)
+            arx.inject_bytes(frame)
+            why = []
+            arm._check_pose(arm._chan.snapshot_feedback()[0], why)
+            self.assertEqual(why, [])
+            arx.arm(arm_id)._check_pose(arx.channel(arm_id).snapshot_feedback()[0], why)
+            self.assertTrue(why)  # Same feedback exceeds the ARX reset-pose tolerance.
+            self.assertAlmostEqual(arm.snapshot().joint_angles_deg[1], -19.75)
+        self.assertIs(Link().board_defs, board_defs)
+
+    def test_unknown_serial_profile_is_rejected(self):
+        for value in ("metal", "", "unknown", 123, []):
+            with self.subTest(robot_type=value), self.assertRaisesRegex(ValueError, "robot_type"):
+                Link(robot_type=value)
+
     def test_profile_is_per_link(self):
         link = Link()
         link.board_defs = SimpleNamespace(

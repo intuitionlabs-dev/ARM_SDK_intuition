@@ -27,7 +27,20 @@ defs = arm.board_defs
 angle_deg, clipped = defs.clamp_axis(1, -30.0)
 ```
 
-ARX/H7 和 ARX PC 后端使用 `sdk.board_defs.arx_x5`；Metal PC 后端使用 `sdk.board_defs.metal_arm`。控制核心和 SDK 引用同一份限位与复位角。旧的 `sdk.board_defs.MODE_RUN` 等访问请改为 `arm.board_defs.MODE_RUN`，或显式选择机械臂模块。
+ARX PC 后端使用 `sdk.board_defs.arx_x5`；Metal PC 后端使用 `sdk.board_defs.metal_arm`。控制核心和 SDK 引用同一份限位与复位角。旧的 `sdk.board_defs.MODE_RUN` 等访问请改为 `arm.board_defs.MODE_RUN`，或显式选择机械臂模块。
+
+H7 串口链路可通过 `robot_type` 选择上位机参数，支持 `"arx_x5"` 和 `"metal_arm"`；不传时默认 ARX，未知名称会在创建链路时抛出 `ValueError`：
+
+```python
+import sdk
+
+link = sdk.Link("/dev/ttyACM0", robot_type="metal_arm")
+a, b = link.arm(0), link.arm(1)
+assert a.board_defs is sdk.board_defs.metal_arm
+# 创建对象不打开串口；需要通信时再 link.open() / a.connect()。
+```
+
+同一条 H7 链路的两台臂共用所选参数，不同链路可分别选择。选择影响 SDK 的姿态预检及 TUI 的限位和复位参考显示；不会把参数下发到 H7，也不会切换固件中的电机驱动、控制流程或协议版本。H7 固件需要自行支持对应机械臂。夹爪米制换算仍使用 H7 链路原有的标定配置。
 
 Metal 的非零复位角待用户从 TUI 读取后提供；目前仍保留旧的六轴零角，不能把它当成已确认的厂家复位姿态。
 
