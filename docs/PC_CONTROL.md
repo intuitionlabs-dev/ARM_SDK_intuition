@@ -57,7 +57,7 @@ result = controller.step(now_ms, commands=commands, motor_feedback=feedback)
 
 非位置命令使用空角度数组和空速度数组。`POSITION` 使用 6 个关节角。`POSITION_VELOCITY` 同时使用 6 个角度和 6 个速度。
 
-控制器先限制目标角度，再选择参考值来源：
+命令周期为 2 ms。TD 参数为 `r=(1000,4000,4000,2000,2000,2000)`、`h=0.002`、`h0=0.004`。`follow()` 同步位置，并清零速度和加速度。控制器先限制目标角度，再选择参考值来源：
 
 | 条件 | 位置 | 速度 | 加速度 |
 | --- | --- | --- | --- |
@@ -136,7 +136,7 @@ stateDiagram-v2
 
 正常运行时 3 s 收不到命令会保留 NORMAL 并进入 DAMPING，随后 `START` 可恢复。尚在初始化/校准/复位等其他状态时超时会进入 COMM_LOST 并取消未完成的自动动作。任何电机掉线时，本臂实际输出模式为 STOP；另一个臂独立运行。
 
-`ArmFeedback.mode` 是电机掉线判断后的实际模式，`requested_mode` 是总模式请求的模式。`motor_initialized` 的前六位按 H7 逻辑置位，不能用来判断在线；在线状态必须查看 `motor_lost`。夹爪初始化位只在其找零成功后置位。温度保留浮点数，未知为 None。
+`ArmFeedback.mode` 是实际输出模式，`requested_mode` 是请求模式。`motor_initialized` 表示初始化标志，在线状态由 `motor_lost` 表示。夹爪初始化位的设置条件见 [控制行为表](ROBOTS.md#控制行为)。温度使用浮点数，未知为 `None`。
 
 动力学和参考值检查也决定 `ArmFeedback.mode`。动力学反馈按 joint1…joint6 排列：
 
@@ -146,11 +146,11 @@ stateDiagram-v2
 | `dynamics_torque` | 6，N·m | 当前模式的关节动力学补偿 |
 | `dynamics_status` | 1，整数 | 0=成功，-1=无效参数，-2=角度超限，-3=结果非有限数 |
 
-RUN 使用 `M(q)qdd_ref + C(q,qd)qd + G(q)`。`q` 和 `qd` 来自本周期关节反馈。`qdd_ref` 来自命令层，单位为 deg/s²。求解器把三组输入转换为 rad、rad/s 和 rad/s²。GRAVITY 使用 `G(q)`。STOP 和 DAMPING 的补偿值均为零。
+动力学输入使用本周期关节位置、速度反馈及命令层参考加速度，经单位换算后交给求解器。RUN 的模型和缩放见 [型号对照](ROBOTS.md#控制行为)；GRAVITY 使用静态重力项。STOP 和 DAMPING 的补偿值均为零。
 
 `DynamicsStatus` 提供状态枚举。求解失败时，本周期输出 STOP。控制器清零补偿，并产生 `dynamics_error` 事件。`detail` 为状态枚举名称。总模式请求保留在 `requested_mode`。
 
-`ArmConfig.gravity_enabled` 控制整个动力学补偿。`gravity_model` 选择 `2023`、`master` 或 `2025`。`gravity_base` 使用基座系 m/s²。`gravity_sdk_scale=True` 时，重力项乘 `[0.8,0.8,0.8,1.32,1.32,1.32]`。惯性项和科里奥利项使用物理模型值。
+`ArmConfig.gravity_enabled` 控制动力学补偿，`gravity_model` 选择对应型号的模型，`gravity_base` 使用基座系 m/s²，`gravity_sdk_scale` 选择型号对应的缩放策略。参数见 [ARX](../arx_x5_control/PC_PORT.md#动力学) 和 [Metal](../metal_arm_control/PC_PORT.md#动力学)。
 
 运行模式的粘性摩擦前馈为 `radians(参考关节速度) × viscous_damping`。系数单位为 N·m·s/rad。电机输出使用 `direction × (dynamics_torque + 粘性摩擦前馈) × torque_scale`。求解器要求各关节角绝对值不超过 128 rad。
 

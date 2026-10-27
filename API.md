@@ -303,7 +303,7 @@ ArError
 
 | 名字 | 值 / 说明 |
 |---|---|
-| `ARM_NUM` | 2（一台单片机上的臂数；`arm_id` 必须 < 它） |
+| `ARM_NUM` | 2（SDK 臂编号上限；PC 还需符合实际配置的通道数） |
 | `ARM_JOINT_NUM` / `GRIPPER` / `ARM_MOTOR_NUM` | 6 / 6（夹爪的轴号）/ 7 |
 | `JOINT_NAMES` / `AXIS_NAMES` | `("j1"..."j6")` / 前者 + `("夹爪",)`，索引与掩码的位一一对应 |
 | `arm_label(arm_id)` | `"臂A(arm_id=0, CAN1)"` 的统一写法 |
@@ -311,12 +311,12 @@ ArError
 | `STATE_WAIT_HANDSHAKE` … `STATE_RESETTING` + `STATE_NAME` | 状态码 0..7 与名字 |
 | `ZERO_STATE_NAME` / `ZERO_RES_NAME` | 上面 `SetZeroAck` 两张名字表 |
 | `JOINT_ANGLE_MIN` / `MAX`（deg）、`_RAD` 结尾的各一份 | 关节软限位，6 个 |
-| `GRIPPER_ANGLE_MIN` / `MAX`（deg） | ARX 为 `-142..142°`；Metal 为 `0..degrees(2.4)`，对应 `0..2.4 rad` |
+| `GRIPPER_ANGLE_MIN` / `MAX`（deg） | 所选型号的夹爪原始角范围，见 [参数对照](docs/ROBOTS.md#关节与夹爪参数) |
 | `GRIPPER_STROKE_DEG` | 所选配置的 `MAX - MIN` |
 | `AXIS_MIN` / `AXIS_MAX` / `axis_lo(i)` / `axis_hi(i)` | 上面两套拼起来的 7 轴版本 |
 | `clamp_axis(axis, value)` | → `(限幅后的值, 是否发生限幅)`。**SDK 不自动调用它**：控制核心按其参数限幅；调用方可显式检查限幅标志 |
 | `expand_mask(mask)` | 掩码 → `"j3 夹爪"` 这样的名字串 |
-| `RESET_POSE_DEG` / `RESET_POSE_RAD` | ARX 为 `(0, 0.5, 0.5, 0, 0, 0)`°；Metal 为六轴全 0°，`_RAD` 为对应弧度 |
+| `RESET_POSE_DEG` / `RESET_POSE_RAD` | 所选型号的六轴复位参考，分别提供度与弧度形式 |
 | `ROBOT_INIT_POSE_TOL_DEG` / `_RAD` | 20° —— 即 `init_arm()` 的位姿闸门 |
 | `KEEPALIVE_TIMEOUT_S` | 3：每台臂的有效命令保活窗口 |
 | `ARM_AUTO_RESET_TIME_S` | 2：一键复位的轨迹时长（参考） |
@@ -360,39 +360,23 @@ ArError
 
 ## 7. 离线运行（不接硬件）
 
-```bash
-python3 -m sdk.selftest               # 离线自测，不需要 pyserial
-python3 -m unittest discover -s tests -v  # PC 型号适配及 H7 参数选择
-python3 -m sdk.tui --fake             # 上机控制台（curses 面板），假单片机；真机去掉 --fake
-python3 -m sdk.tui --fake --lang en   # 同上，英文面板（`--lang` 见 [TUI 语言说明](docs/TUI.md#参数与诊断差异)）
-python3 -m sdk.tui --fake --robot-type metal_arm  # H7 模拟器使用 Metal 参考参数
-metal-arm-tui --simulate             # Metal PC 控制核心模拟
-```
+离线测试命令见 [验证入口](HANDOFF_METAL_ARM.md#验证)，终端模拟命令见 [TUI 入口表](docs/TUI.md#启动入口)。
 
-`sdk.tui` 即控制台，`--fake` 等于为下面这个假单片机配了交互界面；`--selftest` 运行 sdk
-自测和控制台自测。两类后端的 TUI 都在正常运行 / RUN 时提交运动目标，其他模式持续保活。电机输出由对应控制器执行。测试入口见 [验证说明](HANDOFF_METAL_ARM.md#验证)。
+| 模拟对象 | 用途 |
+| --- | --- |
+| `sdk.sim.SimLink` | H7 协议解析、分流、握手和模拟状态机 |
+| 对应型号的 `LocalLink.simulated()` | PC 控制核心、MotorIO 和型号行为 |
 
-串口 TUI 的 `--robot-type {arx_x5,metal_arm}` 默认 `arx_x5`，`--init-tol` 默认读取所选配置。TUI 显示的 `vcode` 是本地协议字符串的 FNV-1a 32 位哈希，不代表软件包版本、提交号或电机固件。两种 PC 后端的握手版本字段由本地适配层填充，H7 则从版本帧读取。
-
-界面语言：默认中文，`--lang en` 切英文（**同一份代码 + 一张语言表** `sdk/i18n.py`）。
-`board_defs` 的名字表、`python3 -m sdk.selftest` 自身的输出、`calibrate_gripper` 的交互
-提示**仍是中文**，边界见 [TUI 语言说明](docs/TUI.md#参数与诊断差异)。SDK 侧的用户可见消息（闸门拒绝、串口打不开）
-跟着 `--lang` 走，改语言用 `sdk.i18n.set_lang()`。
-
-`python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085` 是连接 ARX H7 的交互式硬件标定，不属于离线测试，也没有 `--robot-type` 参数。工具选项为：`--arm-id`（0=CAN1，1=CAN2）、`--full-open-m`（完全张开的
-开口距离，米）、`--port` / `--baud`、`--calib`（标定文件路径）、`--note`、`--timeout`。
-
-**假单片机 `sdk.sim.SimLink`** —— `Link` 的子类，使用**真实的**解析、分流、统计。发出的帧
-也按单片机的闸门由模拟状态机消化，该静默丢弃的照样丢弃；反馈帧用同一份 `encode_feedback`
-组帧。它不 import pyserial，`--fake` 全程不访问硬件。
+`SimLink` 是 `Link` 子类，不访问串口。用法与公共 `sdk.Arm` 相同：
 
 ```python
-from sdk.sim import SimLink
 import sdk
+from sdk.sim import SimLink
 
-link = SimLink()                       # 默认两台臂，一台上电 ~0.6 s 后进「离线等待」
-arm = sdk.Arm(0, link)
-arm.connect()                          # 假单片机同样实现握手闸门：版本码不匹配时不发任何帧
+with SimLink(robot_type="arx_x5") as link:
+    arm = sdk.Arm(0, link)
+    arm.connect()
+    print(arm.snapshot())
 ```
 
 ```text

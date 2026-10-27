@@ -108,7 +108,7 @@ with LocalLink.simulated(background=False) as link:
 
 手动模式下，SDK 的阻塞等待不会自动推进控制时钟。可先提交命令再调用 `step()`，或让另一个所属线程持续推进。时间必须在 `reopen()` 前后保持递增。
 
-后端运行日志使用 `arx_x5_control.log`，通过 `log.configure(language="zh"/"en")` 切换全包语言；不改变 SDK 自己的语言设置。配置、输出目标和事件数据的区别见 [日志文档](LOGGING.md)。
+后端运行日志使用所选型号包的 `log` 模块，通过 `log.configure(language="zh"/"en")` 切换该包语言；SDK 语言单独配置。配置、输出目标和事件数据的区别见 [日志文档](LOGGING.md)。
 
 ## 验证
 
@@ -122,4 +122,3 @@ python3 -m arx_x5_control.sdk_adapter.demo
 ```
 
 本仓库测试覆盖后端接口对齐、独立参数、H7/TUI 选型、Metal 状态流程及 CAN 退出。测试命令和覆盖范围见 [验证说明](../HANDOFF_METAL_ARM.md#验证)。
-

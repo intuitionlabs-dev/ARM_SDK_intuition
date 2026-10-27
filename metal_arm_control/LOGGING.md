@@ -1,19 +1,17 @@
-# 日志
+# Metal Arm 日志配置
 
-```python
-from metal_arm_control import log
-log.configure(language="zh", level="INFO")
-log.configure(language="en")
-```
+日志 API、会话文件、统计字段及二进制记录格式统一见 [PC 日志说明](../docs/LOGGING.md)。
 
-日志配置只作用于 `metal_arm_control`。环境变量为 `METAL_ARM_CONTROL_LOG_LANGUAGE` / `METAL_ARM_CONTROL_LOG_LEVEL`，CLI 接受 `--lang`、`--log-level`。JSON 输出不随语言改变字段。
+| 项目 | Metal Arm 配置 |
+| --- | --- |
+| 日志模块 | `metal_arm_control.log` |
+| 语言环境变量 | `METAL_ARM_CONTROL_LOG_LANGUAGE` |
+| 日志级别环境变量 | `METAL_ARM_CONTROL_LOG_LEVEL` |
+| 默认目录 | `~/.local/state/metal-arm-control/runs` |
+| 自定义目录 | `metal-arm-tui --log-dir PATH` |
 
-TUI 使用 `sdk_adapter.telemetry.RuntimeRecorder`，运行记录默认保存在 `$XDG_STATE_HOME/metal-arm-control/runs`（未设置时使用 `~/.local/state`）。
+设置 `XDG_STATE_HOME` 时替换默认目录中的 `~/.local/state`。配置只作用于所选型号包；协议码与安装包版本的含义见 [版本显示](../docs/TUI.md#版本显示)。
 
-```bash
-metal-arm-tui --simulate --lang zh --log-dir /tmp/metal-arm-runs
-```
+## TUI 运行日志
 
-每次运行创建独立目录，包含 `metadata.json`、`metrics.jsonl`、`events.jsonl`、`runtime.log`、`ui.log`、`summary.json`、`control_trace.bin` 和对应 schema。字段及单位与 [ARX 记录格式](../arx_x5_control/LOGGING.md#tui-运行日志) 对应，包名、环境变量和默认路径使用 Metal 自己的配置。
-
-`metadata.json` 的 `package_version` 读取 `arx-x5-control` 的安装版本（当前 `0.6.0`，无发行元数据时为 `source`）；`source_sha256` 保存记录器选取的源码文件哈希。TUI 顶部 `vcode` 是公共 SDK 协议哈希，PC 后端本地填充握手版本，它不代表电机固件版本。确认完整源码提交使用 `git rev-parse --short HEAD`，版本说明见 [公共手册](../docs/TUI.md#版本显示)。
+启动命令见 [公共 TUI 入口](../docs/TUI.md#启动入口)，文件内容及性能采样见 [会话记录格式](../docs/LOGGING.md#tui-运行日志)。

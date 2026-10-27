@@ -1,22 +1,51 @@
-# 控制结构
+# Metal Arm 控制参数
 
-Python 模块与 `arx_x5_control` 一一对应：
+公共调度、命令和轨迹接口见 [PC 控制核心](../docs/PC_CONTROL.md)，模块职责见 [SDK 架构](../HANDOFF_METAL_ARM.md#代码结构)。本页记录 Metal 的增益、动力学和硬件维护参数；关节限位与复位角见 [型号对照](../docs/ROBOTS.md#关节与夹爪参数)。
 
-| 模块 | 职责 |
-|---|---|
-| system / arm | 调度、状态机、模式、坐标和动力学 |
-| command / trajectory / numerics | 命令、轨迹、数值算法 |
-| motor / calibration | 原生 MIT PD、电机状态、显式设零 |
-| can_protocol / can_io / can_process | Metal 报文、队列、线程和进程 |
-| usb2can | SLCAN / SocketCAN，可配置传输注册表 |
-| gravity_compensation | Metal URDF、重力和逆动力学 |
-| sdk_adapter | 相同 sdk.Arm 接口、模拟示例、TUI、记录器 |
-| simulation / diagnostics / performance / log | 离线对象、诊断、计时和日志 |
+## 参数来源
 
-限位、夹爪角度范围及复位参考集中于 `sdk.board_defs.metal_arm`（源码 [board_defs/metal_arm.py](../board_defs/metal_arm.py)），`config.py` 引用同一组定义，并保存电机 ID、编码范围、MIT 增益和动力学系数。ARX 参数位于独立模块。
+| 配置 | 文件 |
+| --- | --- |
+| 限位、夹爪角度、复位参考 | [board_defs/metal_arm.py](../board_defs/metal_arm.py) |
+| 电机 ID、增益、调度及厂家夹爪查表 | [config.py](config.py) |
+| 重力与逆动力学 | [gravity_compensation](gravity_compensation) |
+| 达妙维护流程 | [calibration.py](calibration.py) |
 
-`can_protocol.py` 负责 Metal 帧编解码，`motor.py` 负责电机输出与周期使能，`calibration.py` 负责显式设零，`command.py` 负责目标和自动动作。初始化复位六轴并保持夹爪入口角，六轴复位目标为全 0°；STOP 周期使能并输出零增益帧。控制流程详见 [README](README.md)。
+## 电机增益与调度
 
-H7 的 `Link(robot_type="metal_arm")` 选择上位机参数模块，实际控制由 H7 固件执行。
+所有电机使用达妙 MIT，位置量程 ±6.28 rad，各轴目标输出周期为 4 ms。下表按关节及夹爪列出配置。
 
-来源和模型许可证见 [PROVENANCE](gravity_compensation/PROVENANCE.md)。
+| 电机 | 发送 / 接收 ID | Kp / Kd | 速度量程 rad/s | 力矩量程 N·m |
+| --- | --- | --- | --- | --- |
+| J1 | 1 / 0x11 | 300 / 5 | ±10 | ±30 |
+| J2 | 2 / 0x12 | 500 / 5 | ±10 | ±120 |
+| J3 | 3 / 0x13 | 500 / 5 | ±10 | ±30 |
+| J4 | 4 / 0x14 | 400 / 4 | ±10 | ±30 |
+| J5 | 5 / 0x15 | 25 / 0.2 | ±30 | ±20 |
+| J6 | 6 / 0x16 | 20 / 0.2 | ±30 | ±20 |
+| 夹爪 | 7 / 0x17 | 20 / 0.1 | ±30 | ±20 |
+
+增益在电机侧执行，主机级联 PID 增益为零。编码量程用于协议归一化，CAN 反馈已为输出轴坐标。STOP 使能与关闭策略见 [控制行为表](../docs/ROBOTS.md#控制行为)。
+
+## 动力学
+
+| 项目 | Metal Arm 配置 |
+| --- | --- |
+| 模型 | 默认 `metal_with_gripper`，可选 `metal_no_gripper` |
+| 模型链 | `base_link → Link6` |
+| 默认基座重力 | `(0, 0, -9.81)` m/s² |
+| 默认 RUN 前馈 | 缩放 G、缩放 C 和厂家粘性摩擦 |
+| GRAVITY 前馈 | 缩放 G |
+| `gravity_sdk_scale=False` | 完整 `M*qdd + C + G` |
+| 重力系数 | `(1.2, 1.15, 1.1, 1.15, 1, 1)` |
+| 科氏系数 | `(1.1, 1.15, 1, 1, 1.1, 1.1)` |
+| 厂家摩擦系数 | `(0.15, 0.3025, 0.52, 0.42, 0.015, 0.015)` |
+| 摩擦计算速度限幅 | J3 为 0.8 rad/s，J4 为 1.2 rad/s |
+
+负载模型选项不改变七电机控制拓扑。模型、算法与参数来源见 [许可证说明](gravity_compensation/PROVENANCE.md)。
+
+## 初始化与维护
+
+1. 初始化入口锁存夹爪反馈角，六轴运动到全 0° 参考，完成后进入正常阻尼模式。
+2. `set_zero()` 依次处理六轴达妙电机；标零期间参与电机由校准流程接管，暂停周期使能。
+3. 夹爪米制换算依赖出厂零点；显式标定存储可通过 `sdk.Arm(..., calib_store=...)` 提供。
