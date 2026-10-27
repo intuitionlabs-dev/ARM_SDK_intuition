@@ -11,7 +11,8 @@ from metal_arm_control import (ArmConfig, ArmMode, Command, CommandKind as K,
     ControlSystem, MotorAction as A, MotorFeedback, MotorRequest, RobotState as S)
 from metal_arm_control.can_protocol import encode_request, decode_feedback, feedback_queries
 from metal_arm_control.config import (MOTOR_IDS, MOTOR_RX_IDS, MOTOR_PMAX, MOTOR_VMAX,
-    MOTOR_TMAX, JOINT_MIN, JOINT_MAX, GRAVITY_SCALES)
+    MOTOR_TMAX, JOINT_MIN, JOINT_MAX, GRAVITY_SCALES, CORIOLIS_SCALES,
+    FRICTION_COEFFICIENTS, FRICTION_SPEED_LIMITS)
 from metal_arm_control.motor import Motor
 from metal_arm_control.simulation import SimulatedMotors
 from metal_arm_control.usb2can import CANFrame, TransportRegistry
@@ -181,6 +182,65 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(self.system.arms[0].actual_mode, ArmMode.STOP)
         self.assertEqual(self.system.arms[1].actual_mode, ArmMode.DAMPING)
 
+    def test_quintic_replanning_feeds_motor_velocity_and_inertial_torque(self):
+        self.initialize()
+        self.step([Command(0, K.START)])
+        for _ in range(4): self.step()
+        if self.now % 2: self.step()
+        arm = self.system.arms[0]
+        seen_motors = set()
+        inertia_seen = False
+
+        def check_requests(result):
+            nonlocal inertia_seen
+            cmd = arm.command
+            q, qd, qdd = [tuple(map(math.radians, values)) for values in
+                          (arm.joint_angle, cmd.velocity, cmd.acceleration)]
+            expected = arm.dynamics.torques(q, qd, qdd)
+            without_acceleration = arm.dynamics.torques(q, qd, (0.,)*6)
+            inertia_seen |= any(abs(a-b) > .001 for a,b in zip(expected, without_acceleration))
+            for r in result.motor_requests:
+                if r.arm_id != 0 or r.action != A.CONTROL or r.motor_index == 6:
+                    continue
+                i = r.motor_index
+                seen_motors.add(i)
+                self.assertAlmostEqual(r.velocity, max(-MOTOR_VMAX[i], min(MOTOR_VMAX[i], qd[i])))
+                self.assertAlmostEqual(r.torque, max(-MOTOR_TMAX[i], min(MOTOR_TMAX[i], expected[i])))
+
+        for target in ((2,-3,4,1,2,-1), (1,-2,3,-1,1,2)):
+            previous = [curve.current for curve in arm.command.quintic]
+            result = self.step([Command(0, K.POSITION, target, 0)])
+            for curve, old in zip(arm.command.quintic, previous):
+                start = curve.curve.sample(0)
+                # Retarget while moving: preserve position and both derivatives.
+                for name in ('position','velocity','acceleration'):
+                    self.assertAlmostEqual(getattr(start,name), getattr(old,name))
+            check_requests(result)
+            for _ in range(31): check_requests(self.step())
+            self.assertGreater(max(map(abs, arm.command.velocity)), 1.)
+            self.assertGreater(max(map(abs, arm.command.acceleration)), 1.)
+        self.assertEqual(seen_motors, set(range(6)))
+        self.assertTrue(inertia_seen)
+
+        for _ in range(200): self.step()
+        self.assertEqual(arm.command.velocity, [0.]*6)
+        self.assertEqual(arm.command.acceleration, [0.]*6)
+        for actual, gravity in zip(arm.dynamics_torque, arm.gravity_torque):
+            self.assertAlmostEqual(actual, gravity)
+
+        # Explicit velocity commands have no acceleration field or stale spline acceleration.
+        self.step([Command(0, K.POSITION, (2,-3,4,1,2,-1), 0)])
+        for _ in range(4): self.step()
+        self.assertGreater(max(map(abs, arm.command.acceleration)), 1.)
+        self.step([Command(0, K.POSITION_VELOCITY, target, 0, joint_velocity=(1,2,3,4,5,6))])
+        for _ in range(4): check_requests(self.step())
+        self.assertEqual(arm.command.acceleration, [0.]*6)
+        for mode in (K.DAMPING, K.STOP):
+            self.step([Command(0, mode)])
+            for _ in range(4): self.step()
+            for r in self.plant.requests[0][:6]:
+                self.assertEqual((r.velocity, r.torque), (0.,0.))
+
     def test_shutdown_disables_all_seven(self):
         self.initialize()
         result = self.system.shutdown(self.now)
@@ -223,6 +283,31 @@ class ControlTests(unittest.TestCase):
 
 
 class DynamicsTests(unittest.TestCase):
+    def test_scaled_compensation_preserves_unscaled_inertial_torque(self):
+        q = (.2,-.7,1.1,-.3,.4,.1)
+        qd = (.2,-.3,1.2,-1.5,.4,-.5)
+        qdd = (1.2,-2.,3.,-4.,5.,-6.)
+        zeros = (0.,)*6
+        for name in ('metal_with_gripper','metal_no_gripper'):
+            with self.subTest(model=name):
+                d = DynamicsCompensator.from_model(name)
+                gravity = d.raw_torques(q)
+                bias = d.torques(q, qd, zeros, sdk_scale=False)
+                baseline = d.torques(q, qd, zeros)
+                for i, actual in enumerate(baseline):
+                    limit = FRICTION_SPEED_LIMITS[i]
+                    speed = qd[i] if limit is None else max(-limit, min(limit, qd[i]))
+                    expected = (gravity[i]*GRAVITY_SCALES[i]
+                                + (bias[i]-gravity[i])*CORIOLIS_SCALES[i]
+                                + speed*FRICTION_COEFFICIENTS[i])
+                    self.assertAlmostEqual(actual, expected)
+                inertia = [a-b for a,b in zip(d.torques(q, zeros, qdd, sdk_scale=False), gravity)]
+                self.assertGreater(max(map(abs,inertia)), .01)
+                for sign in (1.,-1.):
+                    actual = d.torques(q, qd, tuple(sign*a for a in qdd))
+                    for total, base, mass_term in zip(actual, baseline, inertia):
+                        self.assertAlmostEqual(total-base, sign*mass_term, places=10)
+
     def test_gravity_matches_potential_energy_gradient(self):
         for name in ('metal_with_gripper','metal_no_gripper'):
             d = DynamicsCompensator.from_model(name)

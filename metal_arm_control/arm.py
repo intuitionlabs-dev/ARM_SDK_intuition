@@ -210,7 +210,8 @@ class Arm:
                     raise DynamicsError(DynamicsStatus.ANGLE_RANGE)
                 gravity = (self.gravity.sdk_torques(q) if c.gravity_sdk_scale
                            else self.gravity.raw_torques(q))
-                torque = (self.dynamics.torques(q, tuple(radians(v) for v in self.joint_velocity),
+                # Feed forward both derivatives of the same planned reference.
+                torque = (self.dynamics.torques(q, tuple(radians(v) for v in cmd.velocity),
                                                tuple(radians(v) for v in cmd.acceleration),
                                                sdk_scale=c.gravity_sdk_scale)
                           if self.actual_mode == ArmMode.RUN else gravity)

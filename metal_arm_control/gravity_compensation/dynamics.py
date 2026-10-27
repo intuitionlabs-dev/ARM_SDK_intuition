@@ -25,7 +25,7 @@ class DynamicsError(ValueError):
 
 class DynamicsCompensator(GravityCompensator):
     def torques(self, q, qd, qdd, *, sdk_scale=True):
-        """返回 M(q)qdd+C(q,qd)qd+G(q)，单位为 N·m。"""
+        """返回 N·m 力矩；sdk_scale 缩放 G/C 并加摩擦，保留 M(q)qdd。"""
         try:
             q, qd, qdd = (finite_vector(v, 6) for v in (q, qd, qdd))
         except (ValueError, TypeError, OverflowError) as error:
@@ -66,14 +66,16 @@ class DynamicsCompensator(GravityCompensator):
                 forces[i-1] = add(forces[i-1], parent_force)
                 moments[i-1] = add(moments[i-1], add(rotate(rotation, moments[i]), cross(offset, parent_force)))
         if sdk_scale:
-            # Preserve the general RNE implementation above for raw model use.
-            # The vendor controller commands scaled G+C+friction, not M*qdd.
+            # Subtract zero-acceleration RNE to isolate M(q)*qdd without
+            # applying the vendor Coriolis scale to the inertial torque.
             gravity = self.raw_torques(q)
             raw = self.torques(q, qd, (0.,)*6, sdk_scale=False)
             speeds = [v if limit is None else max(-limit, min(limit, v))
                       for v, limit in zip(qd, FRICTION_SPEED_LIMITS)]
-            result = [g*gs + (t-g)*cs + v*f for g, gs, t, cs, v, f in
-                      zip(gravity, SDK_SCALES, raw, CORIOLIS_SCALES, speeds, FRICTION_COEFFICIENTS)]
+            result = [(total-t) + g*gs + (t-g)*cs + v*f
+                      for total, g, gs, t, cs, v, f in
+                      zip(result, gravity, SDK_SCALES, raw, CORIOLIS_SCALES,
+                          speeds, FRICTION_COEFFICIENTS)]
         if not all(isfinite(t) for t in result):
             raise DynamicsError(DynamicsStatus.NONFINITE_RESULT)
         return tuple(result)

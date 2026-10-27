@@ -146,7 +146,7 @@ stateDiagram-v2
 | `dynamics_torque` | 6，N·m | 当前模式的关节动力学补偿 |
 | `dynamics_status` | 1，整数 | 0=成功，-1=无效参数，-2=角度超限，-3=结果非有限数 |
 
-动力学输入使用本周期关节位置、速度反馈及命令层参考加速度，经单位换算后交给求解器。RUN 的模型和缩放见 [型号对照](ROBOTS.md#控制行为)；GRAVITY 使用静态重力项。STOP 和 DAMPING 的补偿值均为零。
+动力学输入使用本周期关节位置反馈及命令层参考加速度；速度输入来源、RUN 模型和缩放见 [型号对照](ROBOTS.md#控制行为)。输入经单位换算后交给求解器，参考加速度用于惯性力矩前馈。GRAVITY 使用静态重力项。STOP 和 DAMPING 的补偿值均为零。
 
 `DynamicsStatus` 提供状态枚举。求解失败时，本周期输出 STOP。控制器清零补偿，并产生 `dynamics_error` 事件。`detail` 为状态枚举名称。总模式请求保留在 `requested_mode`。
 
