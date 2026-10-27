@@ -15,7 +15,7 @@ Python 动力学实现由本仓库提供，源文件保留版权和 SPDX 标识�
 
 | 内容 | 原 SDK 路径 |
 | --- | --- |
-| CAN ID、MIT 范围、增益和软限位 | `metal_sdk/native/config/motor_config.cpp` |
+| CAN ID、MIT 范围、跟随增益（`follow_mit_kp` / `follow_mit_kd`）和软限位 | `metal_sdk/native/config/motor_config.cpp` |
 | MIT 编码与特殊命令 | `metal_sdk/native/motor_writers/dm_motor_writer.cpp` |
 | 反馈布局和归一化分母 | `metal_sdk/native/motor_readers/dm_motor_reader.cpp` |
 | 夹爪行程与角度查表 | `metal_sdk/native/can_manager.h` |

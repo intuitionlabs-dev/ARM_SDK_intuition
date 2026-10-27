@@ -198,18 +198,28 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(self.system.arms[0].state, S.WAIT_INIT)
 
     def test_passive_modes_and_native_pd(self):
-        m = Motor(0, 1)
-        m.accept(MotorFeedback(0, 1, 0, position=-0.1, velocity=0, error_code=1))
-        m.reference_deg = -10
-        m.mode = ArmMode.RUN
-        r = m.control(0)
-        self.assertEqual((r.kp, r.kd, r.torque), (500,5,0))
-        self.assertAlmostEqual(r.position, math.radians(-10))
-        m.mode = ArmMode.GRAVITY
-        m.output_comp = 3.2
-        self.assertEqual((m.control(0).kp, m.control(0).kd, m.control(0).torque), (0,0,3.2))
-        m.mode = ArmMode.DAMPING
-        self.assertEqual((m.control(0).kp, m.control(0).kd), (0,5))
+        # metal-python-ros bccf3c8 motor_config.cpp: slave_arm follow gains.
+        gains = ((200,3), (500,5), (400,5), (200,2), (20,0.1), (20,0.1), (20,0.1))
+        for i, (kp, kd) in enumerate(gains):
+            with self.subTest(motor=i+1):
+                m = Motor(0, i)
+                m.accept(MotorFeedback(0, i, 0, position=-0.1, velocity=0, error_code=1))
+                m.reference_deg = -10
+                m.mode = ArmMode.RUN
+                r = m.control(0)
+                self.assertEqual((r.kp, r.kd, r.torque), (kp,kd,0))
+                self.assertAlmostEqual(r.position, math.radians(-10))
+                data = encode_request(r).data
+                wire_kp = ((data[3] & 15) << 8) | data[4]
+                wire_kd = (data[5] << 4) | (data[6] >> 4)
+                self.assertEqual((wire_kp, wire_kd), (int(kp/500*4095), int(kd/5*4095)))
+                m.mode = ArmMode.GRAVITY
+                m.output_comp = 3.2
+                r = m.control(0)
+                self.assertEqual((r.kp, r.kd), (0,0) if i < 6 else (kp,kd))
+                self.assertEqual(r.torque, 3.2)
+                m.mode = ArmMode.DAMPING
+                self.assertEqual((m.control(0).kp, m.control(0).kd), (0,kd))
 
 
 class DynamicsTests(unittest.TestCase):

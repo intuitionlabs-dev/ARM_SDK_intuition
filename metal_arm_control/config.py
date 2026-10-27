@@ -20,8 +20,9 @@ MOTOR_RX_IDS = (0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17)
 MOTOR_PMAX = (6.28,) * 7
 MOTOR_VMAX = (10.0, 10.0, 10.0, 10.0, 30.0, 30.0, 30.0)
 MOTOR_TMAX = (30.0, 120.0, 30.0, 30.0, 20.0, 20.0, 20.0)
-MOTOR_KP = (300.0, 500.0, 500.0, 400.0, 25.0, 20.0, 20.0)
-MOTOR_KD = (5.0, 5.0, 5.0, 4.0, 0.2, 0.2, 0.1)
+# Vendor slave_arm follow_mit_kp / follow_mit_kd, J1–J6 then gripper.
+MOTOR_KP = (200.0, 500.0, 400.0, 200.0, 20.0, 20.0, 20.0)
+MOTOR_KD = (3.0, 5.0, 5.0, 2.0, 0.1, 0.1, 0.1)
 # Keep the ARX millisecond scheduler / 250 Hz motor cadence. The vendor
 # C++ loop targets 400 Hz; do not claim that timing for this Python port.
 MOTOR_PERIOD_MS = 4
