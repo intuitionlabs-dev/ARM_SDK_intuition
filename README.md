@@ -2,7 +2,9 @@
 
 SDK 提供 `sdk.Arm` 机械臂控制接口。
 关节角使用 rad，关节速度使用 rad/s。
-夹爪开口使用 m，需要夹爪标定。
+夹爪开口使用 m；ARX/H7 使用两点标定，Metal PC 后端默认使用厂家查表。
+
+仓库位于 [intuitionlabs-dev/ARM_SDK_intuition](https://github.com/intuitionlabs-dev/ARM_SDK_intuition)。当前完整实现位于 `feat/metal-arm-control`，开发改动直接提交并推送该分支，不使用 PR。安装时选择该分支，`master` 尚未包含 Metal 适配。维护约定和验证记录见 [交接文档](HANDOFF_METAL_ARM.md)。
 
 ## Metal Arm 后端
 
@@ -59,14 +61,15 @@ Metal 的复位角已由用户确认：J1～J6 均为 0°，即 `(0, 0, 0, 0, 0,
 
 | 连接方式 | 链路对象 | 电机控制执行位置 |
 | --- | --- | --- |
-| PC → H7 → CAN → 机械臂 | `sdk.Link` | H7 控制板 |
-| PC → USB-CAN → 机械臂 | `arx_x5_control.sdk_adapter.LocalLink` | PC 控制核心 |
+| PC → H7 → CAN → 机械臂 | `sdk.Link(..., robot_type="metal_arm")`，默认 ARX | H7 控制板，类型选项只选择上位机参数 |
+| PC → USB-CAN → ARX | `arx_x5_control.sdk_adapter.LocalLink` | ARX PC 控制核心 |
+| PC → USB-CAN → Metal | `metal_arm_control.sdk_adapter.LocalLink` | Metal PC 控制核心 |
 
 上层将链路对象传给 `sdk.Arm(arm_id, link)`。
 使用 PC 本地后端时，安装 `arx-x5-control`。
-安装包包含 SDK、控制核心和 `arx_x5_control.usb2can`。
+安装包包含公共 SDK、ARX/Metal 控制核心及各自的 `usb2can` 子包。机械臂类型由入口或后端导入显式指定；`arm_id` 选择同一链路中的臂，不用于识别型号。
 
-双臂实机接入见 [完整例程](arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
+接入见 [ARX 双臂例程](arx_x5_control/SDK_LOCAL.md#双臂实机接入例程) 和 [Metal SDK 流程](metal_arm_control/SDK_LOCAL.md)。
 例程包含初始化、保活、运动、复位及退出。
 设备配置见 [CAN 接口](arx_x5_control/CAN_IO.md)。
 传输扩展见 [USB-CAN 接口](arx_x5_control/usb2can/README.md)。
@@ -120,6 +123,7 @@ PC 上层程序 → sdk.Arm → LocalLink → arx_x5_control
 ```
 
 PC 控制核心执行状态机、轨迹、动力学和电机控制。
+上图使用 ARX 包路径；Metal 对应路径为 `metal_arm_control`、`metal_arm_control.usb2can`，两套 `ArmConfig`、`LocalLink` 和 CAN 对象应成套使用。
 USB-CAN 适配器负责 CAN 帧收发。
 两台臂使用两条独立 CAN 通道。
 两台臂共享一个 `LocalLink`。
@@ -148,12 +152,12 @@ CAN 速率为 1 Mbps，使用经典 CAN 标准帧。
 | **关节** | 臂的 6 个转动轴，编号 j1…j6；SDK 里轴号 `0..5`。 |
 | **夹爪** | 装在臂末端的抓手，自己一台电机；SDK 里轴号 `6`。 |
 | **使能 / 失能** | 使能 = 电机加力（能按指令运动、能承重）；失能 = 电机不加力（臂在重力下下落）。 |
-| **档位**（mode） | 整台臂的工作方式：**run**（位置控制，跟随下发指令）／**阻尼**（可被外力推动，阻力随速度增大）／**重力补偿**（不下发指令也保持托举）／**停**（等价于失能）。 |
+| **档位**（mode） | 整台臂的工作方式：**run**（位控）／**阻尼**／**重力补偿**／**停**（软停机，不保持位置或重力补偿）。STOP 时是否发送使能帧由后端决定。 |
 | **状态**（robot_state） | 控制核心的流程状态，共 8 个：等待握手 / 离线等待 / 待初始化 / 初始化中 / 正常运行 / 通信离线 / 校准零点（设零期间）/ 复位中。见第 4 节的状态转移表。 |
-| **初始化**（`0x02`） | 控制核心将臂收回参考位姿并完成夹爪找零；完成后进入「正常运行」。闸门见第 8 节。 |
-| **复位位姿** | 臂的参考位姿：6 个关节 `(0, 0.5, 0.5, 0, 0, 0)` 度。与「零点」是两个独立的量。 |
+| **初始化**（`0x02`） | ARX 执行复位和夹爪找零；Metal PC 仅执行六轴复位并保持入口夹爪角，完成后进入正常阻尼模式。H7 的具体动作取决于固件。 |
+| **复位位姿** | `arm.board_defs.RESET_POSE_DEG`：ARX 为 `(0, 0.5, 0.5, 0, 0, 0)`°，Metal 为全 0°。复位目标与写入电机零点是两个概念。 |
 | **零点** | 角度 0 的位置。出厂时写入电机，`0x10` 可以覆盖它。 |
-| **找零** | **夹爪专用**的动作，在初始化中执行：推到一侧限位 → 退回半个行程 → 把中点记为夹爪的 0 位。 |
+| **找零** | ARX 初始化中的夹爪动作：推到一侧限位 → 退回半个行程 → 写入夹爪零点。Metal PC 初始化没有此阶段。 |
 | **标定** | 夹爪的电机角度与实际开口（米）之间的实测换算，见第 9 节。与设零、找零是两个独立的概念。 |
 | **命令帧 / 反馈帧** | H7 串口协议中的命令数据帧和反馈数据帧。 |
 | **type_id** | 帧类型编号，例如 `0x02` = 初始化、`0x16` = 位置控制。 |
@@ -186,15 +190,22 @@ CAN 速率为 1 Mbps，使用经典 CAN 标准帧。
 
 具体每一帧的编号、payload 布局、线上单位，见第 10 节的表。
 
+### TUI 版本显示
+
+右上角 `vcode 0xF81DD236` 来自 `fnv1a32("Intuition-ARX-X5-2023-v0.3")`，表示公共协议标识。ARX 和 Metal 共用它；修改代码或选择机械臂参数不会自动改变此值。H7 的 `board_version` 来自版本帧，PC `LocalLink` 则填入本地协议码，因此它不代表电机固件版本或硬件型号。
+
+发行包名称为 `arx-x5-control`，版本由 `pyproject.toml` 定义，当前为 `0.6.0`。确认具体代码版本使用 `git rev-parse --short HEAD`；TUI 运行记录中的 `package_version` 是发行包版本。
+
 ## 4. 一次会话的生命周期
 
 两种后端使用相同的机械臂状态编号。
 H7 在固件中执行状态机。
 PC 本地后端在 `ControlSystem` 中执行状态机。
-表中的接收帧行为适用于 H7 串口后端。
+表中的接收帧及夹爪找零行为描述原 ARX H7 固件。
 本地后端将 SDK 命令转换为控制核心命令。
+Metal PC 初始化完成条件为六轴复位结束，没有夹爪校准阶段；STOP 会继续周期使能并输出零增益帧。
 
-状态一共 8 个，编号就是反馈帧里的 `robot_state` 字段（名字表见 `board_defs.STATE_NAME`）。
+状态一共 8 个，编号就是反馈帧里的 `robot_state` 字段（名字表见 `arm.board_defs.STATE_NAME`）。
 一次会话只会沿着下面这些转移走：
 
 | 起点 | 触发 | 终点 | 同时发生 |
@@ -226,20 +237,22 @@ PC 本地后端在 `ControlSystem` 中执行状态机。
 ### 完整控制包
 
 Python 版本须为 3.10 或更高。
-在 SDK 仓库根目录执行：
+从任务分支获取代码后，在 SDK 仓库根目录执行：
 
 ```bash
+git clone --branch feat/metal-arm-control https://github.com/intuitionlabs-dev/ARM_SDK_intuition.git
+cd ARM_SDK_intuition
 python3 -m pip install '.[can]'
 ```
 
 安装后可以从业务程序中导入 `sdk`。
 `can` 扩展安装 SLCAN 所需的 pySerial。
 SocketCAN 使用 Python 标准库收发。
-内置后端由 `arx_x5_control.usb2can` 提供。
+内置后端由各机械臂包的 `usb2can` 子包提供。
 
 ### H7 串口依赖
 
-SDK 源码支持 Python 3.8 或更高。
+本仓库统一安装要求 Python 3.10 或更高。
 使用 H7 串口后端时，在 SDK 仓库根目录执行：
 
 ```bash
@@ -313,7 +326,7 @@ a.connect(); b.connect()
 | 温度 | ℃ | ℃（uint8） |
 
 **原始夹爪角是唯一的例外**：它是电机的原始角，双向都不做"电机角 → 关节角"的换算，
-因为那几张换算表只有 6 个关节有。所以想要"米"就只能标定。`snapshot()` 提供**同一帧**里
+因为那几张换算表只有 6 个关节有。米制开口使用所选夹爪换算：ARX/H7 两点标定或 Metal PC 厂家查表。`snapshot()` 提供**同一帧**里
 换算好的一致视图；单独读 `arm.joint_angles` 再读 `arm.mode` 是两次读，中间可能插入一帧新的。
 
 ## 8. 命令预检与执行条件
@@ -343,11 +356,11 @@ H7 后端还要求遥控器离线。
 使用 H7 上位机控制前，关闭遥控器。
 PC 本地后端直接接收应用提交的控制命令。
 
-初始化要求的参考姿态是 `board_defs.RESET_POSE_DEG = (0, 0.5, 0.5, 0, 0, 0)` 度，容差
-`ROBOT_INIT_POSE_TOL_DEG = 20` 度，就是上面表里那个 20°。发初始化之前先检查
-`arm.joint_angles`。
+初始化参考从 `arm.board_defs.RESET_POSE_DEG` 读取：ARX 为 `(0, 0.5, 0.5, 0, 0, 0)`°，Metal 为用户确认的全 0°。两者当前的 `ROBOT_INIT_POSE_TOL_DEG` 均为 20°。发初始化之前先检查 `arm.joint_angles`，该属性使用 rad。
 
 ## 9. 夹爪标定
+
+本节两点标定工具适用于原 ARX H7 链路，工具目前没有 `--robot-type` 选项。Metal PC 默认使用厂家 `0..0.1 m` 查表；可通过 `sdk.Arm(..., calib_store=...)` 注入实测标定存储。H7 选择 Metal 参数时仍使用文件标定，不会自动加载 Metal PC 查表。
 
 夹爪使用达妙 DM4310，CAN 电机 ID 为 8。
 电机收发层使用 MIT 协议。
@@ -372,7 +385,7 @@ python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085
 
 **必须在一次成功的初始化之后标定**：夹爪的零点是行程中点（∓142°），而这个零点只有找零才会
 建立。找零之前，原始角的零点没有含义。工具会查反馈帧里夹爪的"已初始化"标志位，并在开头警告。
-**之后再执行任何 `0x10` 设零或再次找零，零点会移动，标定作废，需要重新标定。**
+夹爪重新找零或更改夹爪零点后，需要复核并重做开口标定。`set_zero()` 的默认参与对象仅为 J1～J6，不包含夹爪。
 
 **标定之后怎么用**（下面三条用的是同一份文件里 `arm_id` 那一项）：
 
@@ -410,7 +423,7 @@ payload 全是小端。头部 6 字节 =
 | `0x11` | 设零回复帧 | 单片机 | 12 B：u8 state + u8[7] result + u32 用时 ms | — | `wait_setzero_ack()` / `last_setzero_ack` |
 | `0x12` | 启动帧 | 上位机 | 0 | — | `start()`（进 run 档） |
 | `0x13` | 重力补偿帧 | 上位机 | 0 | — | `gravity()` |
-| `0x14` | 停止帧 | 上位机 | 0 | — | `stop()`（**失能**） |
+| `0x14` | 停止帧 | 上位机 | 0 | — | `stop()`（STOP / 软停机） |
 | `0x15` | 阻尼帧 | 上位机 | 0 | — | `damping()` |
 | `0x16` | 位置控制帧 | 上位机 | 28 B：f32[6] 关节角 + f32 夹爪角 | deg | `send_ctrl_pos()` |
 | `0x17` | 位置+速度控制帧 | 上位机 | 52 B：f32[6] 关节角 + f32[6] 关节角速度 + f32 夹爪角 | deg, deg/s | `send_ctrl_pos_vel()` |
@@ -432,7 +445,7 @@ payload 全是小端。头部 6 字节 =
 
 几个容易出错的点：
 
-- `0x14 stop()` 是**失能**，电机不加力。
+- `0x14 stop()` 请求 STOP，不保持位置或重力补偿。Metal PC 在 STOP 中继续周期使能并输出零增益帧；不能凭 STOP 模式推断电机已禁用。
 - `0x18 reset()` 走一段若干秒的轨迹回复复位位姿。它**不做夹爪找零**，完成后停在**阻尼**。
 - `0x10 set_zero()` **覆盖电机的原零点**，把"当前位姿"定义成零点。它只管 j1~j6，夹爪不在
   默认参与集里。**没有即时反馈帧**，结果走几秒后的 `0x11`。
@@ -550,15 +563,14 @@ PC 本地后端的线程和故障处理见第 11 节。
    未初始化的臂按通信离线状态处理。
 5. **切换模式后重新提交目标。** 等待反馈确认进入 RUN，再下发控制目标。
 6. **上层目标须满足关节限位。** 控制核心对已初始化电机执行限幅。
-   `board_defs.clamp_axis(axis, value)` 接收度，返回限幅值和限幅标志。
-   六关节最小值为 `(-115, 0.5, 0.5, -90, -90, -112.87)`°。
-   最大值为 `(90, 206.26, 171.88, 90, 90, 119.17)`°。
+   `arm.board_defs.clamp_axis(axis, value)` 接收度，返回限幅值和限幅标志。
+   六关节上下限从 `arm.board_defs.JOINT_ANGLE_MIN/MAX` 读取，各机械臂分别定义。
    `Arm` 的位置控制方法接收 rad。
-7. **夹爪控制目标是角度或标定开口。** 夹爪找零后，控制核心执行 ±142° 软限位。
+7. **夹爪控制目标是角度或标定开口。** ARX 找零后使用 ±142° 软限位；Metal 使用 `0..2.4 rad`，初始化保持夹爪当前角。
    初始化状态由反馈中的 `motor_inited_mask` 表示。
 8. **设零会改变电机零点。** 执行 `set_zero()` 前，将关节放到标定基准位姿。
    夹爪零点改变后，重新测量开口标定。
-9. **停机后电机失能。** 调用 `stop()` 或关闭本地控制链路后，机械臂可能因重力下落。
+9. **STOP 不维持承重力矩。** Metal STOP 继续发送周期使能和零增益帧；关闭本地控制链路则禁用电机。停止或退出前应放稳或支撑机械臂。
 10. **检查反馈时效和在线状态。** 使用 `snapshot().age` 和 `motor_lost_mask`。
     温度值为 0 时，结合在线状态判断数据是否有效。
 11. **按后端检查通信。** SDK 保存 H7 反馈的主机到达时间。
@@ -575,18 +587,21 @@ PC 本地后端的线程和故障处理见第 11 节。
 ```bash
 python3 -m sdk.selftest          # 不需要硬件、不需要 pyserial
 python3 -m sdk.tui --selftest    # 再带上控制台那 48 项（同样不接硬件、不起 curses）
+python3 -m unittest discover -s tests -v  # ARX/Metal、配置及 CAN 传输测试
 ```
 
-205 项：CRC 参考值（位运算参考实现逐字节比表）、整帧字节锚点、编解码往返、切帧重同步、
+SDK 自测覆盖 CRC 参考值（位运算参考实现逐字节比表）、整帧字节锚点、编解码往返、切帧重同步、
 按 `arm_id` 分流、单位往返、夹爪标定模型、**闸门矩阵**（逐条断言该拒绝的已拒绝、该发送的发送内容）、
 **假单片机状态机**（`sdk.sim`：握手闸门、时序、两台互不干扰、看门狗、`--fake-lost`）、
 **掉线自动重连**（把 `serial` 换成假的：退避、试满上限后停止、重连后残留半帧作废、按 USB 身份
 认口），以及**与固件头文件对拍**（码表、限位、状态个数、档位顺序）。对拍项只在仓库存在时运行，
 因此 `sdk/` 单独拷出使用时也不会失败。改协议或改板侧常量之后先运行它。
 
-`python3 -m sdk.tui --selftest` 先运行上面那 205 项，再运行**控制台后端**的 48 项：两台臂的链路
+`python3 -m sdk.tui --selftest` 先运行 SDK 自测，再运行**控制台后端**的 48 项：两台臂的链路
 （一条链路、两个 `Arm`、状态机各自独立）、单位与软限位、步长档、闸门是否确实拦截、命令是否
 确实写出。这些同样用 `sdk.sim` 的仿真板运行。
+
+当前验证记录为 SDK 178 项通过、1 项外部 H7 头文件检查跳过，TUI 48 项通过，仓库 `unittest` 33 项通过；详细范围见 [交接文档](HANDOFF_METAL_ARM.md#已完成的验证)。
 
 ### 界面语言（`--lang`）
 
@@ -619,6 +634,11 @@ python3 -m sdk.tui --selftest --lang en      # 英文模板实际执行一次自
 | [USB-CAN 传输](arx_x5_control/usb2can/README.md) | 后端接口和 JSON 配置 |
 | [动力学来源与许可证](arx_x5_control/gravity_compensation/PROVENANCE.md) | Python 动力学实现和 URDF 模型 |
 | [运行日志](arx_x5_control/LOGGING.md) | TUI 日志和性能指标 |
+| [Metal 控制包](metal_arm_control/README.md) | Metal 参数、初始化、STOP 和退出行为 |
+| [Metal SDK 接入](metal_arm_control/SDK_LOCAL.md) | SDK 示例、双臂与 H7 参数选择 |
+| [Metal CAN 接口](metal_arm_control/CAN_IO.md) | Metal CAN ID、只读检查与设备连接 |
+| [Metal 来源与许可证](metal_arm_control/gravity_compensation/PROVENANCE.md) | 原厂参数、模型与用户确认的复位角 |
+| [维护交接](HANDOFF_METAL_ARM.md) | 当前分支、验证边界及直接提交推送约定 |
 
 
 | 文件 | 职责 |
@@ -643,6 +663,6 @@ python3 -m sdk.tui --selftest --lang en      # 英文模板实际执行一次自
 | `config/` | 运行期数据（`gripper_calib.json`），由工具自动创建 |
 
 异常层级（`errors.py`）：根是 `ArError`，下面分 `LinkError`（`NotConnected` 是它的子类）、
-`ProtocolError`（**代码中从不抛出**，解码器长度不符时抛的是 `ValueError`）、`GateRejected`、
+`ProtocolError`（本地后端拒绝未知命令或非法 payload；串口解码长度错误由 `link` 丢弃）、`GateRejected`、
 `FeedbackStale`、`GripperNotCalibrated`、`CalibrationError`。
 `GateRejected` 的消息里会写清楚缺哪一条闸门，可直接 `print` 展示给操作者。

@@ -7,9 +7,8 @@
 
 - **单位是 SI**：关节角 rad、角速度 rad/s、夹爪开口 m、温度 ℃。只有 `protocol` 模块和
   `Feedback` 对象是**线上单位**（deg），那是供协议层对拍使用的，日常不涉及。
-- **命令方法先预检、再发帧**：预检按最近一帧反馈复算单片机的闸门。不通过就抛
-  `GateRejected`，**这一帧不会发出**。`force=True` 跳过预检，单片机的闸门照旧生效。
-  它也是绕过"遥控器在线"这条上位机无法检测的条件的唯一方式。
+- **命令方法先预检、再提交**：预检使用最近一帧反馈和所选机械臂参数。不通过就抛
+  `GateRejected`。`force=True` 只跳过 SDK 预检，H7 固件或 PC 控制核心的执行条件仍生效；它不能绕过 H7 遥控器接管。
 - **做闸门判断用的反馈超过 100 ms 就不再使用**（`arm.FEEDBACK_STALE_S`）→ 抛 `FeedbackStale`。
   读属性不抛异常，读不到就是 `None`。
 
@@ -20,8 +19,9 @@
 
 | 后端 | 创建方式 | 连接要求 |
 | --- | --- | --- |
-| H7 串口 | `sdk.Link(...)` | 板载 USB 或 RS485 串口 |
-| PC 本地 | `LocalLink(motor_io, configurations=...)` | 每臂一条 USB-CAN 通道 |
+| H7 串口 | `sdk.Link(..., robot_type="metal_arm")`；默认 ARX | 板载 USB 或 RS485 串口；H7 固件须支持对应设备 |
+| ARX PC 本地 | `arx_x5_control.sdk_adapter.LocalLink(motor_io, ...)` | 每臂一条 USB-CAN 通道 |
+| Metal PC 本地 | `metal_arm_control.sdk_adapter.LocalLink(motor_io, ...)` | 每臂一条 USB-CAN 通道 |
 
 PC 本地后端导入方式：
 
@@ -30,9 +30,10 @@ from arx_x5_control import ArmConfig, CANChannel, ProcessCANMotorIO
 from arx_x5_control.sdk_adapter import LocalLink
 ```
 
-`LocalLink` 由 `arx-x5-control` 发行包提供。
+Metal 使用 `metal_arm_control` 中对应的 `ArmConfig`、CAN 类和 `LocalLink`，不要混用两包的控制配置。两个后端均由 `arx-x5-control` 发行包提供（当前 `0.6.0`）。
 构造参数和异常说明见 [本地后端文档](arx_x5_control/SDK_LOCAL.md)。
 双臂完整代码见 [双臂实机例程](arx_x5_control/SDK_LOCAL.md#双臂实机接入例程)。
+Metal 的流程、厂家夹爪换算和 STOP 行为见 [Metal SDK 文档](metal_arm_control/SDK_LOCAL.md)。类型由导入或显式配置决定；`arm_id` 和协议版本码都不识别机械臂型号。
 
 | 本地调用 | 含义 |
 | --- | --- |
@@ -119,7 +120,8 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 
 | 成员 | 说明 |
 |---|---|
-| `Link(port=None, baud=921600, *, timeout=0.1, verify_on_open=True, auto_reconnect=True, reconnect_wait=0.5, reconnect_max_wait=2.0, reconnect_max_tries=10)` | `timeout` 是串口读超时（收包线程多久醒一次）；`port=None` 时 `open()` 会调 `pick_default_port()`。后面几个是**掉线自动重连**：开不开、第一次等多久、退避封顶、一轮最多试几次（`<=0` = 不限次） |
+| `Link(port=None, baud=921600, *, timeout=0.1, verify_on_open=True, auto_reconnect=True, reconnect_wait=0.5, reconnect_max_wait=2.0, reconnect_max_tries=10, robot_type=None)` | `timeout` 是串口读超时；`port=None` 时自动选口。重连参数依次控制是否重连、首次等待、退避上限、最多尝试次数（`<=0` = 不限次）。`robot_type` 见下文 |
+| `board_defs` | 本链路所选的机械臂参数模块，供所有 `Arm` 和 TUI 使用 |
 | `open(port=None)` | 打开串口 + 起 RX 线程。**幂等**。第一次在这里 `import pyserial`；打不开或查出是 J-Link 探针口 → `LinkError`（连上之后再掉线才走自动重连） |
 | `close()` / `reopen(port=None)` | 关闭 / 关闭后重新打开（拔线、适配器重枚举之后用 `reopen`）。`reopen` 打开失败照样抛 `LinkError`，但会重新启动 RX 线程继续退避重试 |
 | `with sdk.Link() as link:` | 进入 `with` 时 open，退出时 close |
@@ -131,6 +133,14 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 | `wait_feedback(arm_id, after_seq=0, timeout=3.0, poll=0.005)` | 等**序号大于** `after_seq` 的一帧，返回 `Feedback`；超时 `None`。按序号等待 ⇒ 没有竞态 |
 | `stats` | 诊断字典，键见下 |
 | `describe()` | 一行描述（用于日志） |
+
+`robot_type` 支持 `"arx_x5"` 和 `"metal_arm"`，未知值在构造时抛出 `ValueError`。`None` 沿用类的默认配置：`sdk.Link` 默认 ARX，两个 PC 子类保留各自配置。同一 H7 链路的两台臂共用所选参数，不同链路互不影响。此选择只影响上位机预检与界面限位、参考角，不下发参数或改变 H7 固件。
+
+```python
+link = sdk.Link("/dev/ttyACM0", robot_type="metal_arm")
+arm = link.arm(0)
+assert arm.board_defs is sdk.board_defs.metal_arm
+```
 
 **属性**：`port`、`baud`、`kind`（`"USB"` / `"RS485"` / `"FAKE"` / `None`）、`link_up`、
 `link_err`、`board_version`（单片机回的版本码）、`version_seen`、`link_status`（最近一帧 `0x81`）、
@@ -178,12 +188,12 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 
 ## 3. `Arm` —— 一台臂
 
-```python
+```text
 Arm(arm_id=0, link=None, *, calib_store=None)
 ```
 
 `arm_id` 越界 → `ValueError`；`link=None` 时自行创建一条（`close()` 会把它关闭）。共享链路时
-`close()` 不执行操作，要关公共链路就在 `link.close()` 上关。
+`close()` 不执行操作，要关公共链路就在 `link.close()` 上关。`arm.board_defs` 在构造时取自链路；`calib_store` 显式传入时优先，否则使用后端提供的存储，最后才回退到文件标定。
 
 ### 3.1 生命周期
 
@@ -230,7 +240,7 @@ Arm(arm_id=0, link=None, *, calib_store=None)
 | `set_zero(*, force=False)` | `0x10` | state 是**待初始化(2)** | **覆盖电机的原零点**，触发前先调整位姿；只管 j1~j6；结果走 `wait_setzero_ack()` |
 | `start(*, force=False)` | `0x12` | state == 正常运行(4) | 进 run 档。切档会作废上一帧控制指令 ⇒ **切档完成后必须重发控制帧** |
 | `gravity(*, force=False)` | `0x13` | 同 `start` | 重力补偿档 |
-| `stop(*, force=False)` | `0x14` | 同 `start` | **失能、不产生力矩** |
+| `stop(*, force=False)` | `0x14` | 同 `start` | STOP / 软停机，不保持位置或重力补偿；Metal PC 继续周期使能及零增益输出 |
 | `damping(*, force=False)` | `0x15` | 同 `start` | 阻尼档 |
 | `reset(*, force=False)` | `0x18` | state == 正常运行(4) **且** 7 台全在线（**不检查位姿** —— 位姿偏离时才需要复位） | 走约 2 s 轨迹回复复位位姿，**不做夹爪找零**，完成后停在阻尼 |
 | `send_ctrl_pos(joint_rad, gripper_m=None, *, gripper_raw_deg=None, force=False)` | `0x16` | state == 4 **且** mode == run | `joint_rad` 是 6 个数（rad） |
@@ -277,11 +287,12 @@ except sdk.ArError as e:
 
 | 成员 | 说明 |
 |---|---|
-| `calibration` | 这一台的 `GripperCalibration`；**未标定是 `None`**（不抛异常）。第一次访问才读文件 |
+| `calibration` | 当前夹爪换算对象；ARX/H7 通常是 `GripperCalibration`，Metal PC 默认是厂家查表对象。没有可用换算时为 `None`，第一次访问时加载 |
 | `require_calibration()` | 同上，未标定抛 `GripperNotCalibrated`（消息里带着该执行哪条命令） |
-| `reload_calibration()` | 重读标定文件。**在别的进程里刚完成标定**，这边需要调用它（或重启）才有米数 |
+| `reload_calibration()` | 从所选存储重新加载换算；文件标定被其他进程更新后需要调用它或重启 |
 
 用法和注意事项见 README 的「夹爪标定」一节。
+Metal 的厂家查表对象提供 `opening_from_raw_deg()` 和 `raw_deg_from_opening()`，不提供两点标定的 `full_open_m`、`direction` 等字段。默认米制范围为 `0..0.1 m`，依赖有效的出厂零点。初始化不校准夹爪，也不写入夹爪零点。
 
 ## 4. 数据结构
 
@@ -312,8 +323,8 @@ except sdk.ArError as e:
 
 | 字段 | 说明 |
 |---|---|
-| `state` | 设零状态机的状态，名字表 `board_defs.ZERO_STATE_NAME`（正常完成是 5「完成」） |
-| `result` | 7 个结果码（索引 0..5 = j1..j6、6 = 夹爪），名字表 `board_defs.ZERO_RES_NAME`：0 未走到 / 1 未确认 / 2 成功 / 3 失败 / 4 超时 / 5 跳过 |
+| `state` | 设零状态机的状态，名字表 `arm.board_defs.ZERO_STATE_NAME`（正常完成是 5「完成」） |
+| `result` | 7 个结果码（索引 0..5 = j1..j6、6 = 夹爪），名字表 `arm.board_defs.ZERO_RES_NAME`：0 未走到 / 1 未确认 / 2 成功 / 3 失败 / 4 超时 / 5 跳过 |
 | `elapsed_ms` | 这一轮花了多少毫秒 |
 
 `LinkStatus`（`link.link_status`）—— **链路级，不挂到某台臂上**：
@@ -339,23 +350,23 @@ except sdk.ArError as e:
 ArError
 ├── LinkError              串口打不开 / 读写出错 / 等不到反馈帧
 │   └── NotConnected       链路没 open（或已 close）就要收发
-├── ProtocolError          帧不符合协议（长度、payload 无法解码）——**代码中从不抛出**，
-│                          解码器长度不符时抛的是 `ValueError`（由 `link` 静默丢弃）
+├── ProtocolError          本地后端拒绝未知命令、非法长度或 payload；
+│                          串口解码器的长度错误为 `ValueError`（由 `link` 丢弃）
 ├── GateRejected           上位机预检不通过（**帧未发出**）
 ├── FeedbackStale          要判断闸门，但手上的反馈过旧或一帧都没有
 ├── GripperNotCalibrated   夹爪未标定，无法换算为米
 └── CalibrationError       标定数据本身不合法（FULL_OPEN ≤ 0、两点重合、JSON 损坏）
 ```
 
-`except sdk.ArError` 可捕获 SDK 抛出的全部异常。串口底层那条路（pyserial 的
-`SerialException`）**原样透出，不做包装**，属于环境问题。`wait_*` 的超时用
-`TimeoutError`（标准库），不在这棵树里。
+`except sdk.ArError` 可捕获上述 SDK 异常。串口打开或写入失败封装为 `LinkError`，读取失败更新链路状态并按配置重连。参数校验还可能抛出 `ValueError`；等待 ACK 等超时使用 `TimeoutError`（标准库），不在这棵树里。`wait_for()` 超时返回 `False`。
 
 ## 6. 常量与工具模块
 
 ### `sdk.board_defs` —— 按机械臂拆分的参数包
 
 使用 `from sdk.board_defs import arx_x5 as board_defs` 或 `metal_arm as board_defs`。已创建机械臂对象时直接使用 `arm.board_defs`。包根不再提供 `JOINT_ANGLE_MIN`、`MODE_RUN` 等属性；下面列出的参数和辅助函数均属于所选机械臂模块。
+
+包入口提供 `ROBOT_TYPES = ("arx_x5", "metal_arm")` 和 `get_profile(robot_type)`；后者返回对应模块，未知名称抛出 `ValueError`。
 
 | 名字 | 值 / 说明 |
 |---|---|
@@ -367,12 +378,12 @@ ArError
 | `STATE_WAIT_HANDSHAKE` … `STATE_RESETTING` + `STATE_NAME` | 状态码 0..7 与名字 |
 | `ZERO_STATE_NAME` / `ZERO_RES_NAME` | 上面 `SetZeroAck` 两张名字表 |
 | `JOINT_ANGLE_MIN` / `MAX`（deg）、`_RAD` 结尾的各一份 | 关节软限位，6 个 |
-| `GRIPPER_ANGLE_MIN` / `MAX`（deg）= ∓142 | 夹爪口径（找零之后零点在行程中点；**只在找零成功后生效**） |
-| `GRIPPER_STROKE_DEG` | 284（整个行程） |
+| `GRIPPER_ANGLE_MIN` / `MAX`（deg） | ARX 为 `-142..142°`；Metal 为 `0..degrees(2.4)`，对应 `0..2.4 rad` |
+| `GRIPPER_STROKE_DEG` | 所选配置的 `MAX - MIN` |
 | `AXIS_MIN` / `AXIS_MAX` / `axis_lo(i)` / `axis_hi(i)` | 上面两套拼起来的 7 轴版本 |
 | `clamp_axis(axis, value)` | → `(限幅后的值, 是否发生限幅)`。**SDK 不自动调用它**：单片机是静默限幅的，上位机再次限幅会导致期望角与实际不符 |
 | `expand_mask(mask)` | 掩码 → `"j3 夹爪"` 这样的名字串 |
-| `RESET_POSE_DEG` / `RESET_POSE_RAD` | `(0, 0.5, 0.5, 0, 0, 0)` 度 |
+| `RESET_POSE_DEG` / `RESET_POSE_RAD` | ARX 为 `(0, 0.5, 0.5, 0, 0, 0)`°；Metal 为用户确认的六轴全 0°，`_RAD` 为对应弧度 |
 | `ROBOT_INIT_POSE_TOL_DEG` / `_RAD` | 20° —— 即 `init_arm()` 的位姿闸门 |
 | `KEEPALIVE_TIMEOUT_S` | 3：单片机的隐式保活窗口 |
 | `ARM_AUTO_RESET_TIME_S` | 2：一键复位的轨迹时长（参考） |
@@ -405,6 +416,8 @@ ArError
 
 ### `sdk.gripper` —— 夹爪两点标定
 
+这里描述文件标定接口；Metal PC 默认换算对象见第 3.5 节。H7 的 `robot_type` 不会切换夹爪标定存储。
+
 | 名字 | 说明 |
 |---|---|
 | `GripperCalibration(full_open_m, deg_at_zero, deg_at_full_open, recorded_at="", note="")` | 一台的标定。`opening_from_raw_deg(d)` / `raw_deg_from_opening(m)` 双向换算；`separation_deg` / `direction`（±1，仅用于提示是否装反）；`validate()` 不合法抛 `CalibrationError`、记录点过近只 `warnings.warn` |
@@ -415,22 +428,25 @@ ArError
 ## 7. 离线运行（不接硬件）
 
 ```bash
-python3 -m sdk.selftest               # 离线自测（205 项，不需要 pyserial）
-python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085   # 交互式标定
+python3 -m sdk.selftest               # 离线自测，不需要 pyserial
+python3 -m unittest discover -s tests -v  # 两种后端及 H7 参数选择
 python3 -m sdk.tui --fake             # 上机控制台（curses 面板），假单片机；真机去掉 --fake
 python3 -m sdk.tui --fake --lang en   # 同上，英文面板（`--lang` 见 sdk/README「界面语言」）
+python3 -m sdk.tui --fake --robot-type metal_arm  # H7 模拟器使用 Metal 参考参数
+metal-arm-tui --simulate             # Metal PC 控制核心模拟
 ```
 
 `sdk.tui` 即控制台，`--fake` 等于为下面这个假单片机配了交互界面；`--selftest` 运行 sdk
-205 项 + 控制台 48 项。**面板不会自行使能电机**（`0x16` 只在板子已处于「正常运行 + run」
-时才发出，需要用户按键触发）。
+自测和控制台自测。当前结果为 SDK 178 项通过、1 项外部 H7 头文件检查跳过，控制台 48 项通过，仓库 `unittest` 33 项通过。H7 TUI 只在「正常运行 + run」时发送 `0x16`；Metal PC 后端在 STOP 中也会周期使能并发送零增益帧。
+
+串口 TUI 的 `--robot-type {arx_x5,metal_arm}` 默认 `arx_x5`，`--init-tol` 默认读取所选配置。TUI 显示的 `vcode` 是本地协议字符串的 FNV-1a 32 位哈希，不代表软件包版本、提交号或电机固件。两种 PC 后端的握手版本字段由本地适配层填充，H7 则从版本帧读取。
 
 界面语言：默认中文，`--lang en` 切英文（**同一份代码 + 一张语言表** `sdk/i18n.py`）。
 `board_defs` 的名字表、`python3 -m sdk.selftest` 自身的输出、`calibrate_gripper` 的交互
 提示**仍是中文**，边界见 sdk/README「界面语言」。SDK 侧的用户可见消息（闸门拒绝、串口打不开）
 跟着 `--lang` 走，改语言用 `sdk.i18n.set_lang()`。
 
-`sdk.calibrate_gripper` 的选项：`--arm-id`（0=CAN1，1=CAN2）、`--full-open-m`（完全张开的
+`python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085` 是连接 ARX H7 的交互式硬件标定，不属于离线测试，也没有 `--robot-type` 参数。工具选项为：`--arm-id`（0=CAN1，1=CAN2）、`--full-open-m`（完全张开的
 开口距离，米）、`--port` / `--baud`、`--calib`（标定文件路径）、`--note`、`--timeout`。
 
 **假单片机 `sdk.sim.SimLink`** —— `Link` 的子类，使用**真实的**解析、分流、统计。发出的帧
@@ -446,13 +462,14 @@ arm = sdk.Arm(0, link)
 arm.connect()                          # 假单片机同样实现握手闸门：版本码不匹配时不发任何帧
 ```
 
-```python
+```text
 SimLink(port=None, baud=921600, *, arm_ids=(0, 1), lost_mask=0, lost_arm=0,
-        dt=None, speed=1.0)
+        dt=None, speed=1.0, robot_type=None)
 ```
 
 `lost_mask` 非 0 时每 5 s 翻转 `lost_arm` 那台的掉线掩码（等价于面板的 `--fake-lost 0x41`）。
 `speed > 1` 使其整体时钟加速（时间缩放，运动同步加快）。
+`robot_type` 与 `Link` 相同，假板子的复位目标跟随所选参数；它仍是 H7 协议状态机模拟器。验证 Metal PC 初始化和 STOP 行为应使用 `metal_arm_control.sdk_adapter.LocalLink.simulated()`。
 
 时间常数（对拍固件用）：上电 0.6 s → 离线等待、0.8 s → 待初始化、`0x02` 3 s、`0x10` 1.2 s、
 `0x18` 2 s、通信看门狗 3 s（**每台一份**：发往某台的帧只为该台保活，另一台照常超时）、
@@ -470,7 +487,8 @@ a.connect(); b.connect()
 def wait_state(arm, want, timeout=10.0):       # 等待期间必须持续保活
     end = time.monotonic() + timeout
     while time.monotonic() < end:
-        arm.keepalive()
+        for current in (a, b):
+            current.keepalive()
         if arm.wait_for(lambda x: x.robot_state == want, timeout=0.05):
             return True
     return False
@@ -489,6 +507,6 @@ a.send_ctrl_pos(s.joint_angles, gripper_m=0.02)      # 按标定给开口（需�
 a.send_ctrl_pos_vel(s.joint_angles, [0.0]*6)         # 位置 + 速度前馈
 a.keepalive()                                        # 不在控制循环中运行时不要遗漏
 
-a.damping(); a.stop()                          # 阻尼 / 失能
+a.damping(); a.stop()                          # 阻尼 / STOP
 link.close()
 ```
