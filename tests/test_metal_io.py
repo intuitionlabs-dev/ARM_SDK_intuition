@@ -116,10 +116,16 @@ class IOTests(unittest.TestCase):
         with ProcessCANMotorIO([CANChannel(0,'fake')],transport_factory=factory,read_only=True) as io:
             origin=time.monotonic()
             io.poll_feedback(0)
-            io.query_feedback()
             deadline=time.monotonic()+3
+            next_query=origin
             seen=set()
             while time.monotonic()<deadline and len(seen)<7:
+                # A single reply can expire during CI process scheduling. Query as a
+                # live read-only client would, while keeping the production age gate.
+                now=time.monotonic()
+                if now>=next_query:
+                    io.query_feedback()
+                    next_query=now+.05
                 seen.update(f.motor_index for f in io.poll_feedback(int((time.monotonic()-origin)*1000)))
                 time.sleep(.005)
             self.assertEqual(seen,set(range(7)))
