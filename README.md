@@ -8,6 +8,8 @@ SDK 提供 `sdk.Arm` 机械臂控制接口。
 
 新增 [`metal_arm_control`](metal_arm_control/README.md)，与 `arx_x5_control` 保持相同模块布局及 `sdk.Arm` 接口。Metal 使用独立的 CAN 编码、限位、模型和夹爪出厂查表。完整接入见 [Metal SDK 流程](metal_arm_control/SDK_LOCAL.md)。原有 ARX/H7 默认值不变；两个后端可在同一 Python 进程中导入。
 
+接手维护见 [Metal Arm SDK 交接文档](HANDOFF_METAL_ARM.md)，包含改动边界、验证记录和待真机确认事项。
+
 ```bash
 python3 -m metal_arm_control --demo --seconds 8
 metal-arm-tui --simulate
