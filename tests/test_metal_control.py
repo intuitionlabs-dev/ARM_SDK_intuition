@@ -107,6 +107,18 @@ class ControlTests(unittest.TestCase):
         self.assertAlmostEqual(self.plant.positions[0][6], 0.7, places=5)
         self.assertTrue(all(r.family == 'dm' for r in self.sent))
 
+    def test_factory_zero_tolerates_one_feedback_quantization_step(self):
+        # Zero cannot be represented exactly in the 16-bit symmetric MIT range.
+        arm = self.system.arms[0]
+        arm.bank.motors[6].accept(decode_feedback(0, feedback_frame(6,32767,2047,2047),0))
+        arm.refresh_feedback()
+        arm.command._gripper_zero(0)
+        self.assertTrue(arm.initialized[6])
+        arm.bank.motors[6].accept(MotorFeedback(0,6,1,position=-0.1,velocity=0))
+        arm.refresh_feedback()
+        arm.command._gripper_zero(1)
+        self.assertFalse(arm.initialized[6])
+
     def test_motion_limits_and_watchdog(self):
         self.initialize()
         self.step([Command(0, K.START), Command(0, K.POSITION, (20,-30,30,0,0,0), 30)])
@@ -231,6 +243,37 @@ class SDKTests(unittest.TestCase):
         self.assertAlmostEqual(calibration.raw_deg_from_opening(0),math.degrees(0.002))
         for bad in (-0.001,0.101,float('nan')):
             with self.assertRaises(sdk.CalibrationError): calibration.raw_deg_from_opening(bad)
+
+
+class UITests(unittest.TestCase):
+    def test_metal_session_limits_and_rendering(self):
+        import time
+        from unittest.mock import patch
+        from metal_arm_control.sdk_adapter.tui import parse_options, LocalConsoleSession
+        from metal_arm_control.sdk_adapter.tui_app import LocalUi
+        class Screen:
+            def __init__(self): self.rows=[]
+            def getmaxyx(self): return (80,180)
+            def erase(self): pass
+            def addstr(self,*args): self.rows.append(args)
+            def noutrefresh(self): pass
+        options=parse_options(['--simulate'])
+        with LocalLink.simulated(background=False) as link:
+            session=LocalConsoleSession(link,options)
+            for arm in session.arms.values(): arm.send_version()
+            for now in range(4): link.step(now)
+            session.tick(time.monotonic())
+            session.seed_from_feedback(session.fb(),'test')
+            session.target[1]=0.0
+            session.jog(1,-1)
+            self.assertLess(session.target[1],0)
+            self.assertEqual(session.gripper_row(session.fb())['hi'],0.1)
+            self.assertEqual(session.gripper_row(session.fb())['lo'],0.0)
+            screen=Screen()
+            with patch('curses.color_pair',return_value=0), patch('curses.doupdate'):
+                ui=LocalUi(screen,session,options)
+                ui.draw()
+            self.assertTrue(screen.rows)
 
 
 if __name__=='__main__': unittest.main()

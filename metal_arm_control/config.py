@@ -21,6 +21,8 @@ MOTOR_VMAX = (10.0, 10.0, 10.0, 10.0, 30.0, 30.0, 30.0)
 MOTOR_TMAX = (30.0, 120.0, 30.0, 30.0, 20.0, 20.0, 20.0)
 MOTOR_KP = (300.0, 500.0, 500.0, 400.0, 25.0, 20.0, 20.0)
 MOTOR_KD = (5.0, 5.0, 5.0, 4.0, 0.2, 0.2, 0.1)
+# One position LSB around the factory zero; not an extra motion allowance.
+GRIPPER_ZERO_TOL_DEG = (2.0 * MOTOR_PMAX[6] / 65535) * 180.0 / 3.141592653589793
 # Keep the ARX millisecond scheduler / 250 Hz motor cadence. The vendor
 # C++ loop targets 400 Hz; do not claim that timing for this Python port.
 MOTOR_PERIOD_MS = 4
