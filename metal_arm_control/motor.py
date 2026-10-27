@@ -133,9 +133,13 @@ class MotorBank:
         for i, motor in enumerate(self.motors):
             if excluded_mask & (1 << i) or now < self.next_due_ms[i]:
                 continue
-            enabled = motor.mode != ArmMode.STOP and motor.motion_ready(now)
-            if enabled and (not motor.enable_cleared or
-                            (motor.error_code == 0 and now-self.enable_sent_ms[i] >= 75)):
+            # STOP is a zero-gain MIT stream with periodic enable keepalives.
+            # Do not use enable commands to clear a reported motor fault.
+            enabled = motor.error_code in (0, 1) and (
+                motor.mode == ArmMode.STOP or motor.motion_ready(now))
+            retry_due = (motor.mode == ArmMode.STOP or motor.error_code == 0) and (
+                now - self.enable_sent_ms[i] >= 75)
+            if enabled and (not motor.enable_cleared or retry_due):
                 output.append(motor.request(MotorAction.ENABLE, now))
                 self.enable_sent_ms[i] = now
             elif not enabled and motor.enable_cleared:

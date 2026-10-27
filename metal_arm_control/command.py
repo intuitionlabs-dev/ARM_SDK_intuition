@@ -2,7 +2,7 @@
 
 from math import isfinite
 
-from .config import (GRIPPER_MAX, GRIPPER_MIN, GRIPPER_ZERO_TOL_DEG, JOINT_MAX, JOINT_MIN,
+from .config import (GRIPPER_MAX, GRIPPER_MIN, JOINT_MAX, JOINT_MIN,
                      JOINT_QUINTIC_DURATION_S, PLAN_SPEED_COMP_COEF, RESET_ANGLE, TD_R)
 from .numerics import TrackingDifferentiator, clip
 from .trajectory import JointQuinticReference, PlanGroup, Waypoint
@@ -23,7 +23,6 @@ class CommandLayer:
         self.auto = None
         self.auto_step = 0
         self.plan = None
-        self.gz = {}
         self.auto_failed = False
 
     def start_auto(self, kind):
@@ -53,8 +52,6 @@ class CommandLayer:
             self.gripper_angle = arm.control.gripper_angle
         if self.auto == "reset":
             self._reset(now)
-        elif self.auto == "gripper_zero":
-            self._gripper_zero(now)
         solved = list(self.source if arm.mode == ArmMode.RUN else arm.joint_angle)
         for i in range(6):
             if arm.initialized[i]:
@@ -108,18 +105,3 @@ class CommandLayer:
                 self.auto_step = 2
         else:
             self.auto, self.auto_step = None, 0
-
-    def _gripper_zero(self, now):
-        """Preserve the factory zero: Metal must never run X5's end-stop homing.
-
-        Keep the same initialization stage/API, but validate fresh feedback and
-        keep the measured angle. No SAVE_ZERO or exploratory motion is issued.
-        """
-        motor = self.arm.bank.motors[6]
-        ok = (motor.online(now) and motor.motion_ready(now)
-              and GRIPPER_MIN-GRIPPER_ZERO_TOL_DEG <= motor.position_deg <= GRIPPER_MAX+GRIPPER_ZERO_TOL_DEG)
-        self.arm.initialized[6] = ok
-        self.gripper_angle = self.arm.gripper_angle
-        self.gripper_torque = 0.0
-        self.auto_failed = not ok
-        self.auto, self.auto_step = None, 0

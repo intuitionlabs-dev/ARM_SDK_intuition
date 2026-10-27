@@ -106,6 +106,7 @@ class Arm:
                 self.reject(now, command, "initial pose exceeds 20 degree tolerance")
             else:
                 self.init_entry, self.init_step = self.state, 0
+                self.command.gripper_angle = self.gripper_angle
                 self.enter(RobotState.INITIALIZING, now)
         elif kind == CommandKind.CALIBRATE:
             if self.state != RobotState.WAIT_INIT or not self.zero.request():
@@ -160,10 +161,10 @@ class Arm:
                     self.command.start_auto("reset")
                     self.init_step = 1
                 elif self.init_step == 1 and self.command.auto is None:
-                    self.command.start_auto("gripper_zero")
-                    self.init_step = 2
-                elif self.init_step == 2 and self.command.auto is None:
-                    ok = self.initialized[6] and not self.command.auto_failed
+                    # Metal retains its factory gripper zero. Initialization
+                    # finishes with the joint reset; there is no gripper stage.
+                    ok = not self.command.auto_failed
+                    self.initialized[6] = ok
                     self.event(now, "initialized" if ok else "initialization_failed")
                     self.enter(RobotState.NORMAL if ok else self.init_entry, now)
                     self.init_step = 0

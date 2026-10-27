@@ -80,12 +80,14 @@ class ControlTests(unittest.TestCase):
         self.plant = SimulatedMotors()
         self.now = 0
         self.sent = []
+        self.auto_kinds = set()
 
     def step(self, commands=(), missing=(), fault=None):
         fb = self.plant.feedback(self.now)
         fb = [replace(f, error_code=0xc) if fault == (f.arm_id, f.motor_index) else f
               for f in fb if (f.arm_id, f.motor_index) not in missing]
         result = self.system.step(self.now, commands=commands, motor_feedback=fb)
+        self.auto_kinds.update(a.command.auto for a in self.system.arms if a.command.auto is not None)
         self.plant.apply(result.motor_requests)
         self.sent.extend(result.motor_requests)
         self.now += 1
@@ -106,18 +108,53 @@ class ControlTests(unittest.TestCase):
         self.assertFalse(any(r.action == A.SAVE_ZERO for r in self.sent))
         self.assertAlmostEqual(self.plant.positions[0][6], 0.7, places=5)
         self.assertTrue(all(r.family == 'dm' for r in self.sent))
+        self.assertEqual(self.auto_kinds, {'reset'})
 
-    def test_factory_zero_tolerates_one_feedback_quantization_step(self):
-        # Zero cannot be represented exactly in the 16-bit symmetric MIT range.
-        arm = self.system.arms[0]
-        arm.bank.motors[6].accept(decode_feedback(0, feedback_frame(6,32767,2047,2047),0))
-        arm.refresh_feedback()
-        arm.command._gripper_zero(0)
-        self.assertTrue(arm.initialized[6])
-        arm.bank.motors[6].accept(MotorFeedback(0,6,1,position=-0.1,velocity=0))
-        arm.refresh_feedback()
-        arm.command._gripper_zero(1)
-        self.assertFalse(arm.initialized[6])
+    def test_reinitialization_keeps_gripper_position_and_factory_zero(self):
+        self.initialize()
+        self.plant.positions[0][6] = 1.2
+        self.sent.clear()
+        self.step([Command(0, K.INITIALIZE)])
+        for _ in range(2200): self.step()
+        self.assertEqual(self.system.arms[0].state, S.NORMAL)
+        self.assertEqual(self.system.arms[0].actual_mode, ArmMode.DAMPING)
+        self.assertAlmostEqual(self.plant.positions[0][6], 1.2, places=5)
+        self.assertFalse(any(r.action == A.SAVE_ZERO for r in self.sent))
+        self.assertEqual(self.auto_kinds, {'reset'})
+
+    def test_stop_keeps_enabling_all_motors_without_position_or_torque(self):
+        self.initialize()
+        self.step([Command(0, K.STOP)])
+        for _ in range(4): self.step()
+        self.sent.clear()
+        for _ in range(250): self.step()
+        requests = [r for r in self.sent if r.arm_id == 0]
+        for i in range(7):
+            enables = [r.timestamp_ms for r in requests if r.motor_index == i and r.action == A.ENABLE]
+            self.assertGreaterEqual(len(enables), 3)
+            self.assertTrue(all(75 <= b-a <= 78 for a,b in zip(enables,enables[1:])))
+        self.assertFalse(any(r.action in (A.CONTROL, A.DISABLE, A.SAVE_ZERO) for r in requests))
+        self.assertTrue(all((r.position,r.velocity,r.kp,r.kd,r.torque) == (0,0,0,0,0)
+                            for r in requests if r.action == A.SOFT_STOP))
+        self.assertEqual(self.system.arms[0].actual_mode, ArmMode.STOP)
+
+    def test_periodic_enables_skip_calibration_participants_and_faults(self):
+        self.step([Command(0, K.CONNECT)])
+        for _ in range(4): self.step()
+        self.step([Command(0, K.CALIBRATE)])
+        for _ in range(400):
+            # During calibration only the calibrator may temporarily wake the
+            # current joint. Other participating joints must remain disabled.
+            zero = self.system.arms[0].zero
+            was_calibrating = zero.busy or zero.pending
+            result = self.step()
+            for r in result.motor_requests:
+                if (was_calibrating or zero.busy) and r.arm_id == 0 and r.motor_index < 6 and r.action == A.ENABLE:
+                    self.assertTrue(zero.wake_mask & (1 << r.motor_index))
+        self.sent.clear()
+        for _ in range(250): self.step(fault=(0,6))
+        self.assertFalse(any(r.arm_id == 0 and r.motor_index == 6 and r.action == A.ENABLE
+                             for r in self.sent))
 
     def test_motion_limits_and_watchdog(self):
         self.initialize()

@@ -5,3 +5,5 @@
 CAN 单帧间隔至少 200 us。迟到调用只执行当前拍，不补发积压轨迹；发送队列有过期上限。电机反馈新鲜度为 100 ms，CAN/进程命令流看门狗与上层 3 s 保活是不同保护层。
 
 `PerformanceProbe`、`ControlTrace`、`RuntimeRecorder` 保留相同统计接口。可在 LocalLink/CANMotorIO 构造时开启 `collect_performance`，并调用 `performance_snapshot()`。Python 和普通 Linux 不是硬实时平台，实际周期需在目标电脑测量。没有 Metal 真机时序测试结果。
+
+STOP 下每台无已知故障的电机以至少 75 ms 间隔重发使能；4 ms 电机调度下正常间隔为 76 ms。周期 SOFT_STOP 保持零增益、零力矩，标零参与电机暂停这项保活，关闭时全部禁用。

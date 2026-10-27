@@ -4,7 +4,7 @@
 
 交接日期：2026-10-27。
 
-后续更新：设备参数已拆为 `sdk.board_defs.arx_x5` 和 `sdk.board_defs.metal_arm`，通过 `arm.board_defs` / `link.board_defs` 读取。包根不再暴露默认设备参数。用户将通过 TUI 读取并提供 Metal 复位角；当前仍保留旧六轴零角，复位角替换待该数据提供后完成。
+后续更新：Metal STOP 已恢复周期使能加零增益输出；初始化仅执行六轴复位，夹爪校准阶段已删除，入口保留夹爪当前反馈角。设备参数已拆为 `sdk.board_defs.arx_x5` 和 `sdk.board_defs.metal_arm`，通过 `arm.board_defs` / `link.board_defs` 读取。包根不再暴露默认设备参数。用户将通过 TUI 读取并提供 Metal 复位角；当前仍保留旧六轴零角，复位角替换待该数据提供后完成。
 
 本文记录的功能实现基线为 `5b76a9b`；后续交接文档提交不属于该功能基线。接手时先核对分支和远端最新状态。
 
@@ -48,7 +48,7 @@
 | [config.py](metal_arm_control/config.py)、[motor.py](metal_arm_control/motor.py) | 硬件参数、坐标、MIT 原生 PD 和电机输出策略 |
 | [can_protocol.py](metal_arm_control/can_protocol.py) | Metal Damiao MIT 帧编解码及特殊命令 |
 | [can_io.py](metal_arm_control/can_io.py)、[can_process.py](metal_arm_control/can_process.py)、[usb2can](metal_arm_control/usb2can/README.md) | CAN 线程/独立进程、SocketCAN/SLCAN、退出时交付禁用命令 |
-| [calibration.py](metal_arm_control/calibration.py) | 夹爪出厂查表、保留出厂零点的初始化和显式六轴标零 |
+| [calibration.py](metal_arm_control/calibration.py) | 显式六轴标零；夹爪厂家查表位于 SDK adapter，初始化已没有夹爪校准阶段 |
 | [gravity_compensation/solver.py](metal_arm_control/gravity_compensation/solver.py) | Metal URDF、重力/科氏/摩擦补偿 |
 | [pyproject.toml](pyproject.toml) | 分发版本 `0.6.0`，打包 SDK、两个后端、模型及命令行入口 |
 | [tests](tests)、[CI](.github/workflows/control-tests.yml) | 协议、状态机、兼容性、动力学和传输生命周期验证 |
@@ -83,7 +83,7 @@ Metal 后端直接实现于本仓库的控制架构内，不加载原厂二进�
 
 调度保留 ARX 架构：1 ms 控制 tick、2 ms 命令更新、4 ms 反馈周期，每轴目标发送周期为 4 ms，即 250 Hz，并错开发送相位。这不是原厂 C++ 的 400 Hz 循环，普通 PC Python 环境也不保证硬实时。手动 `background=False` 模式必须以严格递增的毫秒时间调用 `step()`。
 
-应用需要在每台臂的 3 s 命令超时之前发送有效命令或保活。正常运行时命令超时转阻尼；电机反馈超过 100 ms 或出现故障则使受影响整臂停止，另一臂独立处理。`STOP` 不维持重力补偿，也不周期性重新使能。
+应用需要在每台臂的 3 s 命令超时之前发送有效命令或保活。正常运行时命令超时转阻尼；电机反馈超过 100 ms 或出现故障则使受影响整臂停止，另一臂独立处理。`STOP` 不维持重力补偿；无已知故障的电机会继续收到每台约 75 ms 的周期使能和零增益 SOFT_STOP。已知故障电机不发送使能，标零参与电机由标零流程独占，关闭仍禁用全部电机。
 
 ## 必须保留的 Metal 差异
 
@@ -112,11 +112,11 @@ PMAX/VMAX/TMAX 是协议编码范围，不能当作额定性能，也不能据�
 
 ### 初始化和夹爪标定
 
-Metal 初始化保留夹爪出厂零点，仅检查新鲜、健康的反馈及原始角范围，不执行 ARX 的顶限位、后退 142° 和写入夹爪零点流程。零位附近允许一个 MIT 位置量化步长，处理解码出的微小负数；这不是扩大允许行程。
+Metal 初始化仅执行六轴复位，结束后直接进入正常阻尼模式；夹爪校准及范围核验阶段已删除。初始化入口锁存夹爪当前反馈角，不寻找限位或写入零点。正常控制的夹爪限位和整臂反馈健康检查仍然有效。
 
 默认夹爪换算来自原厂 `can_manager.h` 的最近邻查表，要求出厂零点仍有效。SDK 米制范围为 `0..0.1 m`；表中虽有 `102.5 mm` 项，米制接口仍限制在 `0.1 m`。例如 `50 mm` 对应 `1.10383 rad`。显式传入 `sdk.Arm(..., calib_store=...)` 可以覆盖默认存储，Metal 不自动读取 ARX 本机标定文件。
 
-`set_zero()` 仍是显式写入 J1–J6 当前零点的命令，不包含夹爪，也不会自动寻找机械零位。初始化参考和 `reset()` 目标为六轴零角，初始化姿态容差为 20°，复位轨迹为 2 s。这是适配层策略，不是厂家的安全收纳姿态，必须结合实际设备确认。
+`set_zero()` 仍是显式写入 J1–J6 当前零点的命令，不包含夹爪，也不会自动寻找机械零位。初始化参考和 `reset()` 目标仍临时保留旧六轴零角，等待用户从 TUI 读取并提供正确复位角后，更新 `board_defs/metal_arm.py`。初始化姿态容差为 20°，复位轨迹为 2 s；旧零角不是已确认的厂家收纳姿态。
 
 ### 动力学和退出行为
 

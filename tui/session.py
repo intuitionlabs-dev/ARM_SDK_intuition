@@ -100,7 +100,7 @@ def axis_hi_rad(axis, defs=board_defs):
 def clamp_axis_rad(axis, value, defs=board_defs):
     """Clamp one axis into its soft limits (rad); returns `(clamped value, was it clamped)`.
 
-    `sdk.board_defs` only has the deg version (`clamp_axis`); the session always uses rad,
+    `arm.board_defs` has the deg version (`clamp_axis`); the session always uses rad,
     so this composes one out of its rad limit mirrors — composed, not a second copy of the
     limit table.
     """

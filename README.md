@@ -579,7 +579,7 @@ python3 -m sdk.tui --selftest --lang en      # 英文模板实际执行一次自
 
 英文只覆盖**面向读者的文本**。下面这些**保持中文**，这是有意设计：
 
-* `sdk/board_defs/arx_x5.py` 的名字表。它是公开字段 `Snapshot.robot_state_name` / `mode_name` /
+* `sdk/board_defs/common.py` 的名字表。它是公开字段 `Snapshot.robot_state_name` / `mode_name` /
   `lost_names` / `inited_names` 的来源，保持中文；英文名并列在 `i18n` 里；
 * `python3 -m sdk.selftest` 自己的小节标题与汇总行，以及 `--selftest` 里那一段 sdk 自测的
   同名部分；
