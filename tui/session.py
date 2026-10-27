@@ -84,26 +84,26 @@ def parse_arm_id(s):
     return v
 
 
-def axis_lo_rad(axis):
+def axis_lo_rad(axis, defs=board_defs):
     """Lower soft limit of one axis (rad). The gripper uses the raw angle's ∓142°, not
     metres."""
-    return (board_defs.GRIPPER_ANGLE_MIN_RAD if axis == GRIPPER
-            else board_defs.JOINT_ANGLE_MIN_RAD[axis])
+    return (defs.GRIPPER_ANGLE_MIN_RAD if axis == GRIPPER
+            else defs.JOINT_ANGLE_MIN_RAD[axis])
 
 
-def axis_hi_rad(axis):
-    return (board_defs.GRIPPER_ANGLE_MAX_RAD if axis == GRIPPER
-            else board_defs.JOINT_ANGLE_MAX_RAD[axis])
+def axis_hi_rad(axis, defs=board_defs):
+    return (defs.GRIPPER_ANGLE_MAX_RAD if axis == GRIPPER
+            else defs.JOINT_ANGLE_MAX_RAD[axis])
 
 
-def clamp_axis_rad(axis, value):
+def clamp_axis_rad(axis, value, defs=board_defs):
     """Clamp one axis into its soft limits (rad); returns `(clamped value, was it clamped)`.
 
     `sdk.board_defs` only has the deg version (`clamp_axis`); the session always uses rad,
     so this composes one out of its rad limit mirrors — composed, not a second copy of the
     limit table.
     """
-    lo, hi = axis_lo_rad(axis), axis_hi_rad(axis)
+    lo, hi = axis_lo_rad(axis, defs), axis_hi_rad(axis, defs)
     if value < lo:
         return lo, True
     if value > hi:
@@ -111,14 +111,14 @@ def clamp_axis_rad(axis, value):
     return value, False
 
 
-def gripper_m_limits(calib):
+def gripper_m_limits(calib, defs=board_defs):
     """The gripper's metric soft limits `(lo, hi)` once it is calibrated.
 
     Which way the two points map is decided by the calibration itself (neither end is
     assumed to be "open"), so both ends are computed here and then sorted.
     """
-    a = calib.opening_from_raw_deg(board_defs.GRIPPER_ANGLE_MIN)
-    b = calib.opening_from_raw_deg(board_defs.GRIPPER_ANGLE_MAX)
+    a = calib.opening_from_raw_deg(defs.GRIPPER_ANGLE_MIN)
+    b = calib.opening_from_raw_deg(defs.GRIPPER_ANGLE_MAX)
     return (a, b) if a <= b else (b, a)
 
 
@@ -225,6 +225,7 @@ class ConsoleSession:
         # intercept a same-named attribute (views above all — a wrong write there is
         # infinite recursion).
         object.__setattr__(self, "link", link)
+        object.__setattr__(self, "board_defs", getattr(link, "board_defs", board_defs))
         object.__setattr__(self, "opts", opts)
         object.__setattr__(self, "events", deque(maxlen=400))
         object.__setattr__(self, "dirty", True)
@@ -407,14 +408,14 @@ class ConsoleSession:
         view = self.cur
         calib = view.arm.calibration
         if calib is not None:
-            lo, hi = gripper_m_limits(calib)
+            lo, hi = gripper_m_limits(calib, self.board_defs)
             return {"calibrated": True, "unit": "m",
                     "tgt": calib.opening_from_raw_deg(units.rad_to_deg(view.target[GRIPPER])),
                     "fb": (fb["gripper"] if fb else None), "lo": lo, "hi": hi}
         return {"calibrated": False, "unit": "rad",
                 "tgt": view.target[GRIPPER],
                 "fb": (fb["gripper_raw_rad"] if fb else None),
-                "lo": axis_lo_rad(GRIPPER), "hi": axis_hi_rad(GRIPPER)}
+                "lo": axis_lo_rad(GRIPPER, self.board_defs), "hi": axis_hi_rad(GRIPPER, self.board_defs)}
 
     def state_mode(self):
         snap = self.snapshot()
@@ -455,7 +456,7 @@ class ConsoleSession:
             calib = view.arm.calibration
             cur_m = calib.opening_from_raw_deg(units.rad_to_deg(view.target[axis]))
             want_m = cur_m + sign * view.step
-            lo_m, hi_m = gripper_m_limits(calib)
+            lo_m, hi_m = gripper_m_limits(calib, self.board_defs)
             if want_m < lo_m or want_m > hi_m:
                 got_m = min(max(want_m, lo_m), hi_m)
                 self.warn(i18n.tr("session.grip_limit_m", lbl, want_m, lo_m, hi_m, got_m))
@@ -466,13 +467,13 @@ class ConsoleSession:
             return
 
         want = view.target[axis] + sign * view.step
-        got, clamped = clamp_axis_rad(axis, want)
+        got, clamped = clamp_axis_rad(axis, want, self.board_defs)
         view.target[axis] = got
         if clamped:
             self.warn(i18n.tr("session.axis_limit", lbl, i18n.axis_name(axis),
                               units.rad_to_deg(want),
-                              units.rad_to_deg(axis_lo_rad(axis)),
-                              units.rad_to_deg(axis_hi_rad(axis)),
+                              units.rad_to_deg(axis_lo_rad(axis, self.board_defs)),
+                              units.rad_to_deg(axis_hi_rad(axis, self.board_defs)),
                               units.rad_to_deg(got)))
         else:
             self.dirty = True
@@ -532,9 +533,9 @@ class ConsoleSession:
             self.warn(i18n.tr("session.init_no_fb", lbl))
             return
 
-        bad = [(board_defs.JOINT_NAMES[i],
+        bad = [(self.board_defs.JOINT_NAMES[i],
                 units.rad_to_deg(sp.joint_angles[i] - want))
-               for i, want in enumerate(board_defs.RESET_POSE_RAD)
+               for i, want in enumerate(self.board_defs.RESET_POSE_RAD)
                if abs(sp.joint_angles[i] - want) > self.opts.init_tol]
         if bad:
             if not view.force_init:
@@ -543,7 +544,7 @@ class ConsoleSession:
                     "session.init_pose_bad", lbl, units.rad_to_deg(self.opts.init_tol),
                     i18n.tr("session.pose_dev_sep").join(
                         i18n.tr("session.pose_dev_item", n, d) for n, d in bad),
-                    " ".join("%+.4f" % v for v in board_defs.RESET_POSE_RAD)))
+                    " ".join("%+.4f" % v for v in self.board_defs.RESET_POSE_RAD)))
                 return
             self.warn(i18n.tr("session.init_force", lbl))
         try:
@@ -567,7 +568,7 @@ class ConsoleSession:
             self._report_send_failure(view, i18n.tr("session.what.reset"), e)
             return
         self.info(i18n.tr("session.reset_sent", lbl,
-                          " ".join("%+.4f" % v for v in board_defs.RESET_POSE_RAD)))
+                          " ".join("%+.4f" % v for v in self.board_defs.RESET_POSE_RAD)))
         now = time.monotonic()
         view.last_tx = now
         view.reset_t0 = now
@@ -688,8 +689,8 @@ class ConsoleSession:
                 self.dirty = True
 
             can_ctrl = (sp is not None
-                        and sp.robot_state == board_defs.STATE_NORMAL
-                        and sp.mode == board_defs.MODE_RUN
+                        and sp.robot_state == self.board_defs.STATE_NORMAL
+                        and sp.mode == self.board_defs.MODE_RUN
                         and not view.hold
                         and self.link.link_up
                         and sp.age <= FEEDBACK_FRESH_S)
@@ -703,10 +704,10 @@ class ConsoleSession:
                     self._send_keepalive(view, now)
 
             if view.init_t0 is not None and sp is not None \
-                    and sp.robot_state != board_defs.STATE_INITING:
+                    and sp.robot_state != self.board_defs.STATE_INITING:
                 view.init_t0 = None
             if view.reset_t0 is not None and sp is not None \
-                    and sp.robot_state != board_defs.STATE_RESETTING:
+                    and sp.robot_state != self.board_defs.STATE_RESETTING:
                 view.reset_t0 = None
             self._rate(view, now)
 
@@ -778,28 +779,28 @@ class ConsoleSession:
             if st != pst:
                 self.info(i18n.tr("session.state_changed", lbl,
                                   i18n.state_name(pst), i18n.state_name(st)))
-                if st == board_defs.STATE_INITING:
+                if st == self.board_defs.STATE_INITING:
                     view.init_t0 = now
                     view.init_told_reset = False
-                if st == board_defs.STATE_RESETTING:
+                if st == self.board_defs.STATE_RESETTING:
                     view.reset_t0 = now
                 # Coming back from comm_lost / finishing init into normal — these two
                 # must re-seed, otherwise a stale target yanks the arm on the very frame
                 # that enters run (the board's own joint_src seeding only follows the
                 # feedback while there is no valid control frame).
-                if st == board_defs.STATE_WAIT_INIT and pst in (
-                        board_defs.STATE_INITING, board_defs.STATE_COMM_LOST,
-                        board_defs.STATE_CALIBRATING):
+                if st == self.board_defs.STATE_WAIT_INIT and pst in (
+                        self.board_defs.STATE_INITING, self.board_defs.STATE_COMM_LOST,
+                        self.board_defs.STATE_CALIBRATING):
                     self._seed(view, sp, i18n.tr("session.why.wait_init"))
-                if st == board_defs.STATE_NORMAL and pst == board_defs.STATE_RESETTING:
+                if st == self.board_defs.STATE_NORMAL and pst == self.board_defs.STATE_RESETTING:
                     # End of a reset. **Must re-seed**: the arm really moved during the
                     # reset, so the target from before the excursion went stale long ago
                     # (the board's Ctrl_Invalidate cleared it too); without re-seeding the
                     # next 0x16 would yank the arm back to the old target once more.
                     self._seed(view, sp, i18n.tr("session.why.reset_tail"))
-                    bad = [(board_defs.JOINT_NAMES[i],
+                    bad = [(self.board_defs.JOINT_NAMES[i],
                             units.rad_to_deg(sp.joint_angles[i] - want))
-                           for i, want in enumerate(board_defs.RESET_POSE_RAD)
+                           for i, want in enumerate(self.board_defs.RESET_POSE_RAD)
                            if abs(sp.joint_angles[i] - want) > self.opts.init_tol]
                     if bad:
                         # That silent failure on the board: when the temporary planning
@@ -818,18 +819,18 @@ class ConsoleSession:
                 good = {1: "info", 2: "warn", 0: "warn", 3: "info"}.get(mode, "warn")
                 text = i18n.tr("session.mode_changed", lbl, i18n.mode_name(pmode),
                                i18n.mode_name(mode))
-                if pst in (board_defs.STATE_INITING, board_defs.STATE_RESETTING) \
-                        and st == board_defs.STATE_NORMAL \
-                        and mode == board_defs.MODE_DAMPING:
+                if pst in (self.board_defs.STATE_INITING, self.board_defs.STATE_RESETTING) \
+                        and st == self.board_defs.STATE_NORMAL \
+                        and mode == self.board_defs.MODE_DAMPING:
                     # Both the end of init and the end of a reset go run → damping; that
                     # is a **normal finish**, not an anomaly (the anomalous one is a loss
                     # knocking run back to stop, the line below). Do not scare anyone.
                     good = "info"
                     text += i18n.tr("session.mode_tail_normal")
-                if mode == board_defs.MODE_RUN:
+                if mode == self.board_defs.MODE_RUN:
                     self._seed(view, sp, i18n.tr("session.why.enter_run"))
                     self.event("info", text)
-                elif pmode == board_defs.MODE_RUN:
+                elif pmode == self.board_defs.MODE_RUN:
                     # The most typical one: Motor_Lost_Handle knocks arm_mode back to stop
                     # because motors were lost.
                     self.event("err" if lost else good,
@@ -845,7 +846,7 @@ class ConsoleSession:
         elif not view.seeded:
             self._seed(view, sp, i18n.tr("session.why.reseed"))
 
-        if st == board_defs.STATE_INITING and view.init_t0 is not None:
+        if st == self.board_defs.STATE_INITING and view.init_t0 is not None:
             self.dirty = True      # the panel wants to watch the seconds tick
             if now - view.init_t0 > 4.0 and not view.init_told_reset:
                 view.init_told_reset = True

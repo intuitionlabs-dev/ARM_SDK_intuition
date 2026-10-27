@@ -109,8 +109,10 @@ class Arm:
         self.arm_id = arm_id
         self._own_link = link is None
         self.link = link if link is not None else Link()
+        self.board_defs = getattr(self.link, "board_defs", board_defs)
         self._chan = self.link.channel(arm_id)
-        self._calib_store = calib_store or GripperCalibStore()
+        self._calib_store = (calib_store if calib_store is not None else
+                             getattr(self.link, "gripper_calib_store", None) or GripperCalibStore())
         self._calib = None
         self._calib_loaded = False
         self._ack_after = None      # set_zero() 发送前的 0x11 序号
@@ -599,13 +601,13 @@ class Arm:
                                i18n.expand_mask(fb.motor_lost_mask)))
 
     def _check_pose(self, fb, why):
-        dev = board_defs.pose_deviation_deg(fb.joint_angle)
-        if dev > board_defs.ROBOT_INIT_POSE_TOL_DEG:
+        dev = max(abs(a-b) for a, b in zip(fb.joint_angle, self.board_defs.RESET_POSE_DEG))
+        if dev > self.board_defs.ROBOT_INIT_POSE_TOL_DEG:
             worst = max(range(6), key=lambda i: abs(fb.joint_angle[i]
-                                                    - board_defs.RESET_POSE_DEG[i]))
-            why.append(i18n.tr("arm.pose_dev", dev, board_defs.ROBOT_INIT_POSE_TOL_DEG,
+                                                    - self.board_defs.RESET_POSE_DEG[i]))
+            why.append(i18n.tr("arm.pose_dev", dev, self.board_defs.ROBOT_INIT_POSE_TOL_DEG,
                                i18n.axis_name(worst), fb.joint_angle[worst],
-                               board_defs.RESET_POSE_DEG[worst]))
+                               self.board_defs.RESET_POSE_DEG[worst]))
 
     def _gripper_deg_for_send(self, gripper_m, gripper_raw_deg):
         if gripper_m is not None and gripper_raw_deg is not None:

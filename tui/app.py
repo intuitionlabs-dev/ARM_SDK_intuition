@@ -194,7 +194,7 @@ class Ui:
                 stream = i18n.tr("app.initing", time.monotonic() - self.sess.init_t0)
             elif self.sess.reset_t0 is not None:
                 stream = i18n.tr("app.resetting", time.monotonic() - self.sess.reset_t0,
-                                 " ".join("%+.4f" % v for v in board_defs.RESET_POSE_RAD))
+                                 " ".join("%+.4f" % v for v in self.sess.board_defs.RESET_POSE_RAD))
             self.put(y, 0, stream,
                      self.attr(C_WARN) if not self.sess.ctrl_live else self.attr(C_OK))
             y += 1
@@ -209,7 +209,7 @@ class Ui:
                     fv = fb["joint"][i]
                     line = "%s%-4s %11.4f %13.4f %+11.4f   [%8.4f,%8.4f] %3d°C" % (
                         mark, i18n.axis_name(i), tgt[i], fv, tgt[i] - fv,
-                        axis_lo_rad(i), axis_hi_rad(i), fb["temp"][i])
+                        axis_lo_rad(i, self.sess.board_defs), axis_hi_rad(i, self.sess.board_defs), fb["temp"][i])
                 else:
                     fv = grip["fb"]
                     unit = "m" if grip["calibrated"] else "raw rad"
@@ -234,7 +234,7 @@ class Ui:
                 # This line is the answer to "why do the numbers in the gripper row look
                 # odd" (useless once calibrated)
                 self.put(y, 0, i18n.tr("app.grip_uncal_hint",
-                                       board_defs.GRIPPER_ANGLE_MAX_RAD, arm_id),
+                                       self.sess.board_defs.GRIPPER_ANGLE_MAX_RAD, arm_id),
                          self.attr(C_DIM))
                 y += 1
 
@@ -405,9 +405,9 @@ class Ui:
         popped once for a human to decide; when it passes, the frame goes out directly."""
         s = self.sess
         fb = s.fb()
-        if fb is not None and fb["state"] == board_defs.STATE_NORMAL and not fb["lost"]:
+        if fb is not None and fb["state"] == self.sess.board_defs.STATE_NORMAL and not fb["lost"]:
             bad = [i18n.axis_name(i)
-                   for i, want in enumerate(board_defs.RESET_POSE_RAD)
+                   for i, want in enumerate(self.sess.board_defs.RESET_POSE_RAD)
                    if abs(fb["joint"][i] - want) > self.opts.init_tol]
             if bad:
                 s.warn(i18n.tr("app.reset_pose_warn", self.opts.init_tol,
@@ -427,13 +427,13 @@ class Ui:
         if fb is None:
             s.warn(i18n.tr("app.setzero_no_fb"))
             return
-        if fb["state"] != board_defs.STATE_WAIT_INIT:
+        if fb["state"] != self.sess.board_defs.STATE_WAIT_INIT:
             s.warn(i18n.tr("app.setzero_state", i18n.state_name(fb["state"])))
             return
         s.warn(i18n.tr("app.setzero_warn1"))
         s.warn(i18n.tr("app.setzero_warn2",
                        " ".join("%+.4f" % v for v in fb["joint"]),
-                       " ".join("%+.4f" % v for v in board_defs.RESET_POSE_RAD)))
+                       " ".join("%+.4f" % v for v in self.sess.board_defs.RESET_POSE_RAD)))
         if self.input_line(i18n.tr("app.setzero_step1")) != "SETZERO":
             s.info(i18n.tr("app.setzero_cancel1"))
             return
