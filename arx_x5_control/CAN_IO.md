@@ -1,6 +1,6 @@
 # CAN 电机收发接口
 
-适用包版本：`arx-x5-control 0.5.0`。
+适用发行包：`arx-x5-control 0.6.0`，本页为 ARX 后端。Metal 的 ID、反馈协议和只读查询见 [Metal CAN 接口](../metal_arm_control/CAN_IO.md)。
 类型入口为 `CANChannel`、`CANMotorIO`、`ProcessCANMotorIO` 和 `CANControlIO`。
 
 ## 术语和单位
@@ -249,7 +249,5 @@ H7 控制工程的 ENCOS 编码以 `libs/encos_motor/encos_protocol.c` 为准。
 
 SLCAN 命令依据 [CANable2 固件](https://github.com/normaldotcom/canable2-fw/blob/main/README.md)。达妙状态读取依据 [厂商例程 refresh_motor_status](https://github.com/dmBots/motor-control-routine/blob/master/orin%E8%BD%BD%E6%9D%BFcan%E6%8E%A7%E5%88%B6%E8%BE%BE%E5%A6%99%E7%94%B5%E6%9C%BA%E4%BE%8B%E7%A8%8B/dm_hw/src/hardware_interface/damiao.cpp)。SocketCAN 时间戳和回显依据 [Linux 文档](https://docs.kernel.org/networking/can.html)。串口行为依据 [pySerial API](https://pyserial.readthedocs.io/en/latest/pyserial_api.html)。
 
-在 H7 控制工程根目录安装 `./sdk`。
-运行 `python3 -m unittest discover -s tests -v`。
-测试覆盖帧编码、解码、队列、静默期、时间戳、进程保活及故障停机。
+本仓库根目录安装 `.[can]` 后运行 `python3 -m unittest discover -s tests -v`，覆盖 Metal CAN 线程/进程及公共 SDK 配置等。上游 ARX H7 工程另有 ENCOS/达妙编码、静默期、时间戳和故障停机测试，需要在该工程运行。
 主循环和 CAN 周期统计见 [控制周期稳定性](CONTROL_TIMING.md)。

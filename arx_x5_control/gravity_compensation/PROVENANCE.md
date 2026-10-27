@@ -29,3 +29,5 @@ URDF 模型位于 `models/`。
 默认重力为 `(0, 0, -9.81)` m/s²。
 SDK 力矩缩放系数为前三轴 0.8、后三轴 1.32。
 参数定义见 `solver.py`。
+
+本页模型与系数仅适用于 ARX。SDK 的关节限位和复位参考另存于 `sdk.board_defs.arx_x5`（源码 [board_defs/arx_x5.py](../../board_defs/arx_x5.py)）；Metal 使用独立模型与参数，来源见 [Metal PROVENANCE](../../metal_arm_control/gravity_compensation/PROVENANCE.md)。

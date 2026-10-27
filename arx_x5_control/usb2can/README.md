@@ -1,7 +1,7 @@
 # USB-CAN 传输接口
 
 包路径：`arx_x5_control.usb2can`。
-发行包：`arx-x5-control 0.5.0`。
+发行包：`arx-x5-control 0.6.0`，版本定义见 [pyproject.toml](../../pyproject.toml)。Metal 的同构传输子包见 [Metal USB-CAN](../../metal_arm_control/usb2can/README.md)。
 Python 版本：3.10 或更高。
 该子包提供经典 CAN 标准数据帧收发。
 

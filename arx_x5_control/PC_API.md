@@ -4,6 +4,8 @@
 
 接口版本：1。类型定义在 [`types.py`](types.py)，运行适配器在 [`interfaces.py`](interfaces.py)。本接口不是原 H7 二进制协议的编码实现。
 
+`api_version=1` 是控制核心接口版本，与发行包 `0.6.0`、SDK 协议哈希分别维护。本页参数和初始化行为专属于 ARX；限位和复位角由 `sdk.board_defs.arx_x5` 提供，`config.py` 引用同一组定义。Metal 对应行为见 [Metal PC API](../metal_arm_control/PC_API.md)。
+
 ## 控制循环
 
 ```python

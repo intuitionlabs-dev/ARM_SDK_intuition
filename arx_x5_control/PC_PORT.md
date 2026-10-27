@@ -6,6 +6,7 @@
 
 H7 源码路径相对于 [H7 控制工程](https://github.com/Crystal-1438/ARX_X5_DMH7) 根目录。
 Python 实现位于 SDK 仓库的 `arx_x5_control/`。
+本页描述 ARX 的移植来源与行为。当前公共 SDK 的类型选择见 [API](../API.md)，Metal 的参数和行为差异见 [Metal 移植说明](../metal_arm_control/PC_PORT.md)。
 
 | H7 源码 | 控制内容 | Python 实现 |
 | --- | --- | --- |
@@ -16,7 +17,7 @@ Python 实现位于 SDK 仓库的 `arx_x5_control/`。
 | `App/arm_zero.c` | 电机校准、ACK、回读、超时 | `ZeroCalibration` |
 | `App/gimbal_arm.c` | 坐标转换、动力学、模式增益、电机参考量 | `Arm.drive`、`Motor.control` |
 | `App/inc/gimbal_arm_def.h` | 方向、减速比、零点、前馈配置 | `ArmConfig` |
-| `App/inc/gimbal_cmd_def.h` | 软限位、规划速度系数、样条时长 | `config.py` |
+| `App/inc/gimbal_cmd_def.h` | 软限位、规划速度系数、样条时长 | `sdk.board_defs.arx_x5` 保存限位/复位角，`config.py` 引用并保存控制配置 |
 | `libs/controller/pid.c` | 位置 PID | `PID` |
 | `libs/controller/adrc.c` | TD 位置、速度、加速度 | `TrackingDifferentiator` |
 | `libs/controller/controller.c` | 位置与速度 PID 级联 | `Motor.control` |
@@ -90,7 +91,7 @@ ENCOS 在线监控按 10 ms 网格重载 10 次，达妙重载 2 次。设零期
 
 输入验证在状态更新前完成。初始化期间掉线或通信超时会取消自动动作。夹爪找零成功后，控制器才确认初始化完成。校准结束或取消时，控制器对临时唤醒的达妙输出 DISABLE。
 
-数值计算使用 Python 双精度。C/Python 对照直接编译固件源码：
+数值计算使用 Python 双精度。以下是上游 H7 工程的 C/Python 对照范围，需要对应固件源码和外部测试：
 
 | 对照对象 | 覆盖范围 | 允许绝对误差 |
 | --- | --- | --- |
@@ -101,4 +102,4 @@ ENCOS 在线监控按 10 ms 网格重载 10 次，达妙重载 2 次。设零期
 | 重力 | 3 模型、2 重力向量、300 位姿、2 模式 | 1e-5 N·m |
 | 逆动力学 | 3 模型、4 重力向量、80 组输入、2 模式 | `5e-5 + 4e-6 × abs(C结果)` N·m |
 
-运行 `python3 -m unittest discover -s tests -v` 执行验证。测试还覆盖双臂初始化、复位、校准、异常停机、软限位、调度、SDK 和日志语言。测试电机模型验证接口和状态流程。实机闭环及控制稳定性需要硬件验证。
+上述固件数值对照在上游 H7 工程运行。本仓库的 `python3 -m unittest discover -s tests -v` 执行当前独立 SDK 的 33 项测试，具体范围见 [验证记录](../HANDOFF_METAL_ARM.md#已完成的验证)。测试电机模型验证接口和状态流程，实机闭环及控制稳定性仍需硬件验证。

@@ -1,5 +1,7 @@
 # arx_x5_control 包专属日志库
 
+本页描述 ARX 的日志命名空间和记录格式。Metal 使用独立环境变量与目录，见 [Metal 日志](../metal_arm_control/LOGGING.md)。两包的发行版本都来自 `arx-x5-control`；TUI 的协议 `vcode` 含义见 [公共手册](../README.md#tui-版本显示)。
+
 `arx_x5_control` 使用 `arx_x5_control.log`。
 每个独立包拥有自己的日志入口、词条和配置。
 本库保持 SDK、重力模块和根日志器的配置。

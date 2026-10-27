@@ -1,5 +1,7 @@
 # arx_x5_control
 
+本页描述 ARX X5 PC 后端。当前发行包为 `arx-x5-control 0.6.0`，同时包含 [Metal 后端](../metal_arm_control/README.md) 和公共 SDK。安装分支、H7 参数选择与直接提交推送约定见 [仓库手册](../README.md)。
+
 `arx_x5_control` 提供 PC Python 机械臂控制。控制逻辑以主分支 [`2bbb192`](https://github.com/Crystal-1438/ARX_X5_DMH7/tree/2bbb192) 为基线。
 
 Python 版本支持双臂，每臂 6 关节及 1 夹爪。控制链路包含状态机、初始化、复位、夹爪找零、电机校准、PID、TD、0.16 s 五次样条、逆动力学补偿、速度前馈、粘性摩擦前馈、软限位及掉线处理。
@@ -55,6 +57,8 @@ with LocalLink.simulated() as link:  # 实际电机程序改为 LocalLink(motor_
 ```
 
 现有的 `init_arm()`、`send_ctrl_pos_vel()`、模式切换、复位、设零和反馈接口继续使用 `sdk.Arm`；SDK 关节单位为 rad/rad/s，夹爪标定后使用 m。完整初始化及保活示例、`MotorIO` 两个接口、退出和异常处理见 [SDK 接入文档](SDK_LOCAL.md)。
+
+本后端的 `link.board_defs` / `arm.board_defs` 为 `sdk.board_defs.arx_x5`。限位和复位角在该模块定义，控制核心 `config.py` 引用它；`sdk.board_defs` 包根不再提供全局设备常量。ARX 复位角仍为 `(0, 0.5, 0.5, 0, 0, 0)`°，初始化保留夹爪找零。
 
 双臂实机代码、设备准备和上层规划器接入见 [双臂实机接入例程](SDK_LOCAL.md#双臂实机接入例程)。
 
@@ -129,10 +133,12 @@ log.configure(language="en")  # 下一条日志开始使用英文
 
 ## 验证范围
 
-测试覆盖双臂初始化、复位、校准、超时、掉线、模式切换、限位、调度、SDK 接入和日志语言。轨迹测试覆盖五次样条重规划及控制源衔接。动力学测试覆盖惯性项、科里奥利项、重力项和异常停机。C/Python 对照测试直接编译固件的 PID、TD、样条、命令层、重力和逆动力学源码。请安装主机 C 编译器 `cc`，并使用 H7 控制工程中的集成测试。
+本仓库的 `python3 -m unittest discover -s tests -v` 当前包含 33 项测试，覆盖 Metal 控制与 CAN、ARX/Metal 接口对齐、独立参数和 H7/TUI 选择；公共 SDK/TUI 自测及 ARX 模拟入口另行运行，见 [验证记录](../HANDOFF_METAL_ARM.md#已完成的验证)。
+
+上游 H7 控制工程另有 ARX 轨迹、PID、TD、样条和动力学 C/Python 对照测试，需要该工程及主机 C 编译器。这些外部测试不包含在本仓库的 33 项中。
 
 程序通过本地模拟和独立安装包验证。
-nuc3 双臂实机验证覆盖初始化、夹爪找零、小幅运动、模式切换、复位及通信超时保护。
+本页保留的 nuc3 双臂记录来自原 ARX 版本，覆盖初始化、夹爪找零、小幅运动、模式切换、复位及通信超时保护；本次 Metal 适配没有执行真机验证。
 普通 PC Python 的调度受操作系统影响。
 控制器提供漏拍计数。
 主循环、命令更新和 CAN 周期统计见 [控制周期稳定性](CONTROL_TIMING.md)。
@@ -147,7 +153,7 @@ nuc3 双臂实机验证覆盖初始化、夹爪找零、小幅运动、模式切
 | `arx_x5_control/motor.py` | 电机反馈、PID 级联、限幅、启停及更新周期 |
 | `arx_x5_control/calibration.py` | ENCOS/达妙设零状态机 |
 | `arx_x5_control/numerics.py`、`trajectory.py` | 数值算法与多轴轨迹 |
-| `arx_x5_control/config.py` | 标定量及 H7 默认参数 |
+| `arx_x5_control/config.py`、`sdk/board_defs/arx_x5.py` | 运行配置、控制增益及 ARX 独立限位和复位参数；源码中的参数文件位于根目录 `board_defs/` |
 | `arx_x5_control/types.py`、`interfaces.py` | 控制器与适配器之间的类型及接口 |
 | `arx_x5_control/can_io.py`、`can_protocol.py` | CAN 后台收发与电机帧编解码 |
 | `arx_x5_control/usb2can/` | CAN 传输子包、后端配置与设备收发 |
@@ -158,6 +164,6 @@ nuc3 双臂实机验证覆盖初始化、夹爪找零、小幅运动、模式切
 | `arx_x5_control/sdk_adapter/` | SDK 本地后端、终端界面、会话日志及调用示例 |
 | `arx_x5_control/simulation.py`、`__main__.py` | 无硬件模拟及命令行入口 |
 | `arx_x5_control/gravity_compensation/` | Python 重力与逆动力学、URDF 模型及许可证 |
-| `tests/` | 行为、故障、C/Python 数值对比测试 |
+| 根目录 `tests/` | Metal 行为、故障、原厂编码对照及共享 SDK 参数测试 |
 
 动力学模块及模型使用各自的许可证，安装包包含许可证和来源文件。SDK 接入层使用仓库固定版本的 SDK。控制核心和 `--demo` 入口可独立运行。

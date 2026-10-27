@@ -16,6 +16,8 @@
 
 SDK 的 `Arm`、单位换算和夹爪标定由同一仓库的 `sdk` 包提供。
 
+本页示例固定使用 ARX PC 后端，其参数模块为 `sdk.board_defs.arx_x5`；通过 `arm.board_defs` 或 `link.board_defs` 读取。Metal 使用独立的 [Metal LocalLink](../metal_arm_control/SDK_LOCAL.md)。H7 串口选型使用 `sdk.Link(robot_type=...)`，不会改变这里的 PC 控制器。
+
 
 ## 目录结构
 
@@ -74,9 +76,9 @@ log.configure(language="zh")
 with LocalLink.simulated(configurations=[ArmConfig()]) as link:
     arm = sdk.Arm(0, link)             # 也可使用 link.arm(0)
     arm.connect()                    # 打开本地链路、握手、等待反馈
-    wait_arms(link, [arm], lambda a: a.robot_state == sdk.board_defs.STATE_WAIT_INIT)
+    wait_arms(link, [arm], lambda a: a.robot_state == a.board_defs.STATE_WAIT_INIT)
     arm.init_arm()
-    wait_arms(link, [arm], lambda a: a.robot_state == sdk.board_defs.STATE_NORMAL)
+    wait_arms(link, [arm], lambda a: a.robot_state == a.board_defs.STATE_NORMAL)
     arm.start()
     wait_arms(link, [arm], lambda a: a.mode == a.board_defs.MODE_RUN)
     arm.send_ctrl_pos_vel(
@@ -149,7 +151,7 @@ def wait_arms(link, arms, predicate, timeout):
 
 
 def main():
-    defs = sdk.board_defs
+    defs = LocalLink.board_defs
     channels = [
         CANChannel(0, "can0", interface="socketcan"),
         CANChannel(1, "can1", interface="socketcan"),
@@ -371,13 +373,11 @@ with LocalLink.simulated(background=False) as link:
 ```bash
 python3 -m sdk.selftest
 python3 -m sdk.tui --selftest
+python3 -m unittest discover -s tests -v
 python3 -m arx_x5_control.sdk_adapter.demo
 ```
 
-H7 控制工程的 `tests/` 提供集成测试。
-在 H7 工程根目录安装 `./sdk` 后运行 `python3 -m unittest discover -s tests -v`。
-集成测试使用 `sdk.Arm` 验证双臂初始化、模式、复位和控制单位。
-测试还覆盖设零结果、在线掩码、保活、队列及退出停机。
+本仓库测试覆盖后端接口对齐、独立参数、H7/TUI 选型、Metal 状态流程及 CAN 退出。上游 H7 工程还保留 ARX 集成测试和固件数值对照，需要在对应工程内另行运行；它们不属于本仓库的测试计数。最新已验证范围见 [交接文档](../HANDOFF_METAL_ARM.md#已完成的验证)。
 
 ## SDK TUI
 

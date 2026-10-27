@@ -1,6 +1,6 @@
 # 控制周期稳定性
 
-适用包版本：`arx-x5-control 0.5.0`。
+历史测量版本：`arx-x5-control 0.5.0`，设备为 ARX X5。当前发行包为 `0.6.0`；本页保留原始测量条件和数据，不代表本次更新后重新测量，也不代表 Metal 的实机时序。Metal 的目标周期见 [Metal 控制周期](../metal_arm_control/CONTROL_TIMING.md)。
 
 ## 环境和测量方法
 
