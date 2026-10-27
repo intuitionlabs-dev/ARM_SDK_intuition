@@ -1,0 +1,146 @@
+"""Motor control policy, feedback freshness and semantic requests (no CAN)."""
+
+from dataclasses import dataclass, field
+from math import degrees, radians
+
+from .config import (MOTOR_IDS, MOTOR_KP, MOTOR_KD, POSITION_PID, SPEED_PID,
+                     TX_GROUPS, ZERO_PID, MOTOR_PMAX, MOTOR_VMAX, MOTOR_TMAX,
+                     MOTOR_PERIOD_MS, FEEDBACK_TIMEOUT_MS)
+from .numerics import PID, clip
+from .types import ArmMode, MotorAction, MotorFeedback, MotorRequest
+
+
+@dataclass
+class Motor:
+    arm_id: int
+    index: int
+    position: float = 0.0
+    velocity: float = 0.0
+    current: float | None = None
+    torque: float | None = None
+    temperature: float | None = None
+    mos_temperature: float | None = None
+    error_code: int = 0
+    last_rx_ms: int = -1
+    last_position_ms: int = -1
+    last_velocity_ms: int = -1
+    monitor_deadline_ms: int = 0
+    rounds: int = 0
+    zero_pending: bool = False
+    zero_sent_ms: int = 0
+    zero_ack: bool | None = None
+    enable_cleared: bool = False
+    reference_deg: float = 0.0
+    speed_comp: float = 0.0
+    output_comp: float = 0.0
+    reference_velocity_deg: float = 0.0
+    mode: ArmMode = ArmMode.STOP
+    position_pid: PID = field(init=False)
+    speed_pid: PID = field(init=False)
+
+    def __post_init__(self):
+        self.position_pid = PID(POSITION_PID[self.index])
+        self.speed_pid = PID(SPEED_PID[self.index])
+
+    @property
+    def encos(self):
+        return False
+
+    @property
+    def position_deg(self):
+        # Firmware installs DM_Pos_Fdb_Calc: it uses raw angle, not multi-turn.
+        return degrees(self.position)
+
+    @property
+    def velocity_deg(self):
+        return degrees(self.velocity)
+
+    def keep_alive(self, now):
+        # Seven Damiao motors share the same feedback freshness policy.
+        self.monitor_deadline_ms = now + FEEDBACK_TIMEOUT_MS
+
+    def online(self, now):
+        return now < self.monitor_deadline_ms
+
+    def accept(self, feedback: MotorFeedback):
+        if feedback.timestamp_ms < self.last_rx_ms:
+            return False
+        now = feedback.timestamp_ms
+        self.last_rx_ms = now
+        self.keep_alive(now)
+        self.error_code = feedback.error_code
+        if feedback.position is not None:
+            self.position = feedback.position
+            self.last_position_ms = now
+        if feedback.velocity is not None:
+            self.velocity = feedback.velocity
+            self.last_velocity_ms = now
+        for name in ("current", "torque", "temperature", "mos_temperature"):
+            if getattr(feedback, name) is not None:
+                setattr(self, name, getattr(feedback, name))
+        return True
+
+    def motion_ready(self, now):
+        return (self.error_code in (0, 1) and not self.zero_pending
+                and self.last_position_ms >= 0 and now - self.last_position_ms < 100
+                and self.last_velocity_ms >= 0 and now - self.last_velocity_ms < 100)
+
+    def request(self, action, now, **values):
+        return MotorRequest(self.arm_id, self.index, MOTOR_IDS[self.index],
+                            "encos" if self.encos else "dm", action, now, **values)
+
+    def reset_controller(self):
+        self.position_pid.reset()
+        self.speed_pid.reset()
+
+    def control(self, now):
+        enabled = self.mode != ArmMode.STOP
+        # Zero gains on joints in passive modes. Gravity mode keeps gripper gains.
+        passive = self.mode == ArmMode.DAMPING or (self.mode == ArmMode.GRAVITY and self.index < 6)
+        self.position_pid.config = ZERO_PID if passive else POSITION_PID[self.index]
+        self.speed_pid.config = ZERO_PID if passive else SPEED_PID[self.index]
+        self.reference_velocity_deg = self.position_pid.step(self.reference_deg, self.position_deg) + self.speed_comp
+        torque = self.speed_pid.step(self.reference_velocity_deg, self.velocity_deg) + self.output_comp
+        if not enabled or not self.motion_ready(now):
+            return self.request(MotorAction.SOFT_STOP, now)
+        kp, kd = MOTOR_KP[self.index], MOTOR_KD[self.index]
+        if self.mode == ArmMode.DAMPING:
+            kp = 0.0
+        elif self.mode == ArmMode.GRAVITY and self.index < 6:
+            kp = kd = 0.0
+        position = radians(self.reference_deg)
+        speed_limit, torque_limit = MOTOR_VMAX[self.index], MOTOR_TMAX[self.index]
+        return self.request(MotorAction.CONTROL, now,
+                            position=clip(position, -MOTOR_PMAX[self.index], MOTOR_PMAX[self.index]),
+                            velocity=clip(radians(self.reference_velocity_deg), -speed_limit, speed_limit),
+                            torque=clip(torque, -torque_limit, torque_limit), kp=kp, kd=kd)
+
+
+class MotorBank:
+    def __init__(self, arm_id):
+        self.motors = [Motor(arm_id, i) for i in range(7)]
+        self.encos_guard_until = 0
+        self.enable_last_ms = 0
+        self.enable_next = 0
+        self.enable_sent_ms = [-75] * 7
+        self.next_due_ms = [next(k for k in range(8) if mask & (1 << k)) for mask in TX_GROUPS]
+
+    def operation(self, index, action, now):
+        return self.motors[index].request(action, now)
+
+    def tick(self, now, excluded_mask=0):
+        output = []
+        for i, motor in enumerate(self.motors):
+            if excluded_mask & (1 << i) or now < self.next_due_ms[i]:
+                continue
+            enabled = motor.mode != ArmMode.STOP and motor.motion_ready(now)
+            if enabled and (not motor.enable_cleared or
+                            (motor.error_code == 0 and now-self.enable_sent_ms[i] >= 75)):
+                output.append(motor.request(MotorAction.ENABLE, now))
+                self.enable_sent_ms[i] = now
+            elif not enabled and motor.enable_cleared:
+                output.append(motor.request(MotorAction.DISABLE, now))
+            motor.enable_cleared = enabled
+            output.append(motor.control(now))
+            self.next_due_ms[i] += ((now-self.next_due_ms[i]) // MOTOR_PERIOD_MS + 1) * MOTOR_PERIOD_MS
+        return output

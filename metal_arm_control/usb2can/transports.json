@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "transports": {
+    "slcan": {
+      "class": "metal_arm_control.usb2can.slcan:CANableTransport",
+      "channel_kind": "path",
+      "options": {}
+    },
+    "socketcan": {
+      "class": "metal_arm_control.usb2can.socketcan:SocketCANTransport",
+      "channel_kind": "name",
+      "options": {}
+    }
+  }
+}

@@ -4,6 +4,15 @@ SDK 提供 `sdk.Arm` 机械臂控制接口。
 关节角使用 rad，关节速度使用 rad/s。
 夹爪开口使用 m，需要夹爪标定。
 
+## Metal Arm 后端
+
+新增 [`metal_arm_control`](metal_arm_control/README.md)，与 `arx_x5_control` 保持相同模块布局及 `sdk.Arm` 接口。Metal 使用独立的 CAN 编码、限位、模型和夹爪出厂查表。完整接入见 [Metal SDK 流程](metal_arm_control/SDK_LOCAL.md)。原有 ARX/H7 默认值不变；两个后端可在同一 Python 进程中导入。
+
+```bash
+python3 -m metal_arm_control --demo --seconds 8
+metal-arm-tui --simulate
+```
+
 ## 选择控制后端
 
 | 连接方式 | 链路对象 | 电机控制执行位置 |
