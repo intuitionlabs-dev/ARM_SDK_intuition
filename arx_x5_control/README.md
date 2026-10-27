@@ -1,14 +1,12 @@
 # arx_x5_control
 
-本页描述 ARX X5 PC 后端。当前发行包为 `arx-x5-control 0.6.0`，同时包含 [Metal 后端](../metal_arm_control/README.md) 和公共 SDK。安装分支、H7 参数选择与直接提交推送约定见 [仓库手册](../README.md)。
+本页描述 ARX X5 PC 后端。当前发行包为 `arx-x5-control 0.6.0`，同时包含 [Metal 后端](../metal_arm_control/README.md) 和公共 SDK。安装方法与 H7 参数选择见 [仓库手册](../README.md)。
 
-`arx_x5_control` 提供 PC Python 机械臂控制。控制逻辑以主分支 [`2bbb192`](https://github.com/Crystal-1438/ARX_X5_DMH7/tree/2bbb192) 为基线。
-
-Python 版本支持双臂，每臂 6 关节及 1 夹爪。控制链路包含状态机、初始化、复位、夹爪找零、电机校准、PID、TD、0.16 s 五次样条、逆动力学补偿、速度前馈、粘性摩擦前馈、软限位及掉线处理。
+`arx_x5_control` 提供 PC Python 单臂和双臂控制，每臂 6 关节及 1 夹爪。控制链路包含状态机、初始化、复位、夹爪找零、电机校准、PID、TD、0.16 s 五次样条、逆动力学补偿、速度前馈、粘性摩擦前馈、软限位及掉线处理。
 
 上层通过 `Command` 输入命令，控制核心输出 `MotorRequest`、`ArmFeedback` 和 `Event`。`LocalLink` 将 `sdk.Arm` API 接入控制核心。`CANMotorIO` 通过 CANable2 SLCAN 或 Linux SocketCAN 连接真实电机，并提供 ENCOS 和达妙 MIT 帧编解码。
 
-源文件对应关系和控制参数见 [控制链路](PC_PORT.md)，字段及调用契约见 [Python 接口](PC_API.md)，现有 SDK 程序的接入方法见 [SDK 本地后端](SDK_LOCAL.md)。
+代码结构和控制参数见 [控制链路](PC_PORT.md)，字段及调用契约见 [Python 接口](PC_API.md)，SDK 程序的接入方法见 [SDK 本地后端](SDK_LOCAL.md)。
 
 ## 运行
 
@@ -56,9 +54,9 @@ with LocalLink.simulated() as link:  # 实际电机程序改为 LocalLink(motor_
     log.write_data(arm.snapshot())
 ```
 
-现有的 `init_arm()`、`send_ctrl_pos_vel()`、模式切换、复位、设零和反馈接口继续使用 `sdk.Arm`；SDK 关节单位为 rad/rad/s，夹爪标定后使用 m。完整初始化及保活示例、`MotorIO` 两个接口、退出和异常处理见 [SDK 接入文档](SDK_LOCAL.md)。
+`sdk.Arm` 提供 `init_arm()`、`send_ctrl_pos_vel()`、模式切换、复位、设零和反馈接口；SDK 关节单位为 rad/rad/s，夹爪标定后使用 m。完整初始化及保活示例、`MotorIO` 两个接口、退出和异常处理见 [SDK 接入文档](SDK_LOCAL.md)。
 
-本后端的 `link.board_defs` / `arm.board_defs` 为 `sdk.board_defs.arx_x5`。限位和复位角在该模块定义，控制核心 `config.py` 引用它；`sdk.board_defs` 包根不再提供全局设备常量。ARX 复位角仍为 `(0, 0.5, 0.5, 0, 0, 0)`°，初始化保留夹爪找零。
+本后端的 `link.board_defs` / `arm.board_defs` 为 `sdk.board_defs.arx_x5`。限位和复位角在该模块定义，控制核心 `config.py` 引用它。ARX 复位角为 `(0, 0.5, 0.5, 0, 0, 0)`°，初始化包括六轴复位和夹爪找零。
 
 双臂实机代码、设备准备和上层规划器接入见 [双臂实机接入例程](SDK_LOCAL.md#双臂实机接入例程)。
 
@@ -72,7 +70,7 @@ python3 -m arx_x5_control.sdk_adapter.tui --simulate
 ```
 
 按 `i` 初始化，`s` 进入 RUN，`a` 切臂，`+`/`-` 点动，`o` 复位，`q` 退出并停止双臂。
-完整按键和 nuc3 启动命令见 [SDK TUI](SDK_LOCAL.md#sdk-tui)。
+完整按键和启动命令见 [SDK TUI](SDK_LOCAL.md#sdk-tui)。
 
 ```bash
 python3 -m pip install '.[can]'
@@ -129,19 +127,13 @@ log.configure(language="zh", level="INFO")
 log.configure(language="en")  # 下一条日志开始使用英文
 ```
 
-命令行使用 `--lang zh/en`、`--log-level INFO`，或设置 `ARX_X5_CONTROL_LOG_LANGUAGE`、`ARX_X5_CONTROL_LOG_LEVEL`。人类可读日志写入标准错误流，最终 JSON 结果写入标准输出。独立包分别拥有自己的日志库与配置，本次配置不会影响 SDK 或其他包。完整约定见 [日志文档](LOGGING.md)。
+命令行使用 `--lang zh/en`、`--log-level INFO`，或设置 `ARX_X5_CONTROL_LOG_LANGUAGE`、`ARX_X5_CONTROL_LOG_LEVEL`。人类可读日志写入标准错误流，最终 JSON 结果写入标准输出。各包使用独立的日志库与配置。完整约定见 [日志文档](LOGGING.md)。
 
 ## 验证范围
 
-本仓库的 `python3 -m unittest discover -s tests -v` 当前包含 33 项测试，覆盖 Metal 控制与 CAN、ARX/Metal 接口对齐、独立参数和 H7/TUI 选择；公共 SDK/TUI 自测及 ARX 模拟入口另行运行，见 [验证记录](../HANDOFF_METAL_ARM.md#已完成的验证)。
+本仓库的 `python3 -m unittest discover -s tests -v` 当前包含 33 项测试，覆盖 Metal 控制与 CAN、ARX/Metal 接口对齐、独立参数和 H7/TUI 选择；公共 SDK/TUI 自测及 ARX 模拟入口另行运行，见 [验证说明](../HANDOFF_METAL_ARM.md#验证)。
 
-上游 H7 控制工程另有 ARX 轨迹、PID、TD、样条和动力学 C/Python 对照测试，需要该工程及主机 C 编译器。这些外部测试不包含在本仓库的 33 项中。
-
-程序通过本地模拟和独立安装包验证。
-本页保留的 nuc3 双臂记录来自原 ARX 版本，覆盖初始化、夹爪找零、小幅运动、模式切换、复位及通信超时保护；本次 Metal 适配没有执行真机验证。
-普通 PC Python 的调度受操作系统影响。
-控制器提供漏拍计数。
-主循环、命令更新和 CAN 周期统计见 [控制周期稳定性](CONTROL_TIMING.md)。
+模拟器验证接口与状态流程，实机闭环和负载能力需要在目标设备上验证。普通 PC Python 的调度受操作系统影响，控制器提供漏拍计数。主循环、命令更新和 CAN 周期统计见 [控制周期与测量](CONTROL_TIMING.md)。
 
 ## 文件
 
@@ -166,4 +158,4 @@ log.configure(language="en")  # 下一条日志开始使用英文
 | `arx_x5_control/gravity_compensation/` | Python 重力与逆动力学、URDF 模型及许可证 |
 | 根目录 `tests/` | Metal 行为、故障、原厂编码对照及共享 SDK 参数测试 |
 
-动力学模块及模型使用各自的许可证，安装包包含许可证和来源文件。SDK 接入层使用仓库固定版本的 SDK。控制核心和 `--demo` 入口可独立运行。
+动力学模块及模型使用各自的许可证，安装包包含许可证和来源文件。SDK 接入层使用公共 `sdk` 包。控制核心和 `--demo` 入口可独立运行。

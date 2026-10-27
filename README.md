@@ -4,13 +4,13 @@ SDK 提供 `sdk.Arm` 机械臂控制接口。
 关节角使用 rad，关节速度使用 rad/s。
 夹爪开口使用 m；ARX/H7 使用两点标定，Metal PC 后端默认使用厂家查表。
 
-仓库位于 [intuitionlabs-dev/ARM_SDK_intuition](https://github.com/intuitionlabs-dev/ARM_SDK_intuition)。当前完整实现位于 `feat/metal-arm-control`，开发改动直接提交并推送该分支，不使用 PR。安装时选择该分支，`master` 尚未包含 Metal 适配。维护约定和验证记录见 [交接文档](HANDOFF_METAL_ARM.md)。
+仓库位于 [intuitionlabs-dev/ARM_SDK_intuition](https://github.com/intuitionlabs-dev/ARM_SDK_intuition)，安装分支为 `feat/metal-arm-control`。SDK 包含 H7 串口链路、ARX PC 后端和 Metal PC 后端。
 
 ## Metal Arm 后端
 
-新增 [`metal_arm_control`](metal_arm_control/README.md)，与 `arx_x5_control` 保持相同模块布局及 `sdk.Arm` 接口。Metal 使用独立的 CAN 编码、限位、模型和夹爪出厂查表。完整接入见 [Metal SDK 流程](metal_arm_control/SDK_LOCAL.md)。原有 ARX/H7 默认值不变；两个后端可在同一 Python 进程中导入。
+[`metal_arm_control`](metal_arm_control/README.md) 与 `arx_x5_control` 使用相同模块布局及 `sdk.Arm` 接口。Metal 使用独立的 CAN 编码、限位、模型和夹爪出厂查表。完整接入见 [Metal SDK 流程](metal_arm_control/SDK_LOCAL.md)。两个后端可在同一 Python 进程中导入。
 
-接手维护见 [Metal Arm SDK 交接文档](HANDOFF_METAL_ARM.md)，包含改动边界、验证记录和待真机确认事项。
+代码结构、调度和验证方式见 [Metal 架构与运行说明](HANDOFF_METAL_ARM.md)。
 
 ```bash
 python3 -m metal_arm_control --demo --seconds 8
@@ -19,7 +19,7 @@ metal-arm-tui --simulate
 
 ## 每种机械臂的参数
 
-`sdk.board_defs` 现在是按机械臂拆分的包，不再提供默认的全局限位：
+`sdk.board_defs` 按机械臂提供独立参数模块：
 
 ```python
 from sdk.board_defs import arx_x5, metal_arm
@@ -29,7 +29,7 @@ defs = arm.board_defs
 angle_deg, clipped = defs.clamp_axis(1, -30.0)
 ```
 
-ARX PC 后端使用 `sdk.board_defs.arx_x5`；Metal PC 后端使用 `sdk.board_defs.metal_arm`。控制核心和 SDK 引用同一份限位与复位角。旧的 `sdk.board_defs.MODE_RUN` 等访问请改为 `arm.board_defs.MODE_RUN`，或显式选择机械臂模块。
+ARX PC 后端使用 `sdk.board_defs.arx_x5`；Metal PC 后端使用 `sdk.board_defs.metal_arm`。控制核心和 SDK 引用同一份限位与复位角。通过 `arm.board_defs` 或显式导入机械臂模块访问常量和辅助函数。
 
 H7 串口链路可通过 `robot_type` 选择上位机参数，支持 `"arx_x5"` 和 `"metal_arm"`；不传时默认 ARX，未知名称会在创建链路时抛出 `ValueError`：
 
@@ -42,7 +42,7 @@ assert a.board_defs is sdk.board_defs.metal_arm
 # 创建对象不打开串口；需要通信时再 link.open() / a.connect()。
 ```
 
-同一条 H7 链路的两台臂共用所选参数，不同链路可分别选择。选择影响 SDK 的姿态预检及 TUI 的限位和复位参考显示；不会把参数下发到 H7，也不会切换固件中的电机驱动、控制流程或协议版本。H7 固件需要自行支持对应机械臂。夹爪米制换算仍使用 H7 链路原有的标定配置。
+同一条 H7 链路的两台臂共用所选参数，不同链路可分别选择。该选项作用于 SDK 姿态预检及 TUI 限位、复位参考显示。电机驱动、控制流程及协议由 H7 固件实现，固件须与机械臂匹配；夹爪米制换算使用 H7 文件标定。
 
 串口 TUI 使用相同选项，启动日志会显示所选参数：
 
@@ -53,9 +53,9 @@ python3 -m sdk.tui --port /dev/ttyACM0 --robot-type arx_x5
 python3 -m sdk.tui --fake --robot-type metal_arm
 ```
 
-`--init-tol` 未指定时取所选参数中的初始化容差。`--fake` 模拟 H7 串口状态机，复位目标跟随所选参数；Metal PC 控制流程的模拟仍使用 `metal-arm-tui --simulate`。
+`--init-tol` 未指定时取所选参数中的初始化容差。`--fake` 模拟 H7 串口状态机，复位目标跟随所选参数；Metal PC 控制流程的模拟使用 `metal-arm-tui --simulate`。
 
-Metal 的复位角已由用户确认：J1～J6 均为 0°，即 `(0, 0, 0, 0, 0, 0)`。初始化参考和 `reset()` 目标共用 `board_defs/metal_arm.py` 中的这组角度；复位不写入电机零点。
+Metal 的 J1～J6 复位角为 `(0, 0, 0, 0, 0, 0)`°。初始化参考和 `reset()` 目标共用 `board_defs/metal_arm.py` 中的这组角度。
 
 ## 选择控制后端
 
@@ -201,9 +201,9 @@ CAN 速率为 1 Mbps，使用经典 CAN 标准帧。
 两种后端使用相同的机械臂状态编号。
 H7 在固件中执行状态机。
 PC 本地后端在 `ControlSystem` 中执行状态机。
-表中的接收帧及夹爪找零行为描述原 ARX H7 固件。
+表中的接收帧及夹爪找零行为描述 ARX H7 固件。
 本地后端将 SDK 命令转换为控制核心命令。
-Metal PC 初始化完成条件为六轴复位结束，没有夹爪校准阶段；STOP 会继续周期使能并输出零增益帧。
+Metal PC 初始化执行六轴复位并保持夹爪入口角，完成后进入正常阻尼模式；STOP 周期使能并输出零增益帧。
 
 状态一共 8 个，编号就是反馈帧里的 `robot_state` 字段（名字表见 `arm.board_defs.STATE_NAME`）。
 一次会话只会沿着下面这些转移走：
@@ -356,11 +356,11 @@ H7 后端还要求遥控器离线。
 使用 H7 上位机控制前，关闭遥控器。
 PC 本地后端直接接收应用提交的控制命令。
 
-初始化参考从 `arm.board_defs.RESET_POSE_DEG` 读取：ARX 为 `(0, 0.5, 0.5, 0, 0, 0)`°，Metal 为用户确认的全 0°。两者当前的 `ROBOT_INIT_POSE_TOL_DEG` 均为 20°。发初始化之前先检查 `arm.joint_angles`，该属性使用 rad。
+初始化参考从 `arm.board_defs.RESET_POSE_DEG` 读取：ARX 为 `(0, 0.5, 0.5, 0, 0, 0)`°，Metal 为全 0°。两者的 `ROBOT_INIT_POSE_TOL_DEG` 均为 20°。发初始化之前先检查 `arm.joint_angles`，该属性使用 rad。
 
 ## 9. 夹爪标定
 
-本节两点标定工具适用于原 ARX H7 链路，工具目前没有 `--robot-type` 选项。Metal PC 默认使用厂家 `0..0.1 m` 查表；可通过 `sdk.Arm(..., calib_store=...)` 注入实测标定存储。H7 选择 Metal 参数时仍使用文件标定，不会自动加载 Metal PC 查表。
+本节两点标定工具适用于 ARX H7 链路。Metal PC 默认使用厂家 `0..0.1 m` 查表，可通过 `sdk.Arm(..., calib_store=...)` 注入实测标定存储。H7 链路使用文件标定，包括选择 Metal 参数的连接。
 
 夹爪使用达妙 DM4310，CAN 电机 ID 为 8。
 电机收发层使用 MIT 协议。
@@ -601,7 +601,7 @@ SDK 自测覆盖 CRC 参考值（位运算参考实现逐字节比表）、整�
 （一条链路、两个 `Arm`、状态机各自独立）、单位与软限位、步长档、闸门是否确实拦截、命令是否
 确实写出。这些同样用 `sdk.sim` 的仿真板运行。
 
-当前验证记录为 SDK 178 项通过、1 项外部 H7 头文件检查跳过，TUI 48 项通过，仓库 `unittest` 33 项通过；详细范围见 [交接文档](HANDOFF_METAL_ARM.md#已完成的验证)。
+仓库 `unittest` 包含 33 项测试，公共 SDK 和 TUI 提供独立自测入口；测试命令与覆盖范围见 [验证说明](HANDOFF_METAL_ARM.md#验证)。
 
 ### 界面语言（`--lang`）
 
@@ -637,8 +637,8 @@ python3 -m sdk.tui --selftest --lang en      # 英文模板实际执行一次自
 | [Metal 控制包](metal_arm_control/README.md) | Metal 参数、初始化、STOP 和退出行为 |
 | [Metal SDK 接入](metal_arm_control/SDK_LOCAL.md) | SDK 示例、双臂与 H7 参数选择 |
 | [Metal CAN 接口](metal_arm_control/CAN_IO.md) | Metal CAN ID、只读检查与设备连接 |
-| [Metal 来源与许可证](metal_arm_control/gravity_compensation/PROVENANCE.md) | 原厂参数、模型与用户确认的复位角 |
-| [维护交接](HANDOFF_METAL_ARM.md) | 当前分支、验证边界及直接提交推送约定 |
+| [Metal 来源与许可证](metal_arm_control/gravity_compensation/PROVENANCE.md) | 算法、参数和模型来源 |
+| [Metal 架构与运行说明](HANDOFF_METAL_ARM.md) | 模块职责、控制流程、调度与验证方式 |
 
 
 | 文件 | 职责 |

@@ -1,8 +1,8 @@
 # PC Python 控制接口
 
-现有 `sdk.Arm` 调用可通过 `arx_x5_control.sdk_adapter.link.LocalLink` 接入，详见 [SDK 本地后端](SDK_LOCAL.md)。下文是底层控制接口，关节角使用 deg；SDK 对外的 rad/rad/s/m 单位由 SDK 接入层保留。
+`sdk.Arm` 调用通过 `arx_x5_control.sdk_adapter.link.LocalLink` 接入，详见 [SDK 本地后端](SDK_LOCAL.md)。下文是底层控制接口，关节角使用 deg；SDK 接入层负责转换 rad/rad/s/m 单位。
 
-接口版本：1。类型定义在 [`types.py`](types.py)，运行适配器在 [`interfaces.py`](interfaces.py)。本接口不是原 H7 二进制协议的编码实现。
+接口版本：1。类型定义在 [`types.py`](types.py)，运行适配器在 [`interfaces.py`](interfaces.py)。控制输入和输出使用 Python 数据对象。
 
 `api_version=1` 是控制核心接口版本，与发行包 `0.6.0`、SDK 协议哈希分别维护。本页参数和初始化行为专属于 ARX；限位和复位角由 `sdk.board_defs.arx_x5` 提供，`config.py` 引用同一组定义。Metal 对应行为见 [Metal PC API](../metal_arm_control/PC_API.md)。
 
@@ -12,11 +12,11 @@
 result = controller.step(now_ms, commands=commands, motor_feedback=feedback)
 ```
 
-`now_ms` 为非负整数毫秒，同一实例严格递增。首拍通常为 0。命令与反馈可为任意有限可迭代对象。调用由一个线程拥有；其他线程或进程的数据由未来适配器汇集后提交。
+`now_ms` 为非负整数毫秒，同一实例严格递增。首拍通常为 0。命令与反馈可为任意有限可迭代对象。调用由一个线程拥有；其他线程或进程的数据由适配器汇集后提交。
 
 反馈采样时间必须与 `now_ms` 使用同一个单调时间域，且不大于当前时间。不能用本次出队时间给旧反馈重新计时。比该电机最近一次反馈更旧的样本被忽略，并增加 `stale_feedback_count`。
 
-非法类型、臂号、数组维度、NaN/Inf 和未来反馈时间在更新状态前抛出异常。每臂待处理命令最多 7 条，与 H7 8 槽环形缓冲的有效容量一致；超出部分产生 `rejected` 事件。应用级命令在 2 ms 控制周期处理。
+非法类型、臂号、数组维度、NaN/Inf 和未来反馈时间在更新状态前抛出异常。每臂待处理命令最多 7 条，超出部分产生 `rejected` 事件。应用级命令在 2 ms 控制周期处理。
 
 `TickResult` 的三个成员均为不可变元组：
 
@@ -26,7 +26,7 @@ result = controller.step(now_ms, commands=commands, motor_feedback=feedback)
 | `feedback` | 250 Hz 机械臂反馈 | 可直接供同设备上层程序读取 |
 | `events` | 状态、拒绝、初始化/复位/校准结果 | 用于判断操作是否受理或完成 |
 
-控制更新以 2 ms 为目标；电机周期见迁移文档。晚到的调度只更新一次，到期电机不因错过相位而永久跳过；不会重放全部旧周期。`missed_motor_ticks`、`missed_command_ticks` 记录漏拍数。
+控制更新以 2 ms 为目标；电机周期见 [控制周期](CONTROL_TIMING.md)。晚到的调度只更新一次，到期电机不因错过相位而永久跳过；不会重放全部旧周期。`missed_motor_ticks`、`missed_command_ticks` 记录漏拍数。
 
 ## 命令
 
@@ -34,19 +34,19 @@ result = controller.step(now_ms, commands=commands, motor_feedback=feedback)
 
 `arm_id` 为 0 或 1。单臂实例只接受 0。`joint_angle` 固定按 j1…j6 排列，单位 deg；`joint_velocity` 单位 deg/s；`gripper_angle` 单位 deg。
 
-| `CommandKind` | 允许状态及效果 | 原 H7 语义 |
-| --- | --- | --- |
-| `CONNECT` | 版本 1 连接确认；首次进入等待电机 | 0x01 握手语义，删除 FNV 和字节帧 |
-| `HEARTBEAT` | 连接后更新本臂通信看门狗 | 将原“任意有效帧保活”定义为明确接口 |
-| `INITIALIZE` | `WAIT_INIT`，或 `NORMAL` 的 STOP/DAMPING；全电机在线、复位偏差 ≤20° | 0x02：2 s 复位，然后夹爪找零 |
-| `CALIBRATE` | `WAIT_INIT`；依次设六关节电机零点，不设夹爪零点 | 0x10；结果为 `calibrated` 事件 |
-| `START` | `NORMAL` → RUN | 0x12 |
-| `GRAVITY` | `NORMAL` → GRAVITY | 0x13 |
-| `STOP` | `NORMAL` → STOP | 0x14 |
-| `DAMPING` | `NORMAL` → DAMPING | 0x15 |
-| `POSITION` | `NORMAL/RUN`；6 个角度及夹爪角度 | 0x16 |
-| `POSITION_VELOCITY` | `NORMAL/RUN`；6 个角度、6 个速度及夹爪角度 | 0x17 |
-| `RESET` | `NORMAL` 且全电机在线；只复位、不找零 | 0x18 |
+| `CommandKind` | 允许状态及效果 |
+| --- | --- |
+| `CONNECT` | 接口版本 1 连接确认；首次进入等待电机 |
+| `HEARTBEAT` | 连接后更新本臂通信看门狗 |
+| `INITIALIZE` | `WAIT_INIT`，或 `NORMAL` 的 STOP/DAMPING；全电机在线、复位偏差 ≤20°；执行 2 s 复位及夹爪找零 |
+| `CALIBRATE` | `WAIT_INIT`；依次设六关节电机零点，结果通过 `calibrated` 事件返回 |
+| `START` | `NORMAL` → RUN |
+| `GRAVITY` | `NORMAL` → GRAVITY |
+| `STOP` | `NORMAL` → STOP |
+| `DAMPING` | `NORMAL` → DAMPING |
+| `POSITION` | `NORMAL/RUN`；6 个角度及夹爪角度 |
+| `POSITION_VELOCITY` | `NORMAL/RUN`；6 个角度、6 个速度及夹爪角度 |
+| `RESET` | `NORMAL` 且全电机在线；执行六轴复位 |
 
 非位置命令使用空角度数组和空速度数组。`POSITION` 使用 6 个关节角。`POSITION_VELOCITY` 同时使用 6 个角度和 6 个速度。
 
@@ -63,9 +63,9 @@ result = controller.step(now_ms, commands=commands, motor_feedback=feedback)
 
 关节参考值出现非有限数时，本周期输出 DAMPING。控制器清零参考速度和加速度，并产生 `reference_error` 事件。
 
-连接前只有 `CONNECT` 生效。连接后合法但因状态不允许而被拒绝的命令，仍会刷新本臂的 3 s 看门狗，保持 H7 行为。重复 `CONNECT` 不会重新初始化机械臂。连接版本不匹配产生拒绝事件。
+连接前只有 `CONNECT` 生效。连接后合法但因状态不允许而被拒绝的命令，也会刷新本臂的 3 s 看门狗。重复 `CONNECT` 不会重新初始化机械臂。连接版本不匹配产生拒绝事件。
 
-模式命令只在 `NORMAL` 受理，保留 H7 限制。需要中止整个控制程序时调用 `shutdown()`；不能把初始化期间发出的 `STOP` 当作已执行的紧急停机。
+模式命令只在 `NORMAL` 受理。需要中止整个控制程序时调用 `shutdown()`；不能把初始化期间发出的 `STOP` 当作已执行的紧急停机。
 
 ## 电机反馈
 
@@ -99,7 +99,7 @@ result = controller.step(now_ms, commands=commands, motor_feedback=feedback)
 | `ENABLE` | 电机使能命令；达妙周期保活/设零反馈唤醒 |
 | `SAVE_ZERO` | 将当前电机位置写入电机零点，并随后回传真实反馈/ACK |
 
-`SOFT_STOP` 不等同于断电。原固件在 STOP 下对达妙仍周期发送 ENABLE，并发送零增益 MIT 帧。Python 保留这个逻辑，不把注释中的“失能”当成真实驱动行为。
+STOP 输出零增益、零力矩的软停机请求，并对达妙电机周期发送 ENABLE。该模式不提供位置保持或重力补偿；关闭时对全部电机交付 SOFT_STOP，并对达妙电机交付 DISABLE。
 
 非 `CONTROL` 请求的数值字段为 0，应按动作处理。请求值是限幅后的浮点数，未做字节量化。适配器若需要实际协议编码，应自己完成量化、CRC、路由和传输。
 
@@ -107,9 +107,9 @@ ENCOS `SAVE_ZERO` 后本臂 ENCOS 操作静默 501 ms；另一臂不受影响。
 
 ## 状态与事件
 
-`ArmMode` 保留值：STOP=0，RUN=1，DAMPING=2，GRAVITY=3。
+`ArmMode` 取值：STOP=0，RUN=1，DAMPING=2，GRAVITY=3。
 
-`RobotState` 保留值：WAIT_HANDSHAKE=0，OFFLINE_WAIT=1，WAIT_INIT=2，INITIALIZING=3，NORMAL=4，COMM_LOST=5，CALIBRATING=6，RESETTING=7。
+`RobotState` 取值：WAIT_HANDSHAKE=0，OFFLINE_WAIT=1，WAIT_INIT=2，INITIALIZING=3，NORMAL=4，COMM_LOST=5，CALIBRATING=6，RESETTING=7。
 
 ```mermaid
 stateDiagram-v2

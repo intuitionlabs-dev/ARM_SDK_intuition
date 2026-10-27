@@ -292,7 +292,7 @@ except sdk.ArError as e:
 | `reload_calibration()` | 从所选存储重新加载换算；文件标定被其他进程更新后需要调用它或重启 |
 
 用法和注意事项见 README 的「夹爪标定」一节。
-Metal 的厂家查表对象提供 `opening_from_raw_deg()` 和 `raw_deg_from_opening()`，不提供两点标定的 `full_open_m`、`direction` 等字段。默认米制范围为 `0..0.1 m`，依赖有效的出厂零点。初始化不校准夹爪，也不写入夹爪零点。
+Metal 的厂家查表对象提供 `opening_from_raw_deg()` 和 `raw_deg_from_opening()`，不提供两点标定的 `full_open_m`、`direction` 等字段。默认米制范围为 `0..0.1 m`，依赖有效的出厂零点。初始化时夹爪保持入口反馈角。
 
 ## 4. 数据结构
 
@@ -364,7 +364,7 @@ ArError
 
 ### `sdk.board_defs` —— 按机械臂拆分的参数包
 
-使用 `from sdk.board_defs import arx_x5 as board_defs` 或 `metal_arm as board_defs`。已创建机械臂对象时直接使用 `arm.board_defs`。包根不再提供 `JOINT_ANGLE_MIN`、`MODE_RUN` 等属性；下面列出的参数和辅助函数均属于所选机械臂模块。
+使用 `from sdk.board_defs import arx_x5 as board_defs` 或 `metal_arm as board_defs`。已创建机械臂对象时直接使用 `arm.board_defs`。下面列出的参数和辅助函数均属于所选机械臂模块。
 
 包入口提供 `ROBOT_TYPES = ("arx_x5", "metal_arm")` 和 `get_profile(robot_type)`；后者返回对应模块，未知名称抛出 `ValueError`。
 
@@ -383,7 +383,7 @@ ArError
 | `AXIS_MIN` / `AXIS_MAX` / `axis_lo(i)` / `axis_hi(i)` | 上面两套拼起来的 7 轴版本 |
 | `clamp_axis(axis, value)` | → `(限幅后的值, 是否发生限幅)`。**SDK 不自动调用它**：单片机是静默限幅的，上位机再次限幅会导致期望角与实际不符 |
 | `expand_mask(mask)` | 掩码 → `"j3 夹爪"` 这样的名字串 |
-| `RESET_POSE_DEG` / `RESET_POSE_RAD` | ARX 为 `(0, 0.5, 0.5, 0, 0, 0)`°；Metal 为用户确认的六轴全 0°，`_RAD` 为对应弧度 |
+| `RESET_POSE_DEG` / `RESET_POSE_RAD` | ARX 为 `(0, 0.5, 0.5, 0, 0, 0)`°；Metal 为六轴全 0°，`_RAD` 为对应弧度 |
 | `ROBOT_INIT_POSE_TOL_DEG` / `_RAD` | 20° —— 即 `init_arm()` 的位姿闸门 |
 | `KEEPALIVE_TIMEOUT_S` | 3：单片机的隐式保活窗口 |
 | `ARM_AUTO_RESET_TIME_S` | 2：一键复位的轨迹时长（参考） |

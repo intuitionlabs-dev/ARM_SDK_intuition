@@ -1,40 +1,30 @@
-# H7 与 PC Python 控制链路
+# ARX 控制结构
 
-固件基线：主分支 `2bbb192`。Python 控制器使用显式时间调度，每臂独立保存状态。关节输入使用 deg、deg/s。电机接口使用 rad、rad/s、N·m。
+`arx_x5_control` 使用显式时间调度，每臂独立保存状态。控制核心关节输入使用 deg、deg/s，电机接口使用 rad、rad/s、N·m。
 
-## 源码对应关系
+## 代码结构
 
-H7 源码路径相对于 [H7 控制工程](https://github.com/Crystal-1438/ARX_X5_DMH7) 根目录。
-Python 实现位于 SDK 仓库的 `arx_x5_control/`。
-本页描述 ARX 的移植来源与行为。当前公共 SDK 的类型选择见 [API](../API.md)，Metal 的参数和行为差异见 [Metal 移植说明](../metal_arm_control/PC_PORT.md)。
-
-| H7 源码 | 控制内容 | Python 实现 |
-| --- | --- | --- |
-| `App/arm.c`、`cmd.c` | 双臂实例、命令处理顺序 | `Arm`、`ControlSystem.step` |
-| `App/robot_state.c` | 握手、状态机、看门狗、反馈 | `Arm.handle/state_step/snapshot` |
-| `App/gimbal_cmd.c` | 控制源、软限位、TD、五次样条、参考值检查 | `CommandLayer` |
-| `App/arm_auto.c` | 复位、夹爪找零 | `CommandLayer._reset/_gripper_zero` |
-| `App/arm_zero.c` | 电机校准、ACK、回读、超时 | `ZeroCalibration` |
-| `App/gimbal_arm.c` | 坐标转换、动力学、模式增益、电机参考量 | `Arm.drive`、`Motor.control` |
-| `App/inc/gimbal_arm_def.h` | 方向、减速比、零点、前馈配置 | `ArmConfig` |
-| `App/inc/gimbal_cmd_def.h` | 软限位、规划速度系数、样条时长 | `sdk.board_defs.arx_x5` 保存限位/复位角，`config.py` 引用并保存控制配置 |
-| `libs/controller/pid.c` | 位置 PID | `PID` |
-| `libs/controller/adrc.c` | TD 位置、速度、加速度 | `TrackingDifferentiator` |
-| `libs/controller/controller.c` | 位置与速度 PID 级联 | `Motor.control` |
-| `libs/move_plan/` | 样条、多段轨迹、同步规划组 | `Spline`、`Trajectory`、`PlanGroup` |
-| `libs/gravity_compensation/c/x5_gravity.c` | 静态重力补偿 | `GravityCompensator` |
-| `libs/gravity_compensation/c/x5_dynamics.c` | 六轴递归牛顿欧拉逆动力学 | `DynamicsCompensator` |
-| `libs/dm_motor/`、`libs/encos_motor/` | 反馈有效性、启停、设零、输出限制 | `Motor`、`MotorBank` |
-| `libs/monitor/monitor.c` | 在线监控、维护期间保活 | `Motor.keep_alive/online` |
-| `libs/can/can_config.h` | 电机发送周期和相位 | `TX_GROUPS`、`MotorBank.tick` |
+| 模块 | 职责 |
+| --- | --- |
+| `system.py`、`arm.py` | 双臂调度、状态机、模式、坐标转换和故障处理 |
+| `command.py` | 命令、软限位、参考值、六轴复位和夹爪找零 |
+| `calibration.py` | 电机设零、ACK、反馈校验与超时 |
+| `config.py` | 方向、减速比、零点偏移、增益和前馈配置 |
+| `sdk.board_defs.arx_x5` | 关节限位、复位角、状态编号及辅助函数；源码位于根目录 `board_defs/` |
+| `numerics.py`、`trajectory.py` | PID、TD、样条、多段轨迹和同步规划组 |
+| `gravity_compensation/` | 静态重力和六轴递归牛顿欧拉逆动力学 |
+| `motor.py` | 电机反馈、在线监控、启停、增益、输出限制和发送周期 |
+| `can_protocol.py`、`can_io.py`、`can_process.py` | 帧编解码、CAN 收发线程、独立进程和退出交付 |
+| `usb2can/` | SLCAN、SocketCAN 及传输配置 |
+| `sdk_adapter/` | 公共 SDK 接入、TUI、运行记录和模拟示例 |
 
 上层通过 `Command` 提交控制输入。电机适配器通过 `MotorFeedback` 提交反馈，并交付 `MotorRequest`。`LocalLink` 将 `sdk.Arm` 调用连接到控制核心。
 
-`CANMotorIO` 通过 SLCAN 或 SocketCAN 实现电机通信。帧编解码覆盖当前固件的 ENCOS 混控和达妙 MIT。收发、故障和生命周期约定见 [CAN 接口](CAN_IO.md)。
+`CANMotorIO` 通过 SLCAN 或 SocketCAN 实现电机通信，支持 ENCOS 混控和达妙 MIT。收发、故障和生命周期约定见 [CAN 接口](CAN_IO.md)。公共 SDK 的参数选择见 [API](../API.md)，Metal 模块见 [Metal 控制结构](../metal_arm_control/PC_PORT.md)。
 
 ## 轨迹与动力学
 
-命令周期为 2 ms。TD 使用 `r=[1000,4000,4000,2000,2000,2000]`、`h=.002`、`h0=.004`。`acceleration` 对应固件 `TD_t.v3`。`follow()` 同步位置，并清零速度和加速度。
+命令周期为 2 ms。TD 使用 `r=[1000,4000,4000,2000,2000,2000]`、`h=.002`、`h0=.004`。`acceleration` 为 TD 加速度输出。`follow()` 同步位置，并清零速度和加速度。
 
 | 参考值来源 | 位置 | 速度 | 加速度 |
 | --- | --- | --- | --- |
@@ -51,7 +41,7 @@ RUN 补偿为 `M(q)qdd_ref + C(q,qd)qd + G(q)`。位置和速度使用本周期�
 
 粘性摩擦前馈为 `radians(参考关节速度) × viscous_damping`。电机输出为 `direction × (动力学补偿 + 粘性摩擦前馈) × torque_scale`。方向、减速比、力矩系数和速度系数默认均为 1。粘性摩擦系数默认均为 0。
 
-参考值无效时，本周期输出 DAMPING，并清零速度和加速度。动力学失败时，本周期输出 STOP，并清零补偿。反馈包含 `dynamics_torque` 和 `dynamics_status`。状态值与固件一致：0=成功，-1=无效参数，-2=角度超限，-3=非有限结果。
+参考值无效时，本周期输出 DAMPING，并清零速度和加速度。动力学失败时，本周期输出 STOP，并清零补偿。反馈包含 `dynamics_torque` 和 `dynamics_status`。状态值为：0=成功，-1=无效参数，-2=角度超限，-3=非有限结果。
 
 ## 电机参数和调度
 
@@ -69,7 +59,7 @@ RUN 补偿为 `M(q)qdd_ref + C(q,qd)qd + G(q)`。位置和速度使用本周期�
 
 位置 PID 的 `(kp,ki,kd)`：j1 为 `(6,0,50)`，j2/j3 为 `(4,0,50)`，j4 至夹爪为 `(6,.08,50)`。积分上限为 200。位置 PID 输出上限为 1000 deg/s。j1 至 j3 的积分范围为 1°，其余为 0°。速度 PID 增益均为零，其输出上限分别为 12、12、12、10、10、10、10。
 
-PID 按电机更新周期执行。误差保持不变时，PID 保留符合固件条件的微分量。ENCOS 进入使能状态时清零 PID 历史。
+PID 按电机更新周期执行。误差保持不变时，PID 保持当前微分量。ENCOS 进入使能状态时清零 PID 内部状态。
 
 STOP 输出软停机请求。DAMPING 的位置环增益和电机 kp 为零，kd 使用表中值。GRAVITY 六关节的位置环增益及电机 kp/kd 为零。GRAVITY 夹爪保持普通增益，其位置参考跟随反馈。
 
@@ -91,15 +81,4 @@ ENCOS 在线监控按 10 ms 网格重载 10 次，达妙重载 2 次。设零期
 
 输入验证在状态更新前完成。初始化期间掉线或通信超时会取消自动动作。夹爪找零成功后，控制器才确认初始化完成。校准结束或取消时，控制器对临时唤醒的达妙输出 DISABLE。
 
-数值计算使用 Python 双精度。以下是上游 H7 工程的 C/Python 对照范围，需要对应固件源码和外部测试：
-
-| 对照对象 | 覆盖范围 | 允许绝对误差 |
-| --- | --- | --- |
-| PID | 7 组配置及阶跃、保持、随机输入 | .002 deg/s |
-| TD | r 为 1000、2000、4000，各 3000 次更新 | .002°、.02°/s、3°/s² |
-| 样条 | 一次、三次、五次，各 200 组随机端点 | .02，按各输出单位 |
-| 命令层 | 400 次重规划、外部速度、自动规划和模式切换 | .002°、.02°/s、2°/s² |
-| 重力 | 3 模型、2 重力向量、300 位姿、2 模式 | 1e-5 N·m |
-| 逆动力学 | 3 模型、4 重力向量、80 组输入、2 模式 | `5e-5 + 4e-6 × abs(C结果)` N·m |
-
-上述固件数值对照在上游 H7 工程运行。本仓库的 `python3 -m unittest discover -s tests -v` 执行当前独立 SDK 的 33 项测试，具体范围见 [验证记录](../HANDOFF_METAL_ARM.md#已完成的验证)。测试电机模型验证接口和状态流程，实机闭环及控制稳定性仍需硬件验证。
+数值计算使用 Python 双精度。仓库提供 SDK 自测、TUI 自测、单元测试和离线模拟入口，命令及覆盖范围见 [验证说明](../HANDOFF_METAL_ARM.md#验证)。模拟电机用于验证接口和状态流程，实机闭环及控制稳定性需要在目标设备上验证。

@@ -1,196 +1,112 @@
-# Metal Arm SDK 适配交接
+# Metal Arm 架构与运行说明
 
-本次已将 MakerMods Metal Arm 适配为 `ARM_SDK_intuition` 的独立 PC 控制后端 `metal_arm_control`，沿用 `arx_x5_control` 的模块结构、控制流程及 `sdk.Arm` 接口。实现和离线验证已提交推送，仓库也已迁移到 `intuitionlabs-dev`。尚未进行 Metal 真机验证。用户要求不使用 PR，现有草稿 PR 已关闭，后续通过直接提交和推送交付。
+`metal_arm_control` 是 Metal Arm 的 Python 控制后端，提供单臂和双臂控制、CAN 收发、动力学补偿、模拟器及 TUI。业务程序通过公共 `sdk.Arm` 接口操作机械臂。
 
-交接日期：2026-10-27。
+发行包为 `arx-x5-control 0.6.0`，支持 Python 3.10 及以上。安装和运行入口见 [Metal 概览](metal_arm_control/README.md)，完整代码示例见 [SDK 接入](metal_arm_control/SDK_LOCAL.md)。
 
-后续更新：Metal STOP 已恢复周期使能加零增益输出；初始化仅执行六轴复位，夹爪校准阶段已删除，入口保留夹爪当前反馈角。设备参数已拆为 `sdk.board_defs.arx_x5` 和 `sdk.board_defs.metal_arm`，通过 `arm.board_defs` / `link.board_defs` 读取。包根不再暴露默认设备参数。用户已于 2026-10-27 确认 Metal 的复位角为 J1～J6 全 0°，已移除待确认标记，初始化参考和复位目标共用这组参数。
+## 代码结构
 
-当前运行代码的完整验证基线为 `119c01b`；`a85fcb6` 随后记录用户确认的全零复位角，`5e60f50` 记录不使用 PR 的交付方式。后续文档更新不改变控制逻辑。接手时核对任务分支最新提交，不要按早期移植基线继续工作。
-
-## 任务背景和当前状态
-
-用户的核心要求是：参考 Metal 原厂 SDK，将 Metal Arm 接入本仓库，使其拥有与 `arx_x5_control` 相同的结构，主要通过设备参数区分；随后要求将仓库迁移到 `intuitionlabs-dev`。
-
-| 项目 | 当前值 |
+| 入口 | 职责 |
 | --- | --- |
-| 仓库 | https://github.com/intuitionlabs-dev/ARM_SDK_intuition |
-| 本机目录 | `/home/zhaosuya/ARM_SDK_intuition` |
-| 任务分支 | `feat/metal-arm-control` |
-| 交付方式 | 直接 commit/push 到任务分支，不使用 PR |
-| 本机 `origin` | `https://github.com/intuitionlabs-dev/ARM_SDK_intuition.git` |
-| 原厂源码目录 | `/home/zhaosuya/metal-python-ros` |
-| 原厂分支及固定版本 | `humble`，`bccf3c82a21453a7b1784a94966456e16ff0f008` |
+| [board_defs](board_defs) | `arx_x5` / `metal_arm` 参数模块，类型列表及参数选择 |
+| [link.py](link.py)、[arm.py](arm.py) | H7 串口链路、公共控制 API、单位转换和预检 |
+| [sdk_adapter/link.py](metal_arm_control/sdk_adapter/link.py) | Metal 本地控制链路、命令队列和 SDK 反馈 |
+| [system.py](metal_arm_control/system.py)、[arm.py](metal_arm_control/arm.py) | 调度、单臂状态机、模式和故障处理 |
+| [command.py](metal_arm_control/command.py)、[trajectory.py](metal_arm_control/trajectory.py) | TD、五次轨迹、初始化和复位 |
+| [config.py](metal_arm_control/config.py)、[motor.py](metal_arm_control/motor.py) | 电机配置、MIT PD 和输出策略 |
+| [can_protocol.py](metal_arm_control/can_protocol.py) | Damiao MIT 帧编解码 |
+| [can_io.py](metal_arm_control/can_io.py)、[can_process.py](metal_arm_control/can_process.py) | CAN 收发线程、独立进程及退出交付 |
+| [calibration.py](metal_arm_control/calibration.py) | 六轴电机零点写入流程 |
+| [gravity_compensation](metal_arm_control/gravity_compensation) | URDF 模型、重力和逆动力学 |
+| [sdk_adapter/tui.py](metal_arm_control/sdk_adapter/tui.py) | 终端操作和运行记录 |
 
-仓库迁移已经完成，无需再次发起 transfer。旧的 `Crystal-1438/ARM_SDK_intuition` 地址会重定向；后续使用新组织地址。用户于 2026-10-27 要求不使用 PR，已关闭 PR #1，保留 `feat/metal-arm-control` 分支及全部提交。继续在任务分支直接提交和推送，不新建、重开或更新 PR；当前 `master` 尚未包含本次 Metal 实现。
+控制链路为 `sdk.Arm → LocalLink → ControlSystem → 单臂控制器 → MotorRequest → CAN → 电机`。反馈沿反方向进入 SDK 快照和界面。
 
-当前已经完成的功能为：
+## 后端和参数选择
 
-| 范围 | 当前行为 |
-| --- | --- |
-| Metal 控制后端 | 与 ARX 对齐模块布局和公开接口，使用独立协议、模型、增益和夹爪换算 |
-| 机械臂参数 | `sdk.board_defs.arx_x5` / `metal_arm`；控制核心、SDK 与 TUI 引用对应模块 |
-| H7 类型选择 | `sdk.Link(robot_type="metal_arm")` 和 TUI `--robot-type`，默认 ARX，仅选择上位机参数 |
-| Metal 初始化与复位 | 六轴复位到用户确认的全 0°；无夹爪校准阶段，保持入口夹爪反馈角 |
-| Metal STOP | 周期使能加零增益输出；标零参与电机隔离；关闭时全部禁用 |
-| 交付方式 | 直接提交并推送任务分支，不创建、重开或维护 PR |
+| 入口 | 执行位置 | 参数选择 |
+| --- | --- | --- |
+| `metal_arm_control.sdk_adapter.LocalLink` | PC | `sdk.board_defs.metal_arm` |
+| `arx_x5_control.sdk_adapter.LocalLink` | PC | `sdk.board_defs.arx_x5` |
+| `sdk.Link(robot_type="metal_arm")` | H7 固件 | 上位机使用 Metal 参数，默认选项为 `arx_x5` |
 
-移植结构来自 `f6937f0`。参数拆分也更新了 ARX 配置导入和本地链路，ARX 的硬件参数与控制行为保持原值。不要为统一两个后端而覆盖 ARX 的默认值。
+`arm.board_defs` 和 `link.board_defs` 提供所选机械臂的限位、复位参考和辅助函数。同一条 H7 链路的两台臂共用一份配置；不同链路独立选择。H7 的控制动作由固件执行，夹爪米制换算使用文件标定。
 
-## 代码入口和设计边界
+`arm_id` 表示连接中的臂编号。TUI 的 `vcode 0xF81DD236` 为公共协议字符串的 FNV-1a 哈希；H7 握手版本来自版本帧，PC 适配层使用本地协议码。发行包版本由 `pyproject.toml` 定义。
 
-先阅读 [Metal 概览](metal_arm_control/README.md)、[SDK 接入流程](metal_arm_control/SDK_LOCAL.md) 和 [来源与许可证](metal_arm_control/gravity_compensation/PROVENANCE.md)，然后按下表定位代码。
+## 控制流程
 
-| 入口 | 职责或本次变化 |
-| --- | --- |
-| [arm.py](arm.py)、[tui/session.py](tui/session.py)、[tui/app.py](tui/app.py) | 读取链路选择的独立机械臂参数模块及可选的 `link.gripper_calib_store`；H7 通过 `Link(robot_type="metal_arm")` 或串口 TUI `--robot-type` 选择上位机参数，默认 ARX，不修改 H7 固件 |
-| [board_defs](board_defs)、[link.py](link.py) | `ROBOT_TYPES`、`get_profile()` 和每条链路的参数选择；同一 H7 链路两臂共用配置 |
-| [metal_arm_control/sdk_adapter/link.py](metal_arm_control/sdk_adapter/link.py) | `LocalLink`、共享 SDK 协议适配、单位转换、每臂配置、调度与反馈 |
-| [metal_arm_control/system.py](metal_arm_control/system.py)、[arm.py](metal_arm_control/arm.py) | 单臂或双臂管理、状态机、命令门控和故障处理 |
-| [command.py](metal_arm_control/command.py)、[trajectory.py](metal_arm_control/trajectory.py) | 目标处理、TD 和五次轨迹、初始化及复位流程 |
-| [config.py](metal_arm_control/config.py)、[motor.py](metal_arm_control/motor.py) | 硬件参数、坐标、MIT 原生 PD 和电机输出策略 |
-| [can_protocol.py](metal_arm_control/can_protocol.py) | Metal Damiao MIT 帧编解码及特殊命令 |
-| [can_io.py](metal_arm_control/can_io.py)、[can_process.py](metal_arm_control/can_process.py)、[usb2can](metal_arm_control/usb2can/README.md) | CAN 线程/独立进程、SocketCAN/SLCAN、退出时交付禁用命令 |
-| [calibration.py](metal_arm_control/calibration.py) | 显式六轴标零；夹爪厂家查表位于 SDK adapter，初始化已没有夹爪校准阶段 |
-| [gravity_compensation/solver.py](metal_arm_control/gravity_compensation/solver.py) | Metal URDF、重力/科氏/摩擦补偿 |
-| [pyproject.toml](pyproject.toml) | 分发版本 `0.6.0`，打包 SDK、两个后端、模型及命令行入口 |
-| [tests](tests)、[CI](.github/workflows/control-tests.yml) | 协议、状态机、兼容性、动力学和传输生命周期验证 |
+1. 创建 CAN 适配器和 `LocalLink`，每条 CAN 通道对应一台臂；离线运行使用 `LocalLink.simulated()`。
+2. 调用 `connect()`，等待七台电机的有效反馈和 `WAIT_INIT` 状态。
+3. 调用 `init_arm()`，六轴复位完成后进入 `NORMAL/DAMPING`，夹爪保持初始化入口的反馈角。
+4. 调用 `start()`，等待 `RUN` 反馈后提交关节位置或位置速度目标。
+5. 每台臂持续接收目标或 `keepalive()`，有效命令间隔小于 3 s。
+6. 通过反馈和 `link.drain_events()` 判断执行结果。退出时先关闭 `LocalLink`，再关闭 CAN 适配器。
 
-`metal_arm_control` 与 `arx_x5_control` 的相对 Python 文件集合一致，公开导出及关键类方法的参数名和默认值有测试约束。协议和硬件行为存在必要差异，不能将“结构相同”解释为逐行相同或仅替换常量。
-
-Metal 后端直接实现于本仓库的控制架构内，不加载原厂二进制，也不依赖 ROS。未增加原厂 `SetArmEndPose` 一类笛卡尔 IK 接口，因为目标 ARX SDK 没有该接口。
-
-安装分发名称仍是 `arx-x5-control`，不是新的 PyPI 包名。新增命令为 `metal-arm-control`、`metal-arm-sdk-demo`、`metal-arm-can-check`、`metal-arm-tui`。
-
-类型由入口、后端导入或 H7 `robot_type` 显式指定，没有硬件型号自动识别。TUI 的 `vcode 0xF81DD236` 是公共协议字符串的 FNV-1a 哈希；PC 握手字段由本地填充，H7 从版本帧读取。它不代表电机固件或源码提交，发行包版本当前为 `0.6.0`。
-
-## 控制流程和单位
-
-业务命令依次经过 `sdk.Arm → Metal LocalLink → ControlSystem → metal_arm_control.arm.Arm → 轨迹及动力学 → MotorRequest → CAN 收发 → 电机`；电机反馈沿相反方向更新 SDK 快照和 TUI。
-
-典型流程如下，完整可运行例子见 [SDK_LOCAL.md](metal_arm_control/SDK_LOCAL.md)：
-
-1. 创建 `LocalLink`，为每条 CAN 通道配置一台臂；用 `sdk.Arm(arm_id, link)` 接入。离线可用 `LocalLink.simulated()`。
-2. `connect()` 握手，等待电机反馈齐全并进入 `WAIT_INIT`。连接成功不表示初始化完成。
-3. `init_arm()` 执行初始化。完成后进入 `NORMAL`，模式为 `DAMPING`。
-4. `start()` 切换 `RUN`，再用 `send_ctrl_pos()` 或 `send_ctrl_pos_vel()` 提交目标。读取反馈和 `link.drain_events()` 判断结果；命令入队不代表运动完成。
-5. 等待期间逐臂保活。示例中的 `wait_arms()` 同时处理保活和后台异常；不要用长时间 `sleep()` 代替。
-6. 结束前处理机械臂支撑，再关闭链路。关闭会向七个电机发送禁用请求。
-
-状态编号保持 ARX 约定：`WAIT_HANDSHAKE=0`、`OFFLINE_WAIT=1`、`WAIT_INIT=2`、`INITIALIZING=3`、`NORMAL=4`、`COMM_LOST=5`、`CALIBRATING=6`、`RESETTING=7`。模式为 `STOP=0`、`RUN=1`、`DAMPING=2`、`GRAVITY=3`。
+初始化和 `reset()` 的六轴目标均为 `(0, 0, 0, 0, 0, 0)`°。初始化姿态容差为 20°，复位轨迹时长为 2 s。`set_zero()` 将 J1～J6 当前角度写为电机零点，应在关节处于标定基准位姿时执行。
 
 | 层级 | 单位 |
 | --- | --- |
-| `sdk.Arm` 关节角和速度 | rad、rad/s |
-| SDK `gripper_m` / `gripper_raw_deg` | m / deg |
+| `sdk.Arm` 关节角、速度 | rad、rad/s |
+| `gripper_m` / `gripper_raw_deg` | m / deg |
 | 控制核心 `Command` | deg、deg/s |
 | `MotorRequest` | rad、rad/s、N·m |
 
-调度保留 ARX 架构：1 ms 控制 tick、2 ms 命令更新、4 ms 反馈周期，每轴目标发送周期为 4 ms，即 250 Hz，并错开发送相位。这不是原厂 C++ 的 400 Hz 循环，普通 PC Python 环境也不保证硬实时。手动 `background=False` 模式必须以严格递增的毫秒时间调用 `step()`。
+## 电机与控制参数
 
-应用需要在每台臂的 3 s 命令超时之前发送有效命令或保活。正常运行时命令超时转阻尼；电机反馈超过 100 ms 或出现故障则使受影响整臂停止，另一臂独立处理。`STOP` 不维持重力补偿；无已知故障的电机会继续收到每台约 75 ms 的周期使能和零增益 SOFT_STOP。已知故障电机不发送使能，标零参与电机由标零流程独占，关闭仍禁用全部电机。
+每台臂包含六个关节和一个夹爪，全部使用 Damiao MIT 协议，经典 CAN 标准帧，速率为 1 Mbps。
 
-## 必须保留的 Metal 差异
-
-### 电机协议和坐标
-
-每臂六个关节加一个夹爪，七个电机均使用 Damiao MIT 协议，经典 CAN 1 Mbps。
-
-| 参数 | J1 到 J6 及夹爪 |
+| 参数 | J1～J6 及夹爪 |
 | --- | --- |
 | 发送 ID | `1, 2, 3, 4, 5, 6, 7` |
-| 接收 ID | `0x11..0x17`，同时校验数据内电机 ID |
+| 接收 ID | `0x11..0x17`，校验载荷中的电机 ID |
 | PMAX | 全部 `6.28 rad` |
 | VMAX | `10, 10, 10, 10, 30, 30, 30 rad/s` |
 | TMAX | `30, 120, 30, 30, 20, 20, 20 N·m` |
 | 原生 Kp | `300, 500, 500, 400, 25, 20, 20` |
 | 原生 Kd | `5, 5, 5, 4, 0.2, 0.2, 0.1` |
-| 六轴下限 | `(-160, -180, 0, -123, -85, -145) deg` |
-| 六轴上限 | `(160, 0, 180, 81, 85, 145) deg` |
-| 夹爪原始角范围 | `0..2.4 rad` |
+| 六轴下限 | `(-160, -180, 0, -123, -85, -145)°` |
+| 六轴上限 | `(160, 0, 180, 81, 85, 145)°` |
+| 夹爪角度范围 | `0..2.4 rad` |
 
-PMAX/VMAX/TMAX 是协议编码范围，不能当作额定性能，也不能据此推断具体电机型号。现有源码确认 Damiao 协议和这些参数，尚不足以确认商业型号。
+PMAX/VMAX/TMAX 用于协议编码。CAN 反馈使用关节输出轴坐标，默认 `direction=1`、`reduction=1`。电机使用原生 MIT PD，主机级联 PID 增益为零。
 
-厂家 CAN 坐标已经是关节输出轴坐标，所以默认 `direction=1`、`reduction=1`；不要再次套用厂家机械减速比。Metal 使用电机原生 MIT PD，主机级联位置/速度 PID 置零。
+主控制循环目标为 1 ms，命令与动力学更新为 2 ms，反馈发布为 4 ms，七台电机各以 4 ms 周期分相发送。普通 PC 的实际时序由运行负载和操作系统调度决定，统计方法见 [控制周期](metal_arm_control/CONTROL_TIMING.md)。
 
-编码保持与原厂 C++ 的 float32 算术一致，反馈归一化分母为 `65535/4095`。特殊命令为 `FC` 使能、`FD` 禁用、`FE` 保存零点。只读状态查询使用 `0x7ff`，不发送使能帧。反馈状态 `0` 为禁用、`1` 为使能，其余作为故障处理；不要套用 ARX 的 ENCOS、接收 ID 或归一化规则。
+## STOP、故障和退出
 
-### 初始化和夹爪标定
+STOP 输出零增益 SOFT_STOP，并对无已知故障的电机每台至少间隔 75 ms 发送 ENABLE；在 4 ms 电机调度下通常为 76 ms。STOP 不提供位置保持或重力补偿。标零流程独占参与电机，已知故障电机停止使能。
 
-Metal 初始化仅执行六轴复位，结束后直接进入正常阻尼模式；夹爪校准及范围核验阶段已删除。初始化入口锁存夹爪当前反馈角，不寻找限位或写入零点。正常控制的夹爪限位和整臂反馈健康检查仍然有效。
+正常运行时应用命令超时转阻尼；电机反馈超过 100 ms 或出现故障使对应整臂进入停止，另一臂独立处理。关闭链路会向全部七台电机交付 DISABLE，退出前应放稳或支撑机械臂。
 
-默认夹爪换算来自原厂 `can_manager.h` 的最近邻查表，要求出厂零点仍有效。SDK 米制范围为 `0..0.1 m`；表中虽有 `102.5 mm` 项，米制接口仍限制在 `0.1 m`。例如 `50 mm` 对应 `1.10383 rad`。显式传入 `sdk.Arm(..., calib_store=...)` 可以覆盖默认存储，Metal 不自动读取 ARX 本机标定文件。
+严格只读检查使用 `metal-arm-can-check`。CAN 线程和进程的队列、过期检查及看门狗见 [CAN 接入](metal_arm_control/CAN_IO.md)。
 
-`set_zero()` 仍是显式写入 J1–J6 当前零点的命令，不包含夹爪，也不会自动寻找机械零位。用户已确认初始化参考和 `reset()` 目标为 J1～J6 全 0°，参数位于 `board_defs/metal_arm.py`，无需再等待复位角数据。初始化姿态容差为 20°，复位轨迹为 2 s；复位只使用目标角，不写入电机零点。
+## 夹爪与动力学
 
-### 动力学和退出行为
+夹爪默认使用厂家最近邻查表，SDK 开口范围为 `0..0.1 m`，依赖有效的出厂零点。`sdk.Arm(..., calib_store=...)` 可指定实测标定存储。
 
-两份原厂 URDF 为 `metal_with_gripper`、`metal_no_gripper`，动力学链为 `base_link → Link6`，关节为 `JOINT1..JOINT6`，默认重力 `(0,0,-9.81)`。切换无夹爪模型只改变动力学参数，当前控制拓扑仍要求七台电机。
+动力学模型为 `metal_with_gripper` 或 `metal_no_gripper`，链为 `base_link → Link6`，默认重力为 `(0, 0, -9.81)`。模型选项控制负载模型，控制拓扑包含七台电机。
 
-默认 `gravity_sdk_scale=True` 时，RUN 前馈为缩放的重力、科氏项与粘性摩擦之和，不含加速度前馈；GRAVITY 模式只用缩放重力。关闭 SDK 缩放后可计算原始 `M*qdd + C + G`。缩放和摩擦系数集中在 `config.py`，不要带入 ARX 的模型或经验系数。
+`gravity_sdk_scale=True` 时，RUN 前馈为缩放的重力、科氏项和粘性摩擦之和；GRAVITY 模式使用缩放重力。关闭 SDK 缩放时使用完整 `M*qdd + C + G`。模型和算法许可证见 [来源说明](metal_arm_control/gravity_compensation/PROVENANCE.md)。
 
-本后端关闭时禁用全部七台电机，与原厂析构时保留电机使能的行为不同。需要先放稳或支撑机械臂，不能把退出理解为保持当前位置。
+## 验证
 
-移植参数、模型、夹爪表及协议保留 MakerMods MIT 许可证；沿用的动力学算法保留 LGPL-2.1-or-later 许可证，详见 [PROVENANCE.md](metal_arm_control/gravity_compensation/PROVENANCE.md)。
-
-## 已完成的验证
-
-以下结果对应运行代码基线 `119c01b`。GitHub Actions 的 Python 3.10 和 3.12 两组均成功，可查看 [直接推送的验证记录](https://github.com/intuitionlabs-dev/ARM_SDK_intuition/actions/runs/40500128894)。后续复位角确认及本文档更新只修改注释和说明。
-
-| 验证 | 结果和覆盖范围 |
+| 检查 | 覆盖范围 |
 | --- | --- |
-| `unittest discover -s tests -v` | 33 项通过；覆盖参数隔离、H7/TUI 选择、模拟复位、模块/API 对齐、Metal 状态机、STOP、夹爪保持、SDK 单位和动力学 |
-| 原厂 C++ 编码对照 | 七个电机各 100 组固定随机输入，共 700 组命令字节一致；包含在上述 33 项中 |
-| CAN 生命周期 | 真实线程及 spawn 子进程配合 `EchoTransport` 假传输，覆盖只读查询、双臂路由、故障退出及全部电机禁用 |
-| 现有 SDK 自测 | 178 通过、0 失败、1 跳过；跳过项依赖仓库之外的 H7 固件头文件 |
-| TUI 自测 | 48 通过、0 失败 |
-| 安装后离线演示 | Metal 控制核心、Metal 双臂 SDK、原有 ARX 演示均 `sequence_complete: true` |
-| CI 安装验证 | Python 3.10/3.12 安装当前包后执行全部测试；三种模拟入口在源码目录之外运行 |
-
-目录/API 测试比较全部相对 `.py` 路径和 `__all__`，并比较 `arm`、`system`、`motor`、`can_io`、`can_process`、`sdk_adapter.link` 中公开类方法的参数名与默认值；它不证明两个设备的硬件语义完全相同。
-
-原厂对照测试需要 `c++` 编译器，缺失时会跳过；本机和上述 CI 运行时均具备编译器。CAN 测试使用模拟传输，不代表真实总线测试。模拟器和动力学数值测试不能证明实机稳定性、负载能力或碰撞安全。
-
-原 ARX 文档保留的 nuc3 实机数据和固件 C/Python 对照属于上游工程的历史记录；不要计入本次 Metal 实机验证或当前仓库的 33 项测试。
-
-## 接手后的复现步骤
-
-先检查工作区，不要覆盖未提交修改。已有本地克隆使用以下只读检查和 fetch；确认在任务分支后再继续：
+| 仓库单元测试 | 33 项，覆盖 Metal 状态机、STOP、夹爪保持、CAN 生命周期、双臂隔离、SDK 参数和 H7/TUI 选择 |
+| 原厂编码对照 | 七个电机各 100 组输入，共 700 组命令字节对照，包含在单元测试中 |
+| SDK 自测 | 协议、单位、预检、模拟状态机和串口重连；外部 H7 头文件缺失时跳过对应检查 |
+| TUI 自测 | 48 项，覆盖会话、按键、限位和命令发送 |
+| CI | Python 3.10/3.12 安装包测试及源码目录之外的模拟运行 |
 
 ```bash
-cd /home/zhaosuya/ARM_SDK_intuition
-git status --short --branch
-git remote -v
-git fetch origin
-git log -5 --oneline
-git diff --stat origin/master...HEAD
-gh run list --repo intuitionlabs-dev/ARM_SDK_intuition \
-  --branch feat/metal-arm-control --event push --limit 5
+python3 -m pip install -e '.[can]'
+python3 -m unittest discover -s tests -v
+python3 -m sdk.selftest
+python3 -m sdk.tui --selftest
+python3 -m metal_arm_control --demo --seconds 8 --log-level ERROR
+python3 -m metal_arm_control.sdk_adapter.demo --log-level ERROR
+python3 -m arx_x5_control --demo --log-level ERROR
 ```
 
-新环境可从新组织克隆 `feat/metal-arm-control` 分支。使用 Python >=3.10；已有 `.venv` 时可直接使用，无需重建：
-
-```bash
-git clone --branch feat/metal-arm-control https://github.com/intuitionlabs-dev/ARM_SDK_intuition.git
-cd ARM_SDK_intuition
-python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[can]'
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python -m sdk.tui --selftest
-.venv/bin/python -m metal_arm_control --demo --seconds 8 --log-level ERROR
-.venv/bin/python -m metal_arm_control.sdk_adapter.demo --log-level ERROR
-.venv/bin/python -m arx_x5_control --demo --log-level ERROR
-```
-
-以上演示均为离线模拟。需要交互检查时运行 `.venv/bin/metal-arm-tui --simulate`。真实设备对象组合见 [SDK_LOCAL.md](metal_arm_control/SDK_LOCAL.md)，CAN 参数和接口见 [CAN_IO.md](metal_arm_control/CAN_IO.md)。`ProcessCANMotorIO` 使用 spawn，调用脚本必须有 `if __name__ == '__main__':` 保护。
-
-## 后续工作及交接约定
-
-当前没有已确认但未修复的离线测试失败。接下来主要是代码检查和实机确认，不应将交接请求理解为已经授权新的硬件运动。
-
-1. 评审 Metal 必要行为差异，尤其是初始化、六轴零角复位、禁用电机退出，以及共享 SDK 配置不污染 ARX 的约束。
-2. 在具备对应设备和调试条件后，先确认 CAN ID、固件协议范围、反馈单位、零点和夹爪出厂标定。不能与原厂驱动或 MakerMods Lab 同时控制同一总线。
-3. 再安排实机初始化、低幅关节控制、夹爪换算、重力补偿、超时停机和退出行为验证；记录设备型号、固件版本、负载、参数和结果。复位目标已确认为全 0°，待验证的是实际执行效果、250 Hz 时序和真实负载下的补偿参数。
-4. 按用户要求直接提交和推送，不使用 PR。保留实机验证边界，不因模拟通过就将实现描述为已完成硬件验收。
-
-用户已持续授权任务相关的小步提交和推送：每个完整小改动及相关检查完成后及时 commit/push，较长任务有可保存成果时约每 5–10 分钟保存一次。只提交本任务文件，检查 diff，保护无关工作和凭据；沿用任务分支及配置远端，不 force-push。每次验证推送结果；若受阻，保留本地提交并报告具体原因。
+CAN 测试使用模拟传输，模拟器验证接口和控制状态流程。Metal 的实机稳定性、负载能力和总线时序需要在目标设备上验证。

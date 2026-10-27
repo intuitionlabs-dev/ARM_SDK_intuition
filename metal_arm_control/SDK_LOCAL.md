@@ -2,7 +2,7 @@
 
 `sdk.Arm` 对外关节单位为 rad/rad/s，`gripper_m` 为 m，`gripper_raw_deg` 为原始电机角（deg）。控制核心 `Command` 使用 deg/deg/s；`MotorRequest` 使用 rad/rad/s/N·m。参数转换在 SDK 和 LocalLink 边界完成。
 
-类型由 `from metal_arm_control.sdk_adapter import LocalLink` 明确指定；`arm_id` 只选择连接中的臂，SDK 不自动探测硬件型号。`ArmConfig`、CAN 适配器和 `LocalLink` 均从 Metal 包导入，安装包名称仍为 `arx-x5-control`。
+类型由 `from metal_arm_control.sdk_adapter import LocalLink` 明确指定；`arm_id` 选择连接中的臂。`ArmConfig`、CAN 适配器和 `LocalLink` 均从 Metal 包导入，安装包名称为 `arx-x5-control`。
 
 ## 完整离线示例
 
@@ -34,7 +34,7 @@ with LocalLink.simulated() as link:
 
 `wait_arms` 会逐臂保活并检查后台异常。命令入队不表示执行成功或运动到位，需要读取反馈及 `link.drain_events()`。初始化只执行六轴复位，保留夹爪入口反馈角；完成后直接落在阻尼模式，必须 `start()` 后才能位控。
 
-初始化参考和 `reset()` 目标均为用户确认的 J1～J6 全 0°，初始化姿态容差为 20°、复位轨迹为 2 s。复位不写入电机零点，显式 `set_zero()` 才会保存六轴当前零点。
+初始化参考和 `reset()` 目标均为 J1～J6 全 0°，初始化姿态容差为 20°、复位轨迹为 2 s。复位不写入电机零点，显式 `set_zero()` 才会保存六轴当前零点。
 
 ## 实机对象组合
 
@@ -69,7 +69,7 @@ if __name__ == '__main__':
 
 应用须每台臂 3 s 内提交有效命令/保活。命令超时进入阻尼；反馈丢失/故障进入停止。停止不维持重力补偿，但继续对无已知故障的电机周期使能，并发送零增益帧。标零期间的参与电机不接收周期使能；关闭链路会发送禁用电机请求。
 
-SDK 的默认 Metal 夹爪查表与 ARX 标定文件分离。`sdk.Arm(..., calib_store=...)` 可明确提供实测标定存储。`link.board_defs` 和 `arm.board_defs` 指向 `sdk.board_defs.metal_arm`，包含该后端的限位、复位常量和限幅函数。ARX 参数独立位于 `sdk.board_defs.arx_x5`；`sdk.board_defs` 仅作为包入口，不再直接提供某台机械臂的参数。
+Metal 夹爪默认使用厂家查表，`sdk.Arm(..., calib_store=...)` 可指定实测标定存储。`link.board_defs` 和 `arm.board_defs` 指向 `sdk.board_defs.metal_arm`，包含该后端的限位、复位常量和限幅函数。ARX 参数位于 `sdk.board_defs.arx_x5`；包入口 `sdk.board_defs` 提供 `ROBOT_TYPES` 和 `get_profile()`。
 
 ## H7 串口参数选择
 

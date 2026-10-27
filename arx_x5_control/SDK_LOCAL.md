@@ -1,6 +1,6 @@
 # 通过 SDK 调用 PC Python 控制核心
 
-`arx_x5_control.sdk_adapter.link.LocalLink` 实现了现有 `sdk.Link` 的调用接口。向 `sdk.Arm` 传入此对象后，`connect()`、初始化、模式切换、位置/速度控制、复位、设零、反馈读取及等待方法都会进入本机 `ControlSystem`。
+`arx_x5_control.sdk_adapter.link.LocalLink` 实现 `sdk.Link` 的调用接口。向 `sdk.Arm` 传入此对象后，`connect()`、初始化、模式切换、位置/速度控制、复位、设零、反馈读取及等待方法都会进入本机 `ControlSystem`。
 
 ```text
 业务程序 → sdk.Arm（rad / rad/s / m）
@@ -91,7 +91,7 @@ with LocalLink.simulated(configurations=[ArmConfig()]) as link:
 # 离开 with 时，控制核心生成并交付停机请求。
 ```
 
-夹爪完成 SDK 的两点标定后，可以继续使用 `gripper_m=...`，由 `sdk.GripperCalibStore` 和 `sdk.GripperCalibration` 换算为电机角。未标定时，米制控制仍按 SDK 原有行为报错。`joint_angles`、`joint_velocities` 和 `snapshot()` 仍提供 SI 单位；`arm.feedback` 是 SDK 的原始 deg 数据视图。
+夹爪完成 SDK 的两点标定后，使用 `gripper_m=...`，由 `sdk.GripperCalibStore` 和 `sdk.GripperCalibration` 换算为电机角。未标定时，米制控制报错。`joint_angles`、`joint_velocities` 和 `snapshot()` 提供 SI 单位；`arm.feedback` 是 SDK 的原始 deg 数据视图。
 
 双臂共用一个 `LocalLink`，每台臂使用独立 `sdk.Arm`，并分别保活。`Arm.close()` 不关闭外部传入的共享链路；统一使用 `link.close()` 或 `with` 管理生命周期。
 
@@ -335,7 +335,7 @@ class MyMotorIO:
 - `open()` 启动目标周期为 1 ms 的线程，命令每 2 ms 处理，反馈约每 4 ms 发布；PC Python 不保证硬实时。
 - 不自动发送保活。每台臂需在 3 s 内收到有效命令，反馈输出本身不算保活。等待初始化或设零时也要持续发送 `keepalive()`；示例的 `wait_arms()` 已处理此事。
 - `close()` 停止控制线程并交付所有电机的停机请求；`reopen()` 新建控制器，清除旧反馈、旧设零结果和未执行命令，需要重新握手与初始化。
-- 适配器抛异常时，后端记录故障并尝试交付停机请求。通过 `check_health()`、后续发送或 `wait_feedback()` 可取得 `sdk.LinkError`；`stats["link_err"]` 可读原因。SDK 的 `wait_for()` 和 `wait_setzero_ack()` 沿用原有轮询行为，应用长时间等待时也应调用 `check_health()`。
+- 适配器抛异常时，后端记录故障并尝试交付停机请求。通过 `check_health()`、后续发送或 `wait_feedback()` 可取得 `sdk.LinkError`；`stats["link_err"]` 可读原因。SDK 的 `wait_for()` 和 `wait_setzero_ack()` 使用轮询等待，应用长时间等待时也应调用 `check_health()`。
 - 若停机请求也交付失败，`close()` 会报错。若适配器阻塞，超过 2 秒仍未退出会报错，并拒绝在旧线程运行时再开控制线程。适配器必须遵守非阻塞约定。
 - `link.stats` 增加漏拍、旧反馈、核心拒绝命令、各臂队列长度和事件覆盖计数。`n_tx/n_rx` 为逻辑消息数量；没有真实串口状态包，`link_status` 为 `None`，CRC 计数为零。
 - `drain_events()` 取走最近的控制事件，最多保留 512 条，历史覆盖数量记录在 `event_overruns` 中。`last_result` 提供最近一次控制结果；后台运行期间不得直接修改 `controller`。
@@ -377,7 +377,7 @@ python3 -m unittest discover -s tests -v
 python3 -m arx_x5_control.sdk_adapter.demo
 ```
 
-本仓库测试覆盖后端接口对齐、独立参数、H7/TUI 选型、Metal 状态流程及 CAN 退出。上游 H7 工程还保留 ARX 集成测试和固件数值对照，需要在对应工程内另行运行；它们不属于本仓库的测试计数。最新已验证范围见 [交接文档](../HANDOFF_METAL_ARM.md#已完成的验证)。
+本仓库测试覆盖后端接口对齐、独立参数、H7/TUI 选型、Metal 状态流程及 CAN 退出。测试命令和覆盖范围见 [验证说明](../HANDOFF_METAL_ARM.md#验证)。
 
 ## SDK TUI
 
@@ -385,20 +385,16 @@ python3 -m arx_x5_control.sdk_adapter.demo
 双臂共用一个 `LocalLink`。
 `ProcessCANMotorIO` 在独立进程中执行 CAN 收发。
 
-nuc3 的快捷入口为 `/home/intuition-nuc3/arx-x5-tui`。
-通过 SSH 打开交互终端并启动：
+双臂 SocketCAN 示例：
 
 ```bash
-ssh -t intuition-nuc3 /home/intuition-nuc3/arx-x5-tui
+arx-x5-tui --interface socketcan --channel can0 --channel can1
 ```
 
-快捷入口使用以下通道配置：
+双臂 SLCAN 示例：
 
 ```bash
-can_prefix=/dev/serial/by-id/usb-Openlight_Labs_CANable2_b158aa7_github.com_normaldotcom_canable2.git_
-/home/intuition-nuc3/arx-connectivity-check/.venv/bin/arx-x5-tui \
-  --channel "${can_prefix}208C339E5931-if00" \
-  --channel "${can_prefix}207235C34831-if00"
+arx-x5-tui --interface slcan --channel /dev/ttyACM0 --channel /dev/ttyACM1
 ```
 
 通道顺序对应臂 0、臂 1。
@@ -442,4 +438,3 @@ TUI 自动保存每次会话的运行日志。
 CAN 故障后，退出控制台并重新启动。
 
 TUI 按键测试使用模拟电机验证初始化、切臂、点动和复位。
-nuc3 终端验证覆盖实机反馈显示、切臂和退出停机。

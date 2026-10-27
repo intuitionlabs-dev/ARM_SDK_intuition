@@ -134,12 +134,6 @@ with open("control.log", "a", encoding="utf-8") as stream:
 `latest` 链接指向最近创建的会话。
 会话文件持续保留。
 
-nuc3 默认日志位置为：
-
-```text
-/home/intuition-nuc3/.local/state/arx-x5-control/runs/
-```
-
 操作结束后，读取 `latest` 的目标目录：
 
 ```bash
