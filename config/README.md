@@ -6,9 +6,10 @@
 
 | 连接 | 默认方式 | 配置要求 |
 | --- | --- | --- |
-| H7，任一型号参数 | JSON 两点标定 | 与设备的实际夹爪零点一致 |
-| PC，ARX X5 | JSON 两点标定 | 初始化找零后测量开口端点 |
-| PC，Metal Arm | 厂家查表，0..0.1 m | 有效出厂零点；显式存储可覆盖 |
+| H7 或 PC，ARX X5 | JSON 两点标定 | 初始化找零后测量开口端点 |
+| H7 或 PC，Metal Arm | 厂家查表，0..0.1 m | 有效出厂零点；显式存储可覆盖 |
+
+默认存储由所选型号给出（`sdk.board_defs.<profile>.default_gripper_store()`）；`sdk.Arm(..., calib_store=...)` 可改为 JSON 两点标定。
 
 厂家查表和文件标定的对象差异见 [夹爪换算](../docs/ROBOTS.md#夹爪换算)。
 

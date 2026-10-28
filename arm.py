@@ -150,10 +150,10 @@ class Arm:
         st = self.link.stats
         if st["board_version"] is None:
             ver = i18n.tr("arm.no_version")
-        elif st["board_version"] == protocol.VERSION_CODE:
+        elif st["board_version"] == self.board_defs.VERSION_CODE:
             ver = i18n.tr("arm.ver_ok", st["board_version"])
         else:
-            ver = i18n.tr("arm.ver_mismatch", st["board_version"], protocol.VERSION_CODE)
+            ver = i18n.tr("arm.ver_mismatch", st["board_version"], self.board_defs.VERSION_CODE)
 
         lines = [i18n.tr("arm.connect_timeout", timeout,
                          i18n.arm_label(self.arm_id)),
@@ -350,7 +350,8 @@ class Arm:
 
     def send_version(self):
         """发版本匹配包（0x01）。也是**保活**：见 `keepalive()`。"""
-        return self._send(protocol.TID_VERSION, protocol.encode_version())
+        return self._send(protocol.TID_VERSION,
+                          protocol.encode_version(self.board_defs.VERSION_CODE))
 
     # 保活就是"3 s 内发任意有效帧"，版本包最小最无害 —— 板子对已经握过手的手
     # **幂等地再回一个版本包，状态不动**（见 robot_state.c 的 HandleVersion），所以拿它

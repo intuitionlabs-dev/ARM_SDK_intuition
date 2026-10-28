@@ -3,8 +3,9 @@
 **这一层只用线上单位**（deg / deg·s⁻¹ / ℃），一比特都不换算 —— 换算是 `arm.py` 的事。
 这样协议层可以脱离硬件、脱离单位策略单独测，也保证"线上到底长什么样"在这里一眼看全。
 
-协议版本 v0.3，权威定义在板子那边：`libs/frame/frame.h`（帧格式）、
-`libs/frame/type_id.h`（码表和 payload 布局）、`libs/frame/frame_config.h`（版本串）。
+协议版本串与版本码按型号定义在 `board_defs` 各模块（`VERSION_STRING` / `VERSION_CODE`）；
+板子那边的权威定义在 `libs/frame/frame.h`（帧格式）、`libs/frame/type_id.h`（码表和 payload
+布局）、`libs/frame/frame_config.h`（版本串）。
 
     AA 55 | type_id | datalen | arm_id | crc8 | payload | crc16(LE)
      0  1  |    2    |    3    |    4   |  5   | 6..5+N  | 6+N 7+N
@@ -116,16 +117,6 @@ def parse_version_string(text):
     return m.group(1) if m else None
 
 
-# 抄自板子 `libs/frame/frame_config.h` 的 FRAME_VERSION_STRING。**版本码不硬写**，
-# 从串算（板上改了串这里就跟上，不用记 0xF81DD236）—— 自测里再钉死这个值为 0xF81DD236，
-# 那是为了"改了串必须显式改上位机"这条纪律，是故意的。
-#
-# 这个串是**协议版本的身份**：帧格式或行为不兼容地变了就换它，两端必须同时跟 ——
-# 串对不上时板子在 0x01 上就不回你的版本帧（它自己照常每 100 ms 报它的码），所以一眼
-# 能看出是自己这边对不上，而不是对着静默猜。自测里钉死的那个值也要一起改。
-VERSION_STRING = "Intuition-ARX-X5-2023-v0.3"
-VERSION_CODE = fnv1a32(VERSION_STRING)
-
 # arm_id 的语义：**arm_id 就是 CAN 总线索引**，0 = CAN1 = 臂A、1 = CAN2 = 臂B。
 # 板子只认 arm_id < ARM_NUM(2)，越界的帧**静默丢弃**（连版本包都不回）。
 DEFAULT_ARM_ID = 0
@@ -210,8 +201,12 @@ def encode_ctrl_pos_vel(angles_deg6, vels_deg6, gripper_deg):
     return struct.pack("<13f", *angles_deg6, *vels_deg6, gripper_deg)
 
 
-def encode_version(code=VERSION_CODE):
-    """0x01 的 payload：4 字节小端版本码。"""
+def encode_version(code):
+    """0x01 的 payload：4 字节小端版本码，取所选型号的 `board_defs.VERSION_CODE`。
+
+    版本串是**协议版本的身份**：帧格式或行为不兼容地变了就换它，两端必须同时改。串不匹配
+    时板子在 0x01 上不回复版本帧（它自己每 100 ms 报一次码），据此判断是上位机版本不对。
+    """
     return struct.pack("<I", code & 0xFFFFFFFF)
 
 

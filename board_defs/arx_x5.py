@@ -2,7 +2,12 @@
 
 import math
 
+from ..protocol import fnv1a32
 from .common import *  # Shared protocol names are also part of each robot profile.
+
+# 固件 `libs/frame/frame_config.h` 的 FRAME_VERSION_STRING；版本码是其 FNV-1a 32。
+VERSION_STRING = "Intuition-ARX-X5-2023-v0.3"
+VERSION_CODE = fnv1a32(VERSION_STRING)
 
 JOINT_ANGLE_MIN = (-115.0, 0.5, 0.5, -90.0, -90.0, -112.87)
 JOINT_ANGLE_MAX = (90.0, 206.26, 171.88, 90.0, 90.0, 119.17)

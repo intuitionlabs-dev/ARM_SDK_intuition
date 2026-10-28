@@ -750,11 +750,11 @@ class ConsoleSession:
         self.version_reported = True
         bv = self.link.board_version
         if bv is None:
-            self.info(i18n.tr("session.hs_fb_only", protocol.VERSION_CODE))
-        elif bv == protocol.VERSION_CODE:
-            self.info(i18n.tr("session.hs_ok", bv, protocol.VERSION_STRING))
+            self.info(i18n.tr("session.hs_fb_only", self.board_defs.VERSION_CODE))
+        elif bv == self.board_defs.VERSION_CODE:
+            self.info(i18n.tr("session.hs_ok", bv, self.board_defs.VERSION_STRING))
         else:
-            self.err(i18n.tr("session.hs_bad", bv, protocol.VERSION_CODE))
+            self.err(i18n.tr("session.hs_bad", bv, self.board_defs.VERSION_CODE))
 
     def _on_feedback(self, view, sp, now):
         """Feedback frame → events / automatic re-seeding. **The policy is carried over

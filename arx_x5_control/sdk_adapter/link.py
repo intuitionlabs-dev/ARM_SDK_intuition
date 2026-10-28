@@ -38,7 +38,7 @@ def _command(tid, payload, arm_id):
         raise ProtocolError("tid must be int and payload must be bytes")
     try:
         if tid == protocol.TID_VERSION:
-            if struct.unpack("<I", payload)[0] != protocol.VERSION_CODE:
+            if struct.unpack("<I", payload)[0] != board_defs.VERSION_CODE:
                 raise ValueError("SDK protocol version mismatch")
             return Command(arm_id, K.CONNECT)
         if tid in _EMPTY_COMMANDS:
@@ -311,7 +311,7 @@ class LocalLink(Link):
             self.n_rx += 1
         for event in result.events:
             if event.kind in ("connected", "connection_required"):
-                self.board_version = protocol.VERSION_CODE
+                self.board_version = board_defs.VERSION_CODE
                 self.version_seen = True
                 self.n_rx += 1
             elif event.kind == "calibrated":

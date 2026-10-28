@@ -63,12 +63,6 @@ from .link import (Link, describe_port, list_links, match_ident, pick_default_po
                    same_usb_ident, usb_identity)
 from .protocol import Feedback, LinkStatus, SetZeroAck
 
-# 协议版本串（板子 `libs/frame/frame_config.h`）。版本码是它的 FNV-1a 32，
-# 见 `protocol.VERSION_CODE` —— 两边必须一致，不一致板子不会握手（它不回你的版本帧，
-# 但自己每 100 ms 报一次码；把版本串改对再发就能握手，不用复位板子）。
-PROTOCOL_VERSION = protocol.VERSION_STRING
-VERSION_CODE = protocol.VERSION_CODE
-
 __all__ = [
     # 入口
     "Arm", "Link", "Snapshot",
@@ -80,6 +74,6 @@ __all__ = [
     # 口子
     "pick_default_port", "list_links", "describe_port", "usb_identity",
     "same_usb_ident", "match_ident",
-    # 常量
-    "PROTOCOL_VERSION", "VERSION_CODE", "protocol", "board_defs", "units", "gripper",
+    # 子模块
+    "protocol", "board_defs", "units", "gripper",
 ]
