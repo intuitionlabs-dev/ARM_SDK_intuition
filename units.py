@@ -59,7 +59,7 @@ def rad_s_seq_to_deg_s(seq):
 def check_joint_seq(values, what="关节角"):
     """长度校验，顺便把入参收成 tuple。
 
-    只查个数，**不查限位** —— 限位是策略（见 `board_defs.clamp_axis`），这里不做。
+    只查个数，**不查限位** —— 限位是策略（见 `arm.board_defs.clamp_axis`），这里不做。
     """
     if isinstance(values, (str, bytes)) or not isinstance(values, Iterable):
         raise TypeError("%s 要给 6 个数的序列，收到 %r" % (what, type(values).__name__))

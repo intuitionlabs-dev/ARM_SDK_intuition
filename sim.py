@@ -24,7 +24,8 @@ import struct
 import threading
 import time
 
-from . import board_defs, protocol
+from . import protocol
+from .board_defs import common as board_defs
 from .errors import NotConnected
 from .link import Link
 
@@ -77,20 +78,21 @@ class SimLink(Link):
     `arm_ids` 决定这块假板子上有几台臂（默认两台，和真板子一致）。`lost_mask` /
     `lost_arm` 是 `--fake-lost`：周期性地让 `lost_arm` 那台"掉线"，用来演练
     「电机掉线把 arm_mode 打回 stop」那条路径。
+    `robot_type` 与 Link 相同，复位目标跟随所选参数；状态机仍模拟 H7 串口协议。
     """
 
     DT = 0.004                     # 反馈节拍：250 Hz/台（真板子实测 250 Hz）
 
     def __init__(self, port=None, baud=921600, *, arm_ids=(0, 1),
-                 lost_mask=0, lost_arm=0, dt=None, speed=1.0):
+                 lost_mask=0, lost_arm=0, dt=None, speed=1.0, robot_type=None):
+        super().__init__(port=port or "<fake>", baud=baud, robot_type=robot_type)
         arm_ids = tuple(arm_ids)
         if not arm_ids:
             raise ValueError("假板子至少要有一台臂")
         for a in arm_ids:
-            if not 0 <= a < board_defs.ARM_NUM:
+            if not 0 <= a < self.board_defs.ARM_NUM:
                 raise ValueError("arm_id 只能是 0..%d，收到 %r"
-                                 % (board_defs.ARM_NUM - 1, a))
-        super().__init__(port=port or "<fake>", baud=baud)
+                                 % (self.board_defs.ARM_NUM - 1, a))
         self.kind = "FAKE"
         self.dt = self.DT if dt is None else dt
         # speed > 1 = 假板子的时钟走得比真实时间快（每一拍虚拟时间前进 dt*speed）。
@@ -189,7 +191,7 @@ class SimLink(Link):
                 board.state = board_defs.STATE_RESETTING
                 board.mode = board_defs.MODE_RUN      # 复位期间位置环要使上劲
                 board.reset_end = self._t + RESET_S
-                board.target = list(board_defs.RESET_POSE_DEG) + [board.gripper]
+                board.target = list(self.board_defs.RESET_POSE_DEG) + [board.gripper]
             elif tid in _EMPTY_MODE_TID_TO_MODE and board.state == board_defs.STATE_NORMAL \
                     and not board.lost:
                 board.mode = _EMPTY_MODE_TID_TO_MODE[tid]
@@ -302,7 +304,7 @@ class SimLink(Link):
             board.reset_end = None
             # 真板子那条五次样条是**定时**的（2 s 正好走到位），不像关节那个一阶滞后
             # 追不上就慢慢磨；这里直接落位，免得假板子自己触发"复位疑似没执行"的误报。
-            board.joint = list(board_defs.RESET_POSE_DEG)
+            board.joint = list(self.board_defs.RESET_POSE_DEG)
 
         ack = None
         if board.state == board_defs.STATE_CALIBRATING and board.calib_end is not None \

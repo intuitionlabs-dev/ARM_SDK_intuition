@@ -37,7 +37,7 @@ import sys
 import termios
 import time
 
-from . import board_defs as bd
+from .board_defs import arx_x5 as bd
 from .arm import FEEDBACK_STALE_S, Arm
 from .errors import ArError, CalibrationError
 from .gripper import GripperCalibStore, GripperCalibration

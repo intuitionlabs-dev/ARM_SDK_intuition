@@ -26,7 +26,7 @@ def wait_arms(link, arms, predicate, timeout=15.0):
 
 def demo():
     """运行 SDK 双臂模拟，日志配置由所属包统一提供。"""
-    defs = sdk.board_defs
+    defs = LocalLink.board_defs
     with LocalLink.simulated() as link:
         arms = [sdk.Arm(i, link) for i in (0, 1)]
         for arm in arms:

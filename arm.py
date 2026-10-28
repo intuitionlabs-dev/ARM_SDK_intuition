@@ -41,7 +41,8 @@
 import time
 from dataclasses import dataclass
 
-from . import board_defs, i18n, protocol, units
+from . import i18n, protocol, units
+from .board_defs import arx_x5 as board_defs
 from .errors import (FeedbackStale, GateRejected, GripperNotCalibrated,
                      LinkError)
 from .gripper import GripperCalibStore
@@ -101,16 +102,18 @@ class Arm:
     """一台臂。所有命令方法都发这一台的帧（帧头 arm_id = `arm_id`）。"""
 
     def __init__(self, arm_id=protocol.DEFAULT_ARM_ID, link=None, *, calib_store=None):
-        if not 0 <= arm_id < board_defs.ARM_NUM:
-            raise ValueError(i18n.tr("arm.arm_id_range",
-                                     board_defs.ARM_NUM - 1, board_defs.ARM_NUM, arm_id))
-        from .link import Link   # 延迟 import：link.py 的 arm() 反过来要用本模块
+        from .link import Link
 
         self.arm_id = arm_id
         self._own_link = link is None
         self.link = link if link is not None else Link()
+        self.board_defs = getattr(self.link, "board_defs", board_defs)
+        if not 0 <= arm_id < self.board_defs.ARM_NUM:
+            raise ValueError(i18n.tr("arm.arm_id_range",
+                                     self.board_defs.ARM_NUM - 1, self.board_defs.ARM_NUM, arm_id))
         self._chan = self.link.channel(arm_id)
-        self._calib_store = calib_store or GripperCalibStore()
+        self._calib_store = (calib_store if calib_store is not None else
+                             getattr(self.link, "gripper_calib_store", None) or GripperCalibStore())
         self._calib = None
         self._calib_loaded = False
         self._ack_after = None      # set_zero() 发送前的 0x11 序号
@@ -253,7 +256,7 @@ class Arm:
     @property
     def mode_name(self):
         m = self.mode
-        return None if m is None else board_defs.mode_name(m)
+        return None if m is None else self.board_defs.mode_name(m)
 
     @property
     def robot_state(self):
@@ -262,7 +265,7 @@ class Arm:
     @property
     def robot_state_name(self):
         s = self.robot_state
-        return None if s is None else board_defs.state_name(s)
+        return None if s is None else self.board_defs.state_name(s)
 
     @property
     def motor_lost_mask(self):
@@ -275,12 +278,12 @@ class Arm:
     @property
     def lost_names(self):
         m = self.motor_lost_mask
-        return None if m is None else board_defs.expand_mask(m)
+        return None if m is None else self.board_defs.expand_mask(m)
 
     @property
     def inited_names(self):
         m = self.motor_inited_mask
-        return None if m is None else board_defs.expand_mask(m)
+        return None if m is None else self.board_defs.expand_mask(m)
 
     def snapshot(self):
         """同一帧里换算好的一致视图。没收到过反馈返回 None。"""
@@ -302,13 +305,13 @@ class Arm:
             gripper_calibrated=calib is not None,
             temperatures=fb.motor_temp,
             mode=fb.mode,
-            mode_name=board_defs.mode_name(fb.mode),
+            mode_name=self.board_defs.mode_name(fb.mode),
             robot_state=fb.robot_state,
-            robot_state_name=board_defs.state_name(fb.robot_state),
+            robot_state_name=self.board_defs.state_name(fb.robot_state),
             motor_lost_mask=fb.motor_lost_mask,
             motor_inited_mask=fb.motor_inited_mask,
-            lost_names=board_defs.expand_mask(fb.motor_lost_mask),
-            inited_names=board_defs.expand_mask(fb.motor_inited_mask),
+            lost_names=self.board_defs.expand_mask(fb.motor_lost_mask),
+            inited_names=self.board_defs.expand_mask(fb.motor_inited_mask),
         )
 
     # ==================== 读：夹爪标定 ====================
@@ -339,7 +342,7 @@ class Arm:
         fb = self.feedback
         if fb is None:
             return i18n.tr("arm.no_feedback_yet")
-        if not fb.motor_inited_mask >> board_defs.GRIPPER & 1:
+        if not fb.motor_inited_mask >> self.board_defs.GRIPPER & 1:
             return i18n.tr("arm.grip_not_homed")
         return i18n.tr("arm.grip_inited_hint")
 
@@ -368,14 +371,14 @@ class Arm:
         if not force:
             fb = self._fresh_feedback("init_arm")
             why = []
-            from_soft = (fb.robot_state == board_defs.STATE_NORMAL
-                         and fb.mode in (board_defs.MODE_STOP, board_defs.MODE_DAMPING))
-            if not (fb.robot_state == board_defs.STATE_WAIT_INIT or from_soft):
+            from_soft = (fb.robot_state == self.board_defs.STATE_NORMAL
+                         and fb.mode in (self.board_defs.MODE_STOP, self.board_defs.MODE_DAMPING))
+            if not (fb.robot_state == self.board_defs.STATE_WAIT_INIT or from_soft):
                 why.append(i18n.tr("arm.gate_init_state",
                                    i18n.state_name(fb.robot_state),
                                    i18n.mode_name(fb.mode),
-                                   i18n.state_name(board_defs.STATE_WAIT_INIT),
-                                   i18n.state_name(board_defs.STATE_NORMAL)))
+                                   i18n.state_name(self.board_defs.STATE_WAIT_INIT),
+                                   i18n.state_name(self.board_defs.STATE_NORMAL)))
             self._check_motors_online(fb, why)
             self._check_pose(fb, why)
             self._raise_if(why, "init_arm")
@@ -393,10 +396,10 @@ class Arm:
         if not force:
             fb = self._fresh_feedback("set_zero")
             why = []
-            if fb.robot_state != board_defs.STATE_WAIT_INIT:
+            if fb.robot_state != self.board_defs.STATE_WAIT_INIT:
                 why.append(i18n.tr("arm.gate_setzero_state",
                                    i18n.state_name(fb.robot_state),
-                                   i18n.state_name(board_defs.STATE_WAIT_INIT)))
+                                   i18n.state_name(self.board_defs.STATE_WAIT_INIT)))
             self._raise_if(why, "set_zero")
         self._ack_after = self._chan.snapshot_ack()[2]
         return self._send(protocol.TID_MOTOR_SET_ZERO)
@@ -425,10 +428,10 @@ class Arm:
         if not force:
             fb = self._fresh_feedback(name)
             why = []
-            if fb.robot_state != board_defs.STATE_NORMAL:
+            if fb.robot_state != self.board_defs.STATE_NORMAL:
                 why.append(i18n.tr("arm.gate_mode_state",
                                    i18n.state_name(fb.robot_state),
-                                   i18n.state_name(board_defs.STATE_NORMAL)))
+                                   i18n.state_name(self.board_defs.STATE_NORMAL)))
             self._raise_if(why, name)
         return self._send(tid)
 
@@ -443,7 +446,7 @@ class Arm:
 
         闸门：state == 正常运行(4) **且** mode == run(1) + 遥控器离线。
 
-        ⚠ **软限位不在这里夹**（`board_defs.clamp_axis()` 给你自己夹）。板子那边确实会
+        ⚠ **软限位不在这里夹**（`self.board_defs.clamp_axis()` 给你自己夹）。板子那边确实会
         `fclip`，但**只对 `motor_inited` 为真的电机生效** —— 没初始化过的电机不受保护，
         而且它是静默夹的，你从期望角上看不出来。
         """
@@ -469,11 +472,11 @@ class Arm:
         if not force:
             fb = self._fresh_feedback(name)
             why = []
-            if fb.robot_state != board_defs.STATE_NORMAL:
+            if fb.robot_state != self.board_defs.STATE_NORMAL:
                 why.append(i18n.tr("arm.gate_ctrl_state",
                                    i18n.state_name(fb.robot_state),
-                                   i18n.state_name(board_defs.STATE_NORMAL)))
-            elif fb.mode != board_defs.MODE_RUN:
+                                   i18n.state_name(self.board_defs.STATE_NORMAL)))
+            elif fb.mode != self.board_defs.MODE_RUN:
                 why.append(i18n.tr("arm.gate_not_run", i18n.mode_name(fb.mode)))
             self._raise_if(why, name)
 
@@ -496,10 +499,10 @@ class Arm:
         if not force:
             fb = self._fresh_feedback("reset")
             why = []
-            if fb.robot_state != board_defs.STATE_NORMAL:
+            if fb.robot_state != self.board_defs.STATE_NORMAL:
                 why.append(i18n.tr("arm.gate_reset_state",
                                    i18n.state_name(fb.robot_state),
-                                   i18n.state_name(board_defs.STATE_NORMAL)))
+                                   i18n.state_name(self.board_defs.STATE_NORMAL)))
             self._check_motors_online(fb, why)
             self._raise_if(why, "reset")
         return self._send(protocol.TID_ARM_RESET)
@@ -599,13 +602,13 @@ class Arm:
                                i18n.expand_mask(fb.motor_lost_mask)))
 
     def _check_pose(self, fb, why):
-        dev = board_defs.pose_deviation_deg(fb.joint_angle)
-        if dev > board_defs.ROBOT_INIT_POSE_TOL_DEG:
+        dev = max(abs(a-b) for a, b in zip(fb.joint_angle, self.board_defs.RESET_POSE_DEG))
+        if dev > self.board_defs.ROBOT_INIT_POSE_TOL_DEG:
             worst = max(range(6), key=lambda i: abs(fb.joint_angle[i]
-                                                    - board_defs.RESET_POSE_DEG[i]))
-            why.append(i18n.tr("arm.pose_dev", dev, board_defs.ROBOT_INIT_POSE_TOL_DEG,
+                                                    - self.board_defs.RESET_POSE_DEG[i]))
+            why.append(i18n.tr("arm.pose_dev", dev, self.board_defs.ROBOT_INIT_POSE_TOL_DEG,
                                i18n.axis_name(worst), fb.joint_angle[worst],
-                               board_defs.RESET_POSE_DEG[worst]))
+                               self.board_defs.RESET_POSE_DEG[worst]))
 
     def _gripper_deg_for_send(self, gripper_m, gripper_raw_deg):
         if gripper_m is not None and gripper_raw_deg is not None:

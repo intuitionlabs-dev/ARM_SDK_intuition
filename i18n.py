@@ -21,7 +21,7 @@ self-test calls.
 """
 import re
 
-from . import board_defs
+from .board_defs import common as board_defs
 
 LANGS = ("zh", "en")
 DEFAULT_LANG = "zh"
@@ -341,14 +341,15 @@ _ZH.update({
     "main.help.lang": "界面语言（默认 zh 中文；--lang en 换成英文面板和英文报错）",
     "main.help.port": "串口设备（默认自动挑：优先板子 USB 0483:5740，退回 1a86 适配器）",
     "main.help.baud": "波特率（默认 921600）",
+    "main.help.robot_type": "H7 链路使用的上位机机械臂参数（默认 arx_x5）",
     "main.help.arm_id": "启动时「当前臂」是谁：0=CAN1/臂A，1=CAN2/臂B（默认 %d）。"
                         "**两台都在被同时驱动**，面板里按 a 随时切",
     "main.help.ctrl_hz": "0x16 下发频率（默认 100，每台）",
     "main.help.fb_hz": "面板刷新率（默认 5，按键响应不受影响）",
     "main.help.step": "初始步长 rad（%s；默认 %g）",
     "main.help.handshake": "多久没收到字节就提示握手超时",
-    "main.help.init_tol": "姿态复核容差 rad（默认 %.4f = 板上的 %.0f°）。只用于 0x18 前的弹确认和"
-                          "复位收尾的显示判据；0x02 的闸门在 sdk 里，恒为板上的 %.0f°",
+    "main.help.init_tol": "姿态复核容差 rad（默认取所选机械臂参数）。只用于 0x18 前的弹确认和"
+                          "复位收尾的显示判据；0x02 的闸门使用所选参数中的初始化容差",
     "main.help.fake": "不接硬件，用内置假板子（sdk/sim.py）",
     "main.help.fake_lost": "假板子每隔一会给「当前臂」制造这个掉线掩码（如 0x41）",
     "main.help.selftest": "离线自测，不接硬件不起 curses",
@@ -361,6 +362,7 @@ _ZH.update({
     "main.open_failed": "打开 %s 失败：%s",
     "main.permission_hint": "（多半是权限：把用户加进 dialout 组，或 sudo 跑）",
     "main.link_info": "链路 %s",
+    "main.robot_type": "上位机机械臂参数：%s",
     "main.fake_link": "假板子（--fake，不接硬件）",
     "main.two_arms": "两台臂都在被驱动：%s、%s（一条链路、每台一个 Arm）；面板上按 a 切「当前臂」，"
                      "现在看的是 %s",
@@ -700,15 +702,16 @@ _EN.update({
     "main.help.port": "serial device (default: auto-pick -- board USB 0483:5740 first, "
                       "then a 1a86 adapter)",
     "main.help.baud": "baud rate (default 921600)",
+    "main.help.robot_type": "host robot parameters for the H7 link (default arx_x5)",
     "main.help.arm_id": "which arm starts as the current one: 0=CAN1/ArmA, 1=CAN2/ArmB "
                         "(default %d). **both are driven at once**; press a to switch",
     "main.help.ctrl_hz": "0x16 send rate (default 100, per arm)",
     "main.help.fb_hz": "panel refresh rate (default 5; key handling is unaffected)",
     "main.help.step": "initial step in rad (%s; default %g)",
     "main.help.handshake": "how long without a byte before reporting a handshake timeout",
-    "main.help.init_tol": "pose-check tolerance in rad (default %.4f = %.0f deg on the board). "
+    "main.help.init_tol": "pose-check tolerance in rad (default from the selected robot parameters). "
                           "Only used for the confirm prompt before 0x18 and the reset-end "
-                          "display check; the 0x02 gate lives in sdk and is always %.0f deg",
+                          "display check; the 0x02 gate uses the selected initialization tolerance",
     "main.help.fake": "no hardware: use the built-in fake board (sdk/sim.py)",
     "main.help.fake_lost": "the fake board periodically reports this lost mask for the current "
                            "arm (e.g. 0x41)",
@@ -724,6 +727,7 @@ _EN.update({
     "main.permission_hint": "(probably permissions: add your user to the dialout group, "
                             "or run with sudo)",
     "main.link_info": "Link %s",
+    "main.robot_type": "Host robot parameters: %s",
     "main.fake_link": "fake board (--fake, no hardware)",
     "main.two_arms": "both arms are driven: %s, %s (one link, one Arm each); press a to "
                      "switch the current arm, now watching %s",

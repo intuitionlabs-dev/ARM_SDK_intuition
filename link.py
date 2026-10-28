@@ -32,7 +32,8 @@ import os
 import threading
 import time
 
-from . import board_defs, i18n, protocol
+from . import i18n, protocol
+from .board_defs import arx_x5 as board_defs, get_profile
 from .errors import LinkError, NotConnected
 
 # ==================== 口子挑选 ====================
@@ -315,6 +316,10 @@ class ArmChannel:
 class Link:
     """真串口。写加锁（多线程往同一个口写会把帧拆散），读在后台线程。
 
+    `robot_type="arx_x5"` / `"metal_arm"` 选择整条链路的上位机参数。
+    不传时沿用类的 `board_defs`（本类默认 ARX，PC 子类保留各自参数）。
+    参数选择不会修改 H7 固件或线上协议；两台臂共用所选参数。
+
     统计量（`stats()`）：`n_tx` / `n_rx` / `n_bad_arm` / `n_err_crc8` / `n_err_crc16` /
     `n_drop`。注意 **`n_tx` 是"字节写出去了"，不是"板子收到了"** —— 板子对所有命令帧都是
     静默的，受理与否只能看反馈帧里的状态有没有变。
@@ -324,10 +329,13 @@ class Link:
     `r`（`reopen()`）可以再开一轮。`auto_reconnect=False` 就退回"断了就断着"的老样子。
     """
 
+    board_defs = board_defs
+
     def __init__(self, port=None, baud=921600, *, timeout=0.1, verify_on_open=True,
                  auto_reconnect=True, reconnect_wait=RECONNECT_WAIT_S,
                  reconnect_max_wait=RECONNECT_MAX_WAIT_S,
-                 reconnect_max_tries=RECONNECT_MAX_TRIES):
+                 reconnect_max_tries=RECONNECT_MAX_TRIES, robot_type=None):
+        self.board_defs = type(self).board_defs if robot_type is None else get_profile(robot_type)
         self.port = port                  # None = open() 时自动挑
         self.baud = baud
         self.ser_timeout = timeout        # 读超时，决定收包线程多久醒一次
@@ -596,9 +604,9 @@ class Link:
 
     def channel(self, arm_id):
         """拿（必要时建）某一台臂的收包槽。arm_id 越界直接报错 —— 越界的帧板子会静默丢弃。"""
-        if not 0 <= arm_id < board_defs.ARM_NUM:
+        if not 0 <= arm_id < self.board_defs.ARM_NUM:
             raise ValueError(i18n.tr("link.arm_id_range",
-                                     board_defs.ARM_NUM - 1, board_defs.ARM_NUM, arm_id))
+                                     self.board_defs.ARM_NUM - 1, self.board_defs.ARM_NUM, arm_id))
         with self._chan_lock:
             ch = self._channels.get(arm_id)
             if ch is None:
@@ -672,7 +680,7 @@ class Link:
         now = time.monotonic()
         for tid, arm_id, payload in frames:
             self.n_rx += 1
-            if arm_id >= board_defs.ARM_NUM:
+            if arm_id >= self.board_defs.ARM_NUM:
                 # 越界 arm_id：和板子同一个口径 —— 丢弃、计数、不报错
                 self.n_bad_arm += 1
                 continue

@@ -1,7 +1,7 @@
 """通过现有 sdk.Arm 接口运行 Python 机械臂控制核心。
 
 仅转换 SDK 命令参数，不使用串口、完整字节帧或进程间通信。
-需要 SDK 接入时显式导入 LocalLink，控制核心自身无需导入 SDK。
+SDK 接入时显式导入 LocalLink；设备参数来自 sdk.board_defs 的对应机械臂模块。
 """
 
 from collections import deque
@@ -10,6 +10,7 @@ import threading
 import time
 
 from sdk import Link, LinkError, NotConnected, ProtocolError, protocol
+from sdk.board_defs import arx_x5 as board_defs
 
 from ..config import ArmConfig
 from ..diagnostics import ControlTrace
@@ -70,6 +71,8 @@ class LocalLink(Link):
     的显式时钟。重新打开后仍应保持时间递增。MotorIO 对象会被保留，其设备的
     打开和关闭由调用者负责，本链路只交付控制及停机请求。
     """
+
+    board_defs = board_defs
 
     def __init__(self, motor_io: MotorIO, *, configurations=None, background=True, collect_performance=False,
                  collect_trace=False):

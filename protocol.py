@@ -269,7 +269,7 @@ class Feedback:
     要 rad / m 用 `arm.Arm.snapshot()`。
 
     `motor_lost_mask` / `motor_inited_mask`：bit0..5 = j1..j6、bit6 = 夹爪。
-    `robot_state` / `mode` 的取值名字表在 `board_defs.py`。
+    `robot_state` / `mode` 的取值名字表在 `board_defs/common.py`。
     """
 
     mode: int
