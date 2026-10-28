@@ -33,6 +33,7 @@ import traceback
 
 from . import gripper, protocol, units
 from .board_defs import arx_x5 as board_defs
+from .board_defs import metal_arm
 from .arm import Arm
 from .errors import (CalibrationError, FeedbackStale, GateRejected,
                      GripperNotCalibrated, LinkError, NotConnected)
@@ -175,8 +176,10 @@ def test_crc(c):
             "实际 0x%02X" % protocol.crc8(b"123456789"))
     c.check("crc16(\"123456789\") == 0x6F91", protocol.crc16(b"123456789") == 0x6F91,
             "实际 0x%04X" % protocol.crc16(b"123456789"))
-    c.check("版本码 == 0xF81DD236", protocol.VERSION_CODE == 0xF81DD236,
-            "实际 0x%08X（版本串 %s）" % (protocol.VERSION_CODE, protocol.VERSION_STRING))
+    for name, defs, want in (("arx_x5", board_defs, 0xF81DD236),
+                             ("metal_arm", metal_arm, 0xD8D044AE)):
+        c.check("%s 版本码 == 0x%08X" % (name, want), defs.VERSION_CODE == want,
+                "实际 0x%08X（版本串 %s）" % (defs.VERSION_CODE, defs.VERSION_STRING))
 
 
 # ==================== 2. 整帧锚点 ====================
@@ -184,11 +187,12 @@ def test_crc(c):
 def test_anchors(c):
     c.section("2. 整帧逐字节锚点（板上 FrameEncode 的真实输出）")
     cases = [
-        ("版本帧 arm_id=0", protocol.encode(TID_VERSION, protocol.encode_version(), 0),
-         "aa550104008e36d21df899ae"),
+        ("版本帧 arm_id=0", protocol.encode(
+            TID_VERSION, protocol.encode_version(metal_arm.VERSION_CODE), 0),
+         "aa550104008eae44d0d8fea1"),
         ("版本帧 arm_id=1（只差 arm_id 和两个 CRC）",
-         protocol.encode(TID_VERSION, protocol.encode_version(), 1),
-         "aa55010401d036d21df868be"),
+         protocol.encode(TID_VERSION, protocol.encode_version(metal_arm.VERSION_CODE), 1),
+         "aa55010401d0ae44d0d80fb1"),
         ("0x02 空包", protocol.encode(TID_ARM_INIT), "aa5502000051f088"),
         ("0x18 空包", protocol.encode(TID_ARM_RESET), "aa5518000071fdb6"),
     ]
@@ -359,7 +363,7 @@ def test_resync(c):
                                             (TID_ARM_RESET, 1)], "%r" % (got,))
 
     # 一片一片喂（模拟真实串口的任意分片）
-    blob = b"".join(protocol.encode(t, protocol.encode_version(), a)
+    blob = b"".join(protocol.encode(t, protocol.encode_version(board_defs.VERSION_CODE), a)
                     for t, a in [(TID_VERSION, 0), (TID_VERSION, 1), (TID_VERSION, 0)])
     ps = protocol.FrameParser()
     got = []
@@ -410,9 +414,10 @@ def test_dispatch(c):
             "unknown=%r" % (lb.channel(1).unknown_tids,))
 
     # 版本包落在链路上
-    lb.inject_bytes(protocol.encode(TID_VERSION, protocol.encode_version(), 0))
+    lb.inject_bytes(protocol.encode(
+        TID_VERSION, protocol.encode_version(lb.board_defs.VERSION_CODE), 0))
     c.check("0x01 版本包记在链路上",
-            lb.board_version == protocol.VERSION_CODE and lb.version_seen)
+            lb.board_version == lb.board_defs.VERSION_CODE and lb.version_seen)
 
     # 0x81 也落在链路上：**不进任何一台臂**，也不许被当成"认不出的 tid"
     ls_by = tuple(range(protocol.LINK_TID_SLOT_NUM))
@@ -725,7 +730,7 @@ def test_gates(c, tmpdir):
     arm3.keepalive()
     c.check("keepalive() 发的是 0x01 且 payload 是版本码",
             lb3.last_write()[:2] == (TID_VERSION, 0)
-            and protocol.decode_version(lb3.last_write()[2]) == protocol.VERSION_CODE)
+            and protocol.decode_version(lb3.last_write()[2]) == lb3.board_defs.VERSION_CODE)
 
     # ---- 等待 / 序号 ----
     # wait_feedback 取的是**调用那一刻**的序号，等的是"比手上这帧还新的"，
@@ -809,9 +814,14 @@ def _read(path):
         return None
 
 
+_NUM_MACROS = {"RAD2DEG": 180.0 / math.pi, "DEG2RAD": math.pi / 180.0, "PI": math.pi}
+
+
 def _num(token):
-    """头文件里的一个数：去掉 f 后缀，允许简单四则（`284.0/2.0` 这种）。"""
+    """头文件里的一个数：去掉 f 后缀，展开角度宏，允许简单四则（`284.0/2.0` 这种）。"""
     t = token.strip().rstrip("fF")
+    for name, val in _NUM_MACROS.items():
+        t = re.sub(r"\b%s\b" % name, repr(val), t)
     t = re.sub(r"[^0-9eE+\-*/.() ]", "", t).strip()
     return float(eval(t, {"__builtins__": {}}, {}))   # noqa: S307 —— 只喂我们自己的头文件
 
@@ -1069,7 +1079,7 @@ def test_reconnect(c, tmpdir):
         ser.fail_reads = 1                     # 拔线：下一次 read 抛错
         down = _wait(lambda: not lk.link_up, 1.0)
         try:
-            lk.send(TID_VERSION, struct.pack("<I", protocol.VERSION_CODE))
+            lk.send(TID_VERSION, struct.pack("<I", lk.board_defs.VERSION_CODE))
             sent_ok = True
         except NotConnected:
             sent_ok = False
@@ -1132,7 +1142,7 @@ def test_reconnect(c, tmpdir):
         lk4 = Link(port, reconnect_wait=0.01, reconnect_max_wait=0.02)
         lk4.open()
         ser.chunks.append(protocol.encode(TID_VERSION,
-                                          struct.pack("<I", protocol.VERSION_CODE), 0))
+                                          struct.pack("<I", lk4.board_defs.VERSION_CODE), 0))
         c.check("重连前先收到过版本帧", _wait(lambda: lk4.board_version is not None, 1.0))
         n_drop0 = lk4.parser.n_drop
         ser.chunks.append(protocol.encode(TID_ARM_FEEDBACK, feedback_payload(), 0)[:5])
@@ -1268,8 +1278,9 @@ def test_headers(c):
     cfg = _read(os.path.join(root, "libs/frame/frame_config.h"))
     if cfg:
         s = protocol.parse_version_string(cfg)
-        c.check("FRAME_VERSION_STRING 和 SDK 一致",
-                s == protocol.VERSION_STRING, "固件里是 %r，SDK 是 %r" % (s, protocol.VERSION_STRING))
+        c.check("FRAME_VERSION_STRING 和 SDK metal_arm 一致",
+                s == metal_arm.VERSION_STRING,
+                "固件里是 %r，SDK 是 %r" % (s, metal_arm.VERSION_STRING))
 
     # ---- 码表 ----
     tid_h = _read(os.path.join(root, "libs/frame/type_id.h"))
@@ -1345,20 +1356,22 @@ def test_headers(c):
                     "头文件里是 %s" % got)
         c.check("MAX_FRAME == 263", protocol.MAX_FRAME == 263)
 
-    # ---- 软限位 / 复位位姿 ----
+    # ---- 软限位 / 复位位姿（固件是 Metal 臂，对拍 metal_arm 参数）----
     cmd_h = _read(os.path.join(root, "App/inc/gimbal_cmd_def.h"))
     if cmd_h:
         jmin = _array(cmd_h, "JOINT_ANGLE_MIN")
         jmax = _array(cmd_h, "JOINT_ANGLE_MAX")
-        c.check("JOINT_ANGLE_MIN 和 SDK 一致",
-                jmin == list(board_defs.JOINT_ANGLE_MIN), "头文件 %r" % (jmin,))
-        c.check("JOINT_ANGLE_MAX 和 SDK 一致",
-                jmax == list(board_defs.JOINT_ANGLE_MAX), "头文件 %r" % (jmax,))
+        c.check("JOINT_ANGLE_MIN 和 SDK metal_arm 一致",
+                jmin == list(metal_arm.JOINT_ANGLE_MIN), "头文件 %r" % (jmin,))
+        c.check("JOINT_ANGLE_MAX 和 SDK metal_arm 一致",
+                jmax == list(metal_arm.JOINT_ANGLE_MAX), "头文件 %r" % (jmax,))
         gmin = _scalar(cmd_h, "GRIPPER_ANGLE_MIN")
         gmax = _scalar(cmd_h, "GRIPPER_ANGLE_MAX")
-        c.check("GRIPPER_ANGLE_MAX == +142", gmax and abs(_num(gmax) - board_defs.GRIPPER_ANGLE_MAX) < 1e-9,
+        c.check("GRIPPER_ANGLE_MAX 和 SDK metal_arm 一致",
+                gmax and abs(_num(gmax) - metal_arm.GRIPPER_ANGLE_MAX) < 1e-9,
                 "头文件里是 %s" % gmax)
-        c.check("GRIPPER_ANGLE_MIN == −142", gmin and abs(_num(gmin) - board_defs.GRIPPER_ANGLE_MIN) < 1e-9,
+        c.check("GRIPPER_ANGLE_MIN 和 SDK metal_arm 一致",
+                gmin and abs(_num(gmin) - metal_arm.GRIPPER_ANGLE_MIN) < 1e-9,
                 "头文件里是 %s" % gmin)
 
     # 容差不在 arm_auto.h 里（那边只在注释里引它），真身在 robot_state.h。
@@ -1373,7 +1386,7 @@ def test_headers(c):
     if auto_c:
         m = re.search(r"ARM_RESET_ANGLE\[[^\]]*\]\s*=\s*\{(.*?)\}", auto_c, re.S)
         if m and cmd_h:
-            jmin = _array(cmd_h, "JOINT_ANGLE_MIN") or list(board_defs.JOINT_ANGLE_MIN)
+            jmin = _array(cmd_h, "JOINT_ANGLE_MIN") or list(metal_arm.JOINT_ANGLE_MIN)
             body = re.sub(r"//[^\n]*", "", m.group(1))
             vals = []
             for tok in body.split(","):
@@ -1382,8 +1395,8 @@ def test_headers(c):
                     continue
                 m2 = re.match(r"JOINT_ANGLE_MIN\[JOINT(\d)\]", tok)
                 vals.append(jmin[int(m2.group(1)) - 1] if m2 else _num(tok))
-            c.check("ARM_RESET_ANGLE == SDK 的 RESET_POSE_DEG",
-                    vals == list(board_defs.RESET_POSE_DEG),
+            c.check("ARM_RESET_ANGLE == SDK metal_arm 的 RESET_POSE_DEG",
+                    vals == list(metal_arm.RESET_POSE_DEG),
                     "固件拼出来是 %r" % (vals,))
     # ---- 拓扑 / 状态个数 ----
     def_h = _read(os.path.join(root, "App/inc/robot_def.h"))
@@ -1425,8 +1438,9 @@ def main(argv=None):
     import tempfile
 
     argv = sys.argv[1:] if argv is None else argv
-    print("sdk 离线自测 —— 协议 %s（版本码 0x%08X）"
-          % (protocol.VERSION_STRING, protocol.VERSION_CODE))
+    print("sdk 离线自测 —— 协议版本码：%s"
+          % "，".join("%s %s（0x%08X）" % (name, defs.VERSION_STRING, defs.VERSION_CODE)
+                     for name, defs in (("arx_x5", board_defs), ("metal_arm", metal_arm))))
     print("不需要硬件、不需要 pyserial。")
 
     c = Checker()

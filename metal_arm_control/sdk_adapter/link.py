@@ -6,16 +6,13 @@ SDK 接入时显式导入 LocalLink；设备参数来自 sdk.board_defs 的对�
 
 from collections import deque
 import struct
-from math import radians, degrees, isfinite
-from bisect import bisect_left
 import threading
 import time
 
 from sdk import Link, LinkError, NotConnected, ProtocolError, protocol
 from sdk.board_defs import metal_arm as board_defs
-from sdk.errors import CalibrationError
 
-from ..config import ArmConfig, GRIPPER_DISTANCES_MM, GRIPPER_ANGLES_RAD
+from ..config import ArmConfig
 from ..diagnostics import ControlTrace
 from ..interfaces import MotorIO
 from ..performance import PerformanceProbe
@@ -41,7 +38,7 @@ def _command(tid, payload, arm_id):
         raise ProtocolError("tid must be int and payload must be bytes")
     try:
         if tid == protocol.TID_VERSION:
-            if struct.unpack("<I", payload)[0] != protocol.VERSION_CODE:
+            if struct.unpack("<I", payload)[0] != board_defs.VERSION_CODE:
                 raise ValueError("SDK protocol version mismatch")
             return Command(arm_id, K.CONNECT)
         if tid in _EMPTY_COMMANDS:
@@ -57,38 +54,6 @@ def _command(tid, payload, arm_id):
         raise ValueError(f"unsupported local command tid: {tid:#x}")
     except (ValueError, struct.error) as exc:
         raise ProtocolError(str(exc)) from exc
-
-
-class _FactoryGripperCalibration:
-    """Vendor nearest-neighbour table for the intact factory gripper zero.
-
-    Matches C++ distanceToAngle/angleToDistance. Metric commands are limited
-    to 0..100 mm like SetGripperStroke; raw motor commands retain 0..2.4 rad.
-    An explicit SDK calib_store overrides this factory table.
-    """
-    @staticmethod
-    def _nearest(value, source, target):
-        if not isfinite(value):
-            raise CalibrationError('gripper value must be finite')
-        i = bisect_left(source, value)
-        if i == 0:
-            return target[0]
-        if i == len(source):
-            return target[-1]
-        return target[i-1] if value-source[i-1] < source[i]-value else target[i]
-
-    def opening_from_raw_deg(self, value):
-        return min(100., self._nearest(radians(value), GRIPPER_ANGLES_RAD, GRIPPER_DISTANCES_MM))/1000
-
-    def raw_deg_from_opening(self, value):
-        if not isfinite(value) or not 0 <= value <= 0.1:
-            raise CalibrationError('Metal factory gripper opening must be 0..0.1 m')
-        return degrees(self._nearest(value*1000, GRIPPER_DISTANCES_MM, GRIPPER_ANGLES_RAD))
-
-
-class _FactoryGripperStore:
-    def get(self, arm_id):
-        return _FactoryGripperCalibration()
 
 
 class LocalLink(Link):
@@ -116,7 +81,6 @@ class LocalLink(Link):
                    ("poll_feedback", "write_motor_requests")):
             raise TypeError("motor_io must implement MotorIO")
         self.board_defs = board_defs
-        self.gripper_calib_store = _FactoryGripperStore()
         self.configurations = tuple(configurations) if configurations is not None else (ArmConfig(), ArmConfig())
         self.controller = ControlSystem(self.configurations)
         self.motor_io = motor_io
@@ -348,7 +312,7 @@ class LocalLink(Link):
             self.n_rx += 1
         for event in result.events:
             if event.kind in ("connected", "connection_required"):
-                self.board_version = protocol.VERSION_CODE
+                self.board_version = board_defs.VERSION_CODE
                 self.version_seen = True
                 self.n_rx += 1
             elif event.kind == "calibrated":

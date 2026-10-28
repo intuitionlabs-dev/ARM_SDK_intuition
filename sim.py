@@ -163,10 +163,11 @@ class SimLink(Link):
                 board.wait_end = self._t + OFFLINE_WAIT_S
 
             if tid == protocol.TID_VERSION and len(payload) == 4:
-                if protocol.decode_version(payload) == protocol.VERSION_CODE:
+                if protocol.decode_version(payload) == self.board_defs.VERSION_CODE:
                     board.version_ok = True
-                    reply = protocol.encode(protocol.TID_VERSION,
-                                            protocol.encode_version(), arm_id)
+                    reply = protocol.encode(
+                        protocol.TID_VERSION,
+                        protocol.encode_version(self.board_defs.VERSION_CODE), arm_id)
                 # 版本码不符：板子**不回这一帧**，状态一动不动；之后发对版本码就能握手。
                 # 假板子**不模拟**真板子那"没握手时每 100 ms 自己发一帧 0x01"的行为：
                 # 下游没有一处按它判事（面板的握手播报走的是第一帧反馈），加了只会让

@@ -114,7 +114,8 @@ class Ui:
                         else self.opts.port.split("/")[-1],
                         "%d bps" % self.opts.baud)
         self.put(y, 0, title, self.attr(C_HEAD, curses.A_BOLD))
-        self.put(y, maxx - 24, "vcode 0x%08X" % protocol.VERSION_CODE, self.attr(C_DIM))
+        self.put(y, maxx - 24, "vcode 0x%08X" % self.sess.board_defs.VERSION_CODE,
+                 self.attr(C_DIM))
         y += 1
 
         link = i18n.tr("app.link_line",
@@ -161,7 +162,8 @@ class Ui:
                                        int(self.opts.handshake_timeout)), self.attr(C_ERR))
                 for i, line in enumerate([
                     i18n.tr("app.hs1"),
-                    i18n.tr("app.hs2", protocol.VERSION_CODE, protocol.VERSION_STRING),
+                    i18n.tr("app.hs2", self.sess.board_defs.VERSION_CODE,
+                            self.sess.board_defs.VERSION_STRING),
                     i18n.tr("app.hs3"),
                     i18n.tr("app.hs4"),
                     i18n.tr("app.hs5"),

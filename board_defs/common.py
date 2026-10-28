@@ -92,3 +92,13 @@ ARM_AUTO_RESET_TIME_S = 2
 
 def all_close_deg(values6, ref6, tol):
     return all(abs(a - b) <= tol for a, b in zip(values6, ref6))
+
+
+# ==================== 夹爪换算 ====================
+
+def default_gripper_store():
+    """这条链路默认的夹爪换算存储。`None` = 用文件两点标定（`GripperCalibStore`）。
+
+    型号模块可以覆盖它，给出不需要标定文件的换算（如厂家查表）。
+    """
+    return None

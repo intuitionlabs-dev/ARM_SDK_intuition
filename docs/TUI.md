@@ -62,7 +62,7 @@ TUI 为每台臂发送目标或保活，切换显示臂不会停止另一台臂�
 
 | 标识 | 来源 | 含义 |
 | --- | --- | --- |
-| `vcode 0xF81DD236` | `fnv1a32("Intuition-ARX-X5-2023-v0.3")` | 公共协议标识，ARX 与 Metal 共用 |
+| `vcode 0xXXXXXXXX` | 所选型号的 `board_defs.VERSION_CODE`：`arx_x5` 为 `0xF81DD236`，`metal_arm` 为 `0xD8D044AE` | 握手用的协议版本码，随 `--robot-type` 变化 |
 | `board_version` | H7 版本帧；PC 本地适配层填入协议码 | 握手协议版本 |
 | `package_version` | `arx-x5-control` 安装元数据，当前 `0.6.0` | 发行包版本 |
 | 源码提交 | `git rev-parse --short HEAD` | 当前源码版本 |

@@ -45,6 +45,34 @@ class ProfileTests(unittest.TestCase):
             self.assertAlmostEqual(arm.snapshot().joint_angles_deg[1], -19.75)
         self.assertIs(Link().board_defs, board_defs)
 
+    def test_default_gripper_store_follows_profile(self):
+        self.assertIsNone(Link(robot_type="arx_x5").gripper_calib_store)
+        self.assertIsNone(Link().gripper_calib_store)
+        store = Link(robot_type="metal_arm").gripper_calib_store
+        self.assertIsInstance(store, metal_arm.FactoryGripperStore)
+
+        calib = Link(robot_type="metal_arm").arm(0).calibration
+        self.assertIsInstance(calib, metal_arm.FactoryGripperCalibration)
+        self.assertAlmostEqual(calib.opening_from_raw_deg(metal_arm.GRIPPER_ANGLE_MIN), 0.0)
+        self.assertAlmostEqual(calib.opening_from_raw_deg(metal_arm.GRIPPER_ANGLE_MAX), 0.1)
+        self.assertAlmostEqual(calib.raw_deg_from_opening(0.0), 0.1146, places=3)
+        with self.assertRaises(sdk.errors.CalibrationError):
+            calib.raw_deg_from_opening(0.2)
+
+        explicit = sdk.GripperCalibStore("/nonexistent/gripper_calib.json")
+        self.assertIsNone(Arm(0, Link(robot_type="metal_arm"), calib_store=explicit).calibration)
+
+    def test_metal_tui_gripper_is_metric_by_default(self):
+        session = build_session(parse_options(["--robot-type", "metal_arm", "--fake"]))
+        payload = sdk.protocol.encode_feedback(
+            metal_arm.MODE_STOP, metal_arm.STATE_WAIT_INIT, 0, 0x7F,
+            metal_arm.RESET_POSE_DEG, (0.,) * 6, 0., (30,) * 7)
+        session.link.inject_bytes(sdk.protocol.encode(
+            sdk.protocol.TID_ARM_FEEDBACK, payload, 0))
+        snap = session.snapshot()
+        self.assertTrue(snap["fb"]["gripper_calibrated"])
+        self.assertIsNotNone(snap["fb"]["gripper"])
+
     def test_unknown_serial_profile_is_rejected(self):
         for value in ("metal", "", "unknown", 123, []):
             with self.subTest(robot_type=value), self.assertRaisesRegex(ValueError, "robot_type"):
@@ -69,10 +97,11 @@ class ProfileTests(unittest.TestCase):
                         self.assertIs(session.cur.arm.board_defs, definitions)
                         session.cur.target[1] = 0.0
                         session.jog(1, 1)
-                        if name == "metal_arm":
-                            self.assertEqual(session.cur.target[1], 0.0)  # J2 cannot go positive.
-                        else:
-                            self.assertGreater(session.cur.target[1], 0.0)
+                        self.assertGreater(session.cur.target[1], 0.0)
+                        hi = definitions.JOINT_ANGLE_MAX_RAD[1]
+                        session.cur.target[1] = hi
+                        session.jog(1, 1)
+                        self.assertEqual(session.cur.target[1], hi)  # Clamped at J2 upper limit.
 
     def test_tui_options_use_selected_tolerance_and_validate_type(self):
         self.assertEqual(parse_options([]).robot_type, "arx_x5")

@@ -336,6 +336,7 @@ class Link:
                  reconnect_max_wait=RECONNECT_MAX_WAIT_S,
                  reconnect_max_tries=RECONNECT_MAX_TRIES, robot_type=None):
         self.board_defs = type(self).board_defs if robot_type is None else get_profile(robot_type)
+        self.gripper_calib_store = self.board_defs.default_gripper_store()
         self.port = port                  # None = open() 时自动挑
         self.baud = baud
         self.ser_timeout = timeout        # 读超时，决定收包线程多久醒一次

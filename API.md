@@ -34,7 +34,6 @@ PC 的 `LocalLink` 是 `sdk.Link` 子类。构造代码见 [创建链路](docs/P
 | `sdk.GripperCalibration` / `sdk.GripperCalibStore` | 夹爪标定模型和文件存取（第 6 节） |
 | `sdk.ArError` + 7 种下级异常 | 异常层级（第 5 节） |
 | `sdk.pick_default_port` / `list_links` / `describe_port` / `usb_identity` | 串口选择（第 2 节） |
-| `sdk.PROTOCOL_VERSION` / `sdk.VERSION_CODE` | 协议版本串 / 版本码 |
 | `sdk.protocol` / `board_defs` / `units` / `gripper` | 子模块 |
 
 链路创建后，使用同一个 `sdk.Arm(arm_id, link)` 接口。单臂和双臂的初始化、保活、运动及退出示例见 [公共控制流程](docs/PYTHON.md#公共控制流程)。
@@ -128,7 +127,7 @@ Arm(arm_id=0, link=None, *, calib_store=None)
 ```
 
 `arm_id` 越界 → `ValueError`；`link=None` 时自行创建一条（`close()` 会把它关闭）。共享链路时
-`close()` 不执行操作，要关公共链路就在 `link.close()` 上关。`arm.board_defs` 在构造时取自链路；`calib_store` 显式传入时优先，否则使用后端提供的存储，最后才回退到文件标定。
+`close()` 不执行操作，要关公共链路就在 `link.close()` 上关。`arm.board_defs` 在构造时取自链路；`calib_store` 显式传入时优先，否则使用链路按型号提供的存储（Metal Arm 为厂家查表），未提供时才回退到文件标定。
 
 ### 3.1 生命周期
 
@@ -316,11 +315,15 @@ ArError
 | `AXIS_MIN` / `AXIS_MAX` / `axis_lo(i)` / `axis_hi(i)` | 上面两套拼起来的 7 轴版本 |
 | `clamp_axis(axis, value)` | → `(限幅后的值, 是否发生限幅)`。**SDK 不自动调用它**：控制核心按其参数限幅；调用方可显式检查限幅标志 |
 | `expand_mask(mask)` | 掩码 → `"j3 夹爪"` 这样的名字串 |
+| `VERSION_STRING` / `VERSION_CODE` | 握手用的协议版本串与其 FNV-1a 32 版本码，各型号独立；不匹配时单片机不回复版本帧（它自身每 100 ms 报一次码） |
 | `RESET_POSE_DEG` / `RESET_POSE_RAD` | 所选型号的六轴复位参考，分别提供度与弧度形式 |
 | `ROBOT_INIT_POSE_TOL_DEG` / `_RAD` | 20° —— 即 `init_arm()` 的位姿闸门 |
 | `KEEPALIVE_TIMEOUT_S` | 3：每台臂的有效命令保活窗口 |
 | `ARM_AUTO_RESET_TIME_S` | 2：一键复位的轨迹时长（参考） |
 | `pose_deviation_deg(joint_deg6)` / `all_close_deg(v6, ref6, tol)` | 位姿偏差 / 逐元素比较 |
+| `default_gripper_store()` | 链路默认的夹爪换算存储：ARX X5 返回 `None`（用文件两点标定），Metal Arm 返回 `FactoryGripperStore` |
+| `GRIPPER_DISTANCES_MM` / `GRIPPER_ANGLES_RAD`（Metal） | 厂家查表的开口（mm）/ 电机角（rad）两列，最近邻插值 |
+| `FactoryGripperCalibration` / `FactoryGripperStore`（Metal） | 厂家查表换算对象及其存储；`opening_from_raw_deg()` / `raw_deg_from_opening()`，开口范围 0..0.1 m |
 | `state_name(v)` / `mode_name(v)` | 码 → 名字（无法识别的码返回 `"未知(n)"`） |
 
 ### `sdk.units` —— deg ↔ rad
@@ -335,7 +338,6 @@ ArError
 
 | 名字 | 说明 |
 |---|---|
-| `VERSION_STRING` = `"Intuition-ARX-X5-2023-v0.3"` / `VERSION_CODE` = `0xF81DD236` | 握手用；不匹配时单片机不回复版本帧（它自身每 100 ms 报一次码） |
 | `DEFAULT_ARM_ID` = 0 | |
 | `TID_VERSION`(0x01) `TID_ARM_INIT`(0x02) `TID_MOTOR_SET_ZERO`(0x10) `TID_MOTOR_SET_ZERO_ACK`(0x11) `TID_ARM_START`(0x12) `TID_ARM_GRAVITY`(0x13) `TID_ARM_STOP`(0x14) `TID_ARM_DAMPING`(0x15) `TID_ARM_CTRL_POS`(0x16) `TID_ARM_CTRL_POS_VEL`(0x17) `TID_ARM_RESET`(0x18) `TID_ARM_FEEDBACK`(0x80) `TID_LINK_STATUS`(0x81) | 码表 |
 | `FEEDBACK` / `SET_ZERO_ACK` 等长度常量 | `FB_LEN`=63、`CTRL_POS_LEN`=28、`CTRL_POS_VEL_LEN`=52、`SET_ZERO_ACK_LEN`=12、`LINK_STATUS_LEN`=88 |
@@ -349,7 +351,7 @@ ArError
 
 ### `sdk.gripper` —— 夹爪两点标定
 
-这里描述文件标定接口；Metal PC 默认换算对象见第 3.5 节。H7 的 `robot_type` 不会切换夹爪标定存储。
+这里描述文件标定接口。`robot_type=metal_arm` 的链路默认使用 `sdk.board_defs.metal_arm.FactoryGripperStore`（厂家最近邻查表，H7 与 PC 相同），`robot_type=arx_x5` 默认使用本节的 JSON 两点标定；链路通过 `board_defs.default_gripper_store()` 取默认存储。
 
 | 名字 | 说明 |
 |---|---|
