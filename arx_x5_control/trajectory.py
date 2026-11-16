@@ -71,7 +71,7 @@ class JointQuinticReference:
         self.current = Waypoint(0.0)
         self.initialized = False
         self.curve = None
-        self.target = 0.0
+        self.target = Waypoint(0.0)
         self.elapsed = 0.0
 
     def follow(self, point):
@@ -80,13 +80,15 @@ class JointQuinticReference:
         self.curve = None
 
     def update(self, target, feedback, period=0.002):
+        if not isinstance(target, Waypoint):
+            target = Waypoint(target)
         if not self.initialized:
             self.follow(Waypoint(feedback))
         if self.curve is None or target != self.target:
-            self.curve = Spline(self.current, Waypoint(target), self.duration)
+            self.curve = Spline(self.current, target, self.duration)
             self.target, self.elapsed = target, 0.0
         self.elapsed = min(self.duration, self.elapsed + period)
-        self.current = (Waypoint(self.target) if self.elapsed >= self.duration
+        self.current = (self.target if self.elapsed >= self.duration
                         else self.curve.sample(self.elapsed))
         return self.current
 

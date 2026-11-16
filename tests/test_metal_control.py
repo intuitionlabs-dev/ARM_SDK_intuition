@@ -37,8 +37,8 @@ class ProtocolTests(unittest.TestCase):
             sdk.protocol.encode_ctrl_pos(angles)
         for limit in (0, 0.5):
             payload = sdk.protocol.encode_ctrl_pos(angles, limit)
-            self.assertEqual(len(payload), 32)
-            self.assertEqual(sdk.protocol.decode_ctrl_pos(payload), (angles, limit))
+            self.assertEqual(len(payload), 80)
+            self.assertEqual(sdk.protocol.decode_ctrl_pos(payload), (angles, limit, (0,) * 6, (0,) * 6))
         for limit in (-1, float("nan"), float("inf"), 1e40):
             with self.subTest(limit=limit), self.assertRaises(ValueError):
                 sdk.protocol.encode_ctrl_pos(angles, limit)

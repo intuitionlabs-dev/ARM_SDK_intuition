@@ -9,7 +9,7 @@ ARX X5 和 Metal Arm 使用相同的 `sdk.Arm` 控制方法、SI 单位、状态
 | H7 上位机 `robot_type` | `arx_x5`，默认值 | `metal_arm` |
 | PC 包 | `arx_x5_control` | `metal_arm_control` |
 | 参数模块 | `sdk.board_defs.arx_x5` | `sdk.board_defs.metal_arm` |
-| 版本串 / 版本码 | `Intuition-ARX-X5-2023-v0.5` / `0xFA1DD55C` | `Intuition-Metal-Arm-v0.6` / `0xD6D04188` |
+| 版本串 / 版本码 | `Intuition-ARX-X5-2023-v0.6` / `0xFD1DDA15` | `Intuition-Metal-Arm-v0.7` / `0xD7D0431B` |
 | PC 默认动力学模型 | `2023` | `metal_with_gripper` |
 | PC 可选模型 | `2023`、`master`、`2025` | `metal_with_gripper`、`metal_no_gripper` |
 

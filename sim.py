@@ -200,7 +200,7 @@ class SimLink(Link):
                 # 三重闸门：state==normal & mode==run & 遥控器离线（最后一条查不到）
                 if board.state == board_defs.STATE_NORMAL and board.mode == board_defs.MODE_RUN:
                     try:
-                        target, _ = protocol.decode_ctrl_pos(payload)
+                        target, _, _, _ = protocol.decode_ctrl_pos(payload)
                     except ValueError:
                         pass
                     else:

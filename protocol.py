@@ -1,6 +1,6 @@
 """线上协议层：CRC、版本码、码表、组帧 / 切帧、payload 编解码。
 
-**这一层只用线上单位**（deg / deg·s⁻¹ / ℃），一比特都不换算 —— 换算是 `arm.py` 的事。
+**这一层只用线上单位**（deg / deg·s⁻¹ / deg·s⁻² / N·m / ℃），一比特都不换算 —— 换算是 `arm.py` 的事。
 这样协议层可以脱离硬件、脱离单位策略单独测，也保证"线上到底长什么样"在这里一眼看全。
 
 协议版本串与版本码按型号定义在 `board_defs` 各模块（`VERSION_STRING` / `VERSION_CODE`）；
@@ -134,7 +134,8 @@ PKT_JOINT_NUM = 6
 PKT_MOTOR_NUM = 7
 
 FB_LEN = 63                    # 4×u8 + 6f + 6f + f + 7×u8
-CTRL_POS_LEN = 32              # 7 个角度和 1 个夹爪力矩上限
+_CTRL_POS = struct.Struct("<20f")
+CTRL_POS_LEN = _CTRL_POS.size
 SET_ZERO_ACK_LEN = 12          # u8 + u8[7] + u32
 LINK_STATUS_LEN = 84           # 10×u32 + 11×u32
 
@@ -176,27 +177,39 @@ def encode(tid, payload=b"", arm_id=DEFAULT_ARM_ID):
     return body + bytes((c & 0xFF, (c >> 8) & 0xFF))
 
 
-def encode_ctrl_pos(angles_deg7, gripper_torque_limit_nm):
-    """编码 0x16 的角度目标和夹爪力矩上限。"""
-    if len(angles_deg7) != PKT_JOINT_NUM + 1:
-        raise ValueError("0x16 要 %d 个角度，收到 %d" % (PKT_JOINT_NUM + 1, len(angles_deg7)))
+def encode_ctrl_pos(angles_deg7, gripper_torque_limit_nm, *,
+                    joint_vel_deg_s=None, joint_acc_deg_s2=None):
+    """编码 0x16：关节角、夹爪角、夹爪力矩上限、关节速度和加速度。"""
+    angles = tuple(angles_deg7)
+    if len(angles) != PKT_JOINT_NUM + 1:
+        raise ValueError("0x16 要 %d 个角度，收到 %d" % (PKT_JOINT_NUM + 1, len(angles)))
+
+    def derivatives(values, name):
+        result = (0.0,) * PKT_JOINT_NUM if values is None else tuple(values)
+        if len(result) != PKT_JOINT_NUM:
+            raise ValueError(f"{name}需要 {PKT_JOINT_NUM} 项")
+        return result
+
+    velocity = derivatives(joint_vel_deg_s, "关节速度")
+    acceleration = derivatives(joint_acc_deg_s2, "关节加速度")
     limit = float(gripper_torque_limit_nm)
-    if not isfinite(limit) or limit < 0:
-        raise ValueError("夹爪力矩上限必须为有限非负数")
+    values = (*angles, limit, *velocity, *acceleration)
+    if not all(isfinite(value) for value in values) or limit < 0:
+        raise ValueError("控制字段必须有限，夹爪力矩上限必须非负")
     try:
-        return struct.pack("<8f", *angles_deg7, limit)
+        return _CTRL_POS.pack(*values)
     except OverflowError as exc:
-        raise ValueError("位置控制字段超出 float32 范围") from exc
+        raise ValueError("控制字段超出 float32 范围") from exc
 
 
 def decode_ctrl_pos(payload):
-    """读取 0x16 的七个角度目标和夹爪力矩上限。"""
+    """返回 (七个目标角, 夹爪力矩上限, 六个目标速度, 六个目标加速度)。"""
     if len(payload) != CTRL_POS_LEN:
-        raise ValueError("0x16 载荷必须为 32 字节")
-    values = struct.unpack("<8f", payload)
-    if not all(isfinite(value) for value in values) or values[-1] < 0:
-        raise ValueError("角度和夹爪力矩上限必须有限，且夹爪力矩上限必须非负")
-    return values[:-1], values[-1]
+        raise ValueError(f"0x16 载荷必须为 {CTRL_POS_LEN} 字节")
+    values = _CTRL_POS.unpack(payload)
+    if not all(isfinite(value) for value in values) or values[7] < 0:
+        raise ValueError("控制字段必须有限，夹爪力矩上限必须非负")
+    return values[:7], values[7], values[8:14], values[14:20]
 
 
 def encode_version(code):
@@ -214,7 +227,7 @@ def encode_feedback(mode, robot_state, motor_lost_mask, motor_inited_mask,
 
     板子只发这一帧，上位机不主动发；这里存在是为了让 **0x80 的布局只有一处定义**：
     模拟板子（`sim.py`）和离线自测都拿它组帧，字段一挪两边同时错，不会各抄一份。
-    `temps` 要 7 个（板子那边 NAN 写成 0），其余单位同 `Feedback`（deg / deg·s⁻¹ / ℃）。
+    `temps` 要 7 个（板子那边 NAN 写成 0），其余单位同 `Feedback`（deg / deg·s⁻¹ / deg·s⁻² / N·m / ℃）。
     """
     if len(joint_deg) != PKT_JOINT_NUM or len(jvel_deg) != PKT_JOINT_NUM:
         raise ValueError("0x80 的关节角和角速度都要 %d 个" % PKT_JOINT_NUM)
@@ -256,7 +269,7 @@ def encode_link_status(rx_total, rx_by_tid, crc8_err, crc16_err, drop_bytes,
 
 @dataclass(frozen=True)
 class Feedback:
-    """一帧 0x80。**字段是线上单位**（deg / deg·s⁻¹ / ℃），不是 SI。
+    """一帧 0x80。**字段是线上单位**（deg / deg·s⁻¹ / deg·s⁻² / N·m / ℃），不是 SI。
 
     不可变（frozen）：`link` 每收到一帧就整个换一个新的，读侧拿到的那份永远不会被改写。
     要 rad / m 用 `arm.Arm.snapshot()`。

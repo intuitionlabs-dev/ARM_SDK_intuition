@@ -8,7 +8,7 @@ from ..protocol import fnv1a32
 from .common import *  # Shared protocol names are also part of each robot profile.
 
 # 版本串与固件 App/profiles/metal.c 一致；版本码为 FNV-1a 32 位哈希。
-VERSION_STRING = "Intuition-Metal-Arm-v0.6"
+VERSION_STRING = "Intuition-Metal-Arm-v0.7"
 VERSION_CODE = fnv1a32(VERSION_STRING)
 
 JOINT_ANGLE_MIN = (-160.0, -180.0, 0.0, -123.0, -85.0, -145.0)

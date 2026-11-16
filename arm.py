@@ -436,8 +436,11 @@ class Arm:
         return self._send(tid)
 
     def send_ctrl_pos(self, joint_rad, gripper_m=None, *, gripper_torque_limit_nm, gripper_raw_deg=None,
-                      force=False):
-        """发送 0x16 位置指令。关节角使用 rad，夹爪力矩上限使用 N·m。
+                      joint_vel_rad_s=None, joint_acc_rad_s2=None, force=False):
+        """发送 0x16 轨迹目标。关节角使用 rad，夹爪力矩上限使用 N·m。
+
+        `joint_vel_rad_s` 和 `joint_acc_rad_s2` 各含六项，单位分别为 rad/s 和 rad/s²。
+        省略对应参数时，该组目标为零。
 
         夹爪目标三选一：
           - `gripper_m=0.03`        按标定换算成原始角（要先标定）
@@ -463,9 +466,16 @@ class Arm:
             self._raise_if(why, name)
 
         angles_deg = units.rad_seq_to_deg(angles)
+        vel_deg_s = None
+        acc_deg_s2 = None
+        if joint_vel_rad_s is not None:
+            vel_deg_s = units.rad_s_seq_to_deg_s(units.check_joint_seq(joint_vel_rad_s, "关节速度"))
+        if joint_acc_rad_s2 is not None:
+            acc_deg_s2 = units.rad_seq_to_deg(units.check_joint_seq(joint_acc_rad_s2, "关节加速度"))
         grip_deg = self._gripper_deg_for_send(gripper_m, gripper_raw_deg)
         return self._send(protocol.TID_ARM_CTRL_POS,
-                          protocol.encode_ctrl_pos(list(angles_deg) + [grip_deg], gripper_torque_limit_nm))
+                          protocol.encode_ctrl_pos((*angles_deg, grip_deg), gripper_torque_limit_nm,
+                                                   joint_vel_deg_s=vel_deg_s, joint_acc_deg_s2=acc_deg_s2))
 
     def reset(self, *, force=False):
         """0x18 一键复位：走一段 `ARM_AUTO_RESET_TIME_S` 的轨迹回复位位姿，**不做夹爪找零**，

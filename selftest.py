@@ -172,8 +172,8 @@ def test_crc(c):
             "实际 0x%02X" % protocol.crc8(b"123456789"))
     c.check("crc16(\"123456789\") == 0x6F91", protocol.crc16(b"123456789") == 0x6F91,
             "实际 0x%04X" % protocol.crc16(b"123456789"))
-    for name, defs, want in (("arx_x5", board_defs, 0xFA1DD55C),
-                             ("metal_arm", metal_arm, 0xD6D04188)):
+    for name, defs, want in (("arx_x5", board_defs, 0xFD1DDA15),
+                             ("metal_arm", metal_arm, 0xD7D0431B)):
         c.check("%s 版本码 == 0x%08X" % (name, want), defs.VERSION_CODE == want,
                 "实际 0x%08X（版本串 %s）" % (defs.VERSION_CODE, defs.VERSION_STRING))
 
@@ -185,10 +185,10 @@ def test_anchors(c):
     cases = [
         ("版本帧 arm_id=0", protocol.encode(
             TID_VERSION, protocol.encode_version(metal_arm.VERSION_CODE), 0),
-         "aa550104008e8841d0d6f4b5"),
+         "aa550104008e1b43d0d7c7da"),
         ("版本帧 arm_id=1（只差 arm_id 和两个 CRC）",
          protocol.encode(TID_VERSION, protocol.encode_version(metal_arm.VERSION_CODE), 1),
-         "aa55010401d08841d0d605a5"),
+         "aa55010401d01b43d0d736ca"),
         ("0x02 空包", protocol.encode(TID_ARM_INIT), "aa5502000051f088"),
         ("0x18 空包", protocol.encode(TID_ARM_RESET), "aa5518000071fdb6"),
     ]
@@ -210,14 +210,17 @@ def test_roundtrip(c):
         c.check("%s 空包往返（arm_id=1）" % name,
                 len(got) == 1 and got[0] == (tid, 1, b""), "解析出 %r" % (got,))
 
-    # 0x16 包含七个角度和一个夹爪力矩上限。
+    # 0x16 同时携带关节终点导数和夹爪力矩上限。
     angles = [-12.5, 0.5, 30.25, 0.0, -45.5, 119.0, -141.75]
     ps = protocol.FrameParser()
-    got = ps.feed(protocol.encode(TID_ARM_CTRL_POS, protocol.encode_ctrl_pos(angles, 0.5)))
-    ok = len(got) == 1 and got[0][:2] == (TID_ARM_CTRL_POS, 0) and len(got[0][2]) == 32
+    velocity = (1.0, -2.0, 3.0, -4.0, 5.0, -6.0)
+    acceleration = (-0.5, 1.0, -1.5, 2.0, -2.5, 3.0)
+    payload = protocol.encode_ctrl_pos(angles, 0.5, joint_vel_deg_s=velocity, joint_acc_deg_s2=acceleration)
+    got = ps.feed(protocol.encode(TID_ARM_CTRL_POS, payload))
+    ok = len(got) == 1 and got[0][:2] == (TID_ARM_CTRL_POS, 0) and len(got[0][2]) == 80
     vals = protocol.decode_ctrl_pos(got[0][2]) if ok else ()
-    c.check("0x16 往返（32 字节，含夹爪力矩上限）",
-            ok and vals == (tuple(angles), 0.5),
+    c.check("0x16 轨迹目标往返（80 字节）",
+            ok and vals == (tuple(angles), 0.5, velocity, acceleration),
             "长度 %d / 值 %r" % (len(got[0][2]) if got else -1, vals))
 
     # 0x80：四个 u8 + 6f + 6f + f + 7u8，**按 1 字节对齐读**（uint8 段和 float 段之间没有填充）
@@ -552,23 +555,23 @@ def test_gripper(c, tmpdir):
     play.send_ctrl_pos([0.0] * 6, gripper_m=0.085, gripper_torque_limit_nm=0.5)
     tid, aid, pay = lb.last_write()
     c.check("gripper_m= 走标定换算成 raw deg",
-            tid == TID_ARM_CTRL_POS and aid == 0 and len(pay) == 32
-            and abs(struct.unpack("<8f", pay)[6] - 142.0) < 1e-4,
+            tid == TID_ARM_CTRL_POS and aid == 0 and len(pay) == 80
+            and abs(protocol.decode_ctrl_pos(pay)[0][6] - 142.0) < 1e-4,
             "写出的载荷 %r" % (pay,))
 
     play.send_ctrl_pos([0.0] * 6, gripper_m=0.0, gripper_torque_limit_nm=0.5)
     c.check("闭合开口 0 m 下发负角",
-            abs(struct.unpack("<8f", lb.last_write()[2])[6] - (-142.0)) < 1e-5)
+            abs(protocol.decode_ctrl_pos(lb.last_write()[2])[0][6] - (-142.0)) < 1e-5)
 
     lb.clear()
     play.send_ctrl_pos([0.0] * 6, gripper_raw_deg=-100.0, gripper_torque_limit_nm=0.5)
     c.check("gripper_raw_deg= 直给、不过标定",
-            abs(struct.unpack("<8f", lb.last_write()[2])[6] - (-100.0)) < 1e-5)
+            abs(protocol.decode_ctrl_pos(lb.last_write()[2])[0][6] - (-100.0)) < 1e-5)
 
     lb.clear()
     play.send_ctrl_pos([0.0] * 6, gripper_torque_limit_nm=0.5)
     c.check("夹爪两个都不给 → 保持当前（取反馈里的原始角）",
-            abs(struct.unpack("<8f", lb.last_write()[2])[6] - 0.0) < 1e-6)
+            abs(protocol.decode_ctrl_pos(lb.last_write()[2])[0][6] - 0.0) < 1e-6)
 
     try:
         play.send_ctrl_pos([0.0] * 6, gripper_m=0.05, gripper_raw_deg=-10.0, gripper_torque_limit_nm=0.5)
@@ -665,8 +668,8 @@ def test_gates(c, tmpdir):
 
     # ---- 0x16 控制帧 ----
     fb(ST.STATE_NORMAL, ST.MODE_RUN)
-    case("send_ctrl_pos 在正常运行和 RUN 时发送 32 字节",
-         lambda: arm.send_ctrl_pos([0.1] * 6, gripper_torque_limit_nm=0.5), TID_ARM_CTRL_POS, 32)
+    case("send_ctrl_pos 在正常运行和 RUN 时发送 80 字节",
+         lambda: arm.send_ctrl_pos([0.1] * 6, gripper_torque_limit_nm=0.5), TID_ARM_CTRL_POS, 80)
     case("send_ctrl_pos 要求夹爪力矩上限",
          lambda: arm.send_ctrl_pos([0.1] * 6), exc=TypeError)
     fb(ST.STATE_NORMAL, ST.MODE_STOP)
@@ -676,7 +679,7 @@ def test_gates(c, tmpdir):
     case("send_ctrl_pos 在待初始化：挡",
          lambda: arm.send_ctrl_pos([0.1] * 6, gripper_torque_limit_nm=0.5), exc=GateRejected)
     case("send_ctrl_pos force=True：绕过预检",
-         lambda: arm.send_ctrl_pos([0.1] * 6, gripper_torque_limit_nm=0.5, force=True), TID_ARM_CTRL_POS, 32)
+         lambda: arm.send_ctrl_pos([0.1] * 6, gripper_torque_limit_nm=0.5, force=True), TID_ARM_CTRL_POS, 80)
     case("send_ctrl_pos 关节数不对：本地就报错（参数错误，不是闸门）",
          lambda: arm.send_ctrl_pos([0.1] * 5, gripper_torque_limit_nm=0.5, force=True), exc=ValueError)
 

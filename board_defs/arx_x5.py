@@ -6,7 +6,7 @@ from ..protocol import fnv1a32
 from .common import *  # Shared protocol names are also part of each robot profile.
 
 # 版本串与固件 App/profiles/arx_x5.c 一致；版本码为 FNV-1a 32 位哈希。
-VERSION_STRING = "Intuition-ARX-X5-2023-v0.5"
+VERSION_STRING = "Intuition-ARX-X5-2023-v0.6"
 VERSION_CODE = fnv1a32(VERSION_STRING)
 
 JOINT_ANGLE_MIN = (-115.0, 0.5, 0.5, -90.0, -90.0, -112.87)

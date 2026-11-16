@@ -68,7 +68,10 @@ class CommandLayer:
                     point = Waypoint(solved[i], self.plan.current[i].velocity * PLAN_SPEED_COMP_COEF[i],
                                      self.plan.current[i].acceleration)
                 elif arm.mode == ArmMode.RUN:
-                    point = self.quintic[i].update(solved[i], arm.joint_angle[i])
+                    target = Waypoint(solved[i])
+                    if self.auto != "reset" and arm.control is not None and solved[i] == arm.control.joint_angle[i]:
+                        target = Waypoint(solved[i], arm.control.joint_vel[i], arm.control.joint_acc[i])
+                    point = self.quintic[i].update(target, arm.joint_angle[i])
                 else:
                     point = Waypoint(td.position, td.velocity)
                 if not all(isfinite(v) for v in (point.position, point.velocity, point.acceleration)):
