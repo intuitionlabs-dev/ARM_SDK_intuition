@@ -1,5 +1,7 @@
 # 机械臂 SDK
 
+`feat/pc-local-control` 分支提供 PC 本地控制系统及其共享 SDK，包含 ARX X5 / Metal Arm 控制核心、CAN 直连、动力学模型和本地 TUI。
+
 SDK 通过 `sdk.Arm` 提供机械臂连接、初始化、关节控制、模式切换、复位和反馈读取接口。ARX X5 与 Metal Arm 共用调用方法及单位，设备参数由创建链路时选择的配置提供。
 
 | 调用方式 | 用途 | 入口文档 |
@@ -12,7 +14,7 @@ SDK 通过 `sdk.Arm` 提供机械臂连接、初始化、关节控制、模式�
 Python 要求 3.10 及以上。发行包 `arx-x5-control 0.6.0` 包含公共 SDK 和两个型号的 PC 控制实现。
 
 ```bash
-git clone --branch feat/metal-arm-control https://github.com/intuitionlabs-dev/ARM_SDK_intuition.git
+git clone --branch feat/pc-local-control https://github.com/intuitionlabs-dev/ARM_SDK_intuition.git
 cd ARM_SDK_intuition
 python3 -m pip install '.[can]'
 ```
@@ -102,5 +104,19 @@ H7 与 PC 的默认夹爪换算都由所选型号给出：ARX X5 用文件两点
 | [CAN 接口](docs/CAN.md) / [USB-CAN 扩展](docs/USB_CAN.md) | 通道、进程、传输配置与设备扩展 |
 | [日志](docs/LOGGING.md) / [控制周期](docs/TIMING.md) | 会话文件、指标及测量方法 |
 | [ARX 型号说明](arx_x5_control/README.md) / [Metal 型号说明](metal_arm_control/README.md) | 各型号配置与实现入口 |
-| [验证入口](HANDOFF_METAL_ARM.md#验证) | 离线测试、模拟运行和覆盖范围 |
+| [验证入口](#离线验证) | 离线测试、模拟运行和覆盖范围 |
 | [ARX 来源与许可证](arx_x5_control/gravity_compensation/PROVENANCE.md) / [Metal 来源与许可证](metal_arm_control/gravity_compensation/PROVENANCE.md) | 算法、模型和参数来源 |
+
+## 离线验证
+
+安装后在仓库根目录运行：
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 -m sdk.tui --selftest
+metal-arm-control --demo --seconds 8 --log-level ERROR
+metal-arm-sdk-demo --log-level ERROR
+arx-x5-control --demo --log-level ERROR
+```
+
+单元测试覆盖型号配置、Metal 控制流程、CAN 线程与进程、厂家协议对照及 TUI 渲染。模拟运行不连接设备；实机负载、动力学和总线时序需要硬件验证。

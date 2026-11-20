@@ -1,7 +1,7 @@
 name: Control SDK tests
 on:
   push:
-    branches: [master, main, 'feat/metal-arm-control']
+    branches: ['feat/pc-local-control']
   pull_request:
 permissions:
   contents: read

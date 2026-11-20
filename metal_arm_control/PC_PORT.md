@@ -1,6 +1,6 @@
 # Metal Arm 控制参数
 
-公共调度、命令和轨迹接口见 [PC 控制核心](../docs/PC_CONTROL.md)，模块职责见 [SDK 架构](../HANDOFF_METAL_ARM.md#代码结构)。本页记录 Metal 的增益、动力学和硬件维护参数；关节限位与复位角见 [型号对照](../docs/ROBOTS.md#关节与夹爪参数)。
+公共调度、命令和轨迹接口见 [PC 控制核心](../docs/PC_CONTROL.md)。本页记录 Metal 的增益、动力学和硬件维护参数；关节限位与复位角见 [型号对照](../docs/ROBOTS.md#关节与夹爪参数)。
 
 ## 参数来源
 

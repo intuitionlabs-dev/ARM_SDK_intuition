@@ -35,7 +35,7 @@ packages = ["sdk", "sdk.board_defs", "sdk.tui", "arx_x5_control", "arx_x5_contro
 "arx_x5_control" = ["*.md"]
 "arx_x5_control.usb2can" = ["transports.json", "README.md"]
 "arx_x5_control.gravity_compensation" = ["models/*.urdf", "models/LICENSE", "LICENSE", "PROVENANCE.md"]
-"sdk" = ["README.md", "API.md", "HANDOFF_METAL_ARM.md", "docs/*.md", "config/README.md"]
+"sdk" = ["README.md", "API.md", "docs/*.md", "config/README.md"]
 
 "metal_arm_control" = ["*.md"]
 "metal_arm_control.usb2can" = ["transports.json", "README.md"]

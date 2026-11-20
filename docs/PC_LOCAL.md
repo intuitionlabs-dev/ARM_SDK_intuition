@@ -120,4 +120,4 @@ python3 -m unittest discover -s tests -v
 python3 -m arx_x5_control.sdk_adapter.demo
 ```
 
-本仓库测试覆盖后端接口对齐、独立参数、H7/TUI 选型、Metal 状态流程及 CAN 退出。测试命令和覆盖范围见 [验证说明](../HANDOFF_METAL_ARM.md#验证)。
+本仓库测试覆盖后端接口对齐、独立参数、H7/TUI 选型、Metal 状态流程及 CAN 退出。测试命令和覆盖范围见 [验证说明](../README.md#离线验证)。

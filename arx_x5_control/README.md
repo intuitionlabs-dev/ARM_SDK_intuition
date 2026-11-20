@@ -38,4 +38,4 @@
 | [CAN 配置](CAN_IO.md) / [传输配置](usb2can/README.md) | 电机路由及传输类 |
 | [控制周期](CONTROL_TIMING.md) / [日志](LOGGING.md) | 输出周期及测量入口 |
 | [来源与许可证](gravity_compensation/PROVENANCE.md) | 模型、算法及参数来源 |
-| [验证入口](../HANDOFF_METAL_ARM.md#验证) | SDK 自测、单元测试与模拟运行 |
+| [验证入口](../README.md#离线验证) | SDK 自测、单元测试与模拟运行 |
