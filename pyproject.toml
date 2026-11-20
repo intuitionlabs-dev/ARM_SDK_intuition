@@ -5,38 +5,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "arx-x5-control"
 version = "0.6.0"
-description = "Transport-independent ARX X5 and Metal Arm control cores with a shared SDK"
+description = "Python SDK and terminal UI for ARX X5 and Metal Arm via H7 controllers"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
-
-[project.optional-dependencies]
-can = ["pyserial>=3.5"]
-
-[project.scripts]
-arx-x5-control = "arx_x5_control.__main__:main"
-arx-x5-sdk-demo = "arx_x5_control.sdk_adapter.demo:main"
-arx-x5-can-check = "arx_x5_control.can_check:main"
-arx-x5-tui = "arx_x5_control.sdk_adapter.tui:main"
-
-metal-arm-control = "metal_arm_control.__main__:main"
-metal-arm-sdk-demo = "metal_arm_control.sdk_adapter.demo:main"
-metal-arm-can-check = "metal_arm_control.can_check:main"
-metal-arm-tui = "metal_arm_control.sdk_adapter.tui:main"
+dependencies = ["pyserial>=3.5"]
 
 [tool.setuptools]
-packages = ["sdk", "sdk.board_defs", "sdk.tui", "arx_x5_control", "arx_x5_control.sdk_adapter", "arx_x5_control.usb2can", "arx_x5_control.gravity_compensation", "metal_arm_control", "metal_arm_control.sdk_adapter", "metal_arm_control.usb2can", "metal_arm_control.gravity_compensation"]
+packages = ["sdk", "sdk.board_defs", "sdk.tui"]
+include-package-data = false
 
 [tool.setuptools.package-dir]
 "sdk" = "."
-"arx_x5_control" = "arx_x5_control"
 
 [tool.setuptools.package-data]
-"arx_x5_control" = ["*.md"]
-"arx_x5_control.usb2can" = ["transports.json", "README.md"]
-"arx_x5_control.gravity_compensation" = ["models/*.urdf", "models/LICENSE", "LICENSE", "PROVENANCE.md"]
-"sdk" = ["README.md", "API.md", "HANDOFF_METAL_ARM.md", "docs/*.md", "config/README.md"]
-
-"metal_arm_control" = ["*.md"]
-"metal_arm_control.usb2can" = ["transports.json", "README.md"]
-"metal_arm_control.gravity_compensation" = ["models/*.urdf", "models/LICENSE", "LICENSE", "PROVENANCE.md"]
+"sdk" = ["README.md", "API.md", "docs/*.md", "config/README.md"]
+"sdk.board_defs" = ["LICENSE.MakerMods"]

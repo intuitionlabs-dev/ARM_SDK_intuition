@@ -1,5 +1,8 @@
 """Metal Arm limits from metal-python-ros bccf3c8; user-confirmed reset pose."""
 
+# Vendor limits and gripper lookup data: Copyright (c) 2025 MakerMods.
+# SPDX-License-Identifier: MIT; see LICENSE.MakerMods in this directory.
+
 import math
 from bisect import bisect_left
 

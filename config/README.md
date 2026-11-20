@@ -6,8 +6,8 @@
 
 | 连接 | 默认方式 | 配置要求 |
 | --- | --- | --- |
-| H7 或 PC，ARX X5 | JSON 两点标定 | 初始化找零后测量开口端点 |
-| H7 或 PC，Metal Arm | 厂家查表，0..0.1 m | 有效出厂零点；显式存储可覆盖 |
+| H7，ARX X5 | JSON 两点标定 | 初始化找零后测量开口端点 |
+| H7，Metal Arm | 厂家查表，0..0.1 m | 有效出厂零点；显式存储可覆盖 |
 
 默认存储由所选型号给出（`sdk.board_defs.<profile>.default_gripper_store()`）；`sdk.Arm(..., calib_store=...)` 可改为 JSON 两点标定。
 
@@ -22,7 +22,7 @@
 | `GripperCalibStore(path=...)` | 显式指定可写文件 |
 | `arm.reload_calibration()` | 重新加载被其他程序更新的标定 |
 
-不同设备复用同一 `arm_id` 时，应选用各自的标定文件。夹爪拆装、找零或零点改变后需复核标定。生成的 JSON 是本机设备数据，仓库忽略该文件；电机传输配置 `usb2can/transports.json` 单独管理。
+不同设备复用同一 `arm_id` 时，应选用各自的标定文件。夹爪拆装、找零或零点改变后需复核标定。生成的 JSON 是本机设备数据，仓库忽略该文件。
 
 ## 标定工具
 

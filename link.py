@@ -317,7 +317,7 @@ class Link:
     """真串口。写加锁（多线程往同一个口写会把帧拆散），读在后台线程。
 
     `robot_type="arx_x5"` / `"metal_arm"` 选择整条链路的上位机参数。
-    不传时沿用类的 `board_defs`（本类默认 ARX，PC 子类保留各自参数）。
+    不传时沿用类的 `board_defs`（默认 ARX）。
     参数选择不会修改 H7 固件或线上协议；两台臂共用所选参数。
 
     统计量（`stats()`）：`n_tx` / `n_rx` / `n_bad_arm` / `n_err_crc8` / `n_err_crc16` /
