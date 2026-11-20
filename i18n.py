@@ -36,70 +36,63 @@ _ZH.update({
     "session.tid.gravity": "0x13 重力补偿",
     "session.tid.stop": "0x14 停止",
     "session.tid.damping": "0x15 阻尼",
-    "session.arm_id.type": "--arm-id 要是整数（0..%d）",
-    "session.arm_id.range": "--arm-id 只能是 0..%d（板上 ARM_NUM=%d）",
-    "session.switch_arm": "面板切到 %s（两台都在被驱动，切走的那台继续跟它自己的目标角）",
+    "session.arm_id.type": "--arm-id 必须为整数，范围 0..%d",
+    "session.arm_id.range": "--arm-id 范围为 0..%d，臂数为 %d",
+    "session.switch_arm": "当前臂：%s；双臂控制继续运行",
     "session.no_feedback": "无反馈",
-    "session.seeded": "[%s] 目标角已对齐反馈（%s）",
-    "session.no_feedback_yet": "还没收到反馈帧，先别动 —— 没有反馈就无法把目标对齐当前位姿",
-    "session.grip_limit_m": "[%s] 夹爪请求 %.4f m 超出软限位 [%.4f, %.4f] m，已停在 %.4f m",
-    "session.axis_limit": "[%s] %s 请求 %.2f° 超出软限位 [%.2f, %.2f]，已停在 %.2f°",
+    "session.seeded": "[%s] 目标已对齐反馈（%s）",
+    "session.no_feedback_yet": "尚无反馈，无法对齐目标",
+    "session.grip_limit_m": "[%s] 夹爪目标 %.4f m 超限 [%.4f, %.4f] m，已限幅至 %.4f m",
+    "session.axis_limit": "[%s] %s 目标 %.2f° 超限 [%.2f, %.2f]°，已限幅至 %.2f°",
     "session.step": "[%s] 步长 = %s",
-    "session.send_gated": "[%s] %s 没发出去：%s",
-    "session.send_error": "[%s] %s 出错：%s",
+    "session.send_gated": "[%s] %s 未发送：%s",
+    "session.send_error": "[%s] %s 发送失败：%s",
     "session.sent_mode": "[%s] 已发 %s（%s）",
-    "session.init_no_fb": "[%s] 还没有反馈帧，不发 0x02（不知道板子在哪一步）",
+    "session.init_no_fb": "[%s] 尚无反馈，初始化未发送",
     "session.init_pose_bad":
-        "[%s] 姿态超出复位位姿 ±%.0f°（%s）—— 先在失能/阻尼下摆回 %s；"
-        "再按一次 i 可强发（板子判据相同，超了照样静默丢弃）",
-    "session.init_force": "[%s] （强发 0x02：跳过姿态这一条预检，其余闸门照查）",
+        "[%s] 偏离复位角超过 %.0f°（%s）。先在 STOP/阻尼下调整至 %s；再按 i 仅跳过姿态预检，固件仍会检查",
+    "session.init_force": "[%s] 跳过姿态预检，其他条件仍检查",
     "session.what.init": "0x02 初始化",
     "session.init_sent":
-        "[%s] 已发 0x02 初始化：板子将跑「一键复位 → 一键夹爪找零」，约 7 s，别松保活",
-    "session.what.reset": "0x18 一键复位",
+        "[%s] 已发送 0x02 初始化；持续保活，等待反馈确认完成",
+    "session.what.reset": "0x18 复位",
     "session.reset_sent":
-        "[%s] 已发 0x18 一键复位：约 2 s 回到 %s，跑完停 damping、**0x16 自动停发**"
-        "（要续位控按 s）",
+        "[%s] 已发送 0x18：约 2 s 回复位 %s，完成后进入阻尼；按 s 恢复位控",
     "session.what.setzero": "0x10 设零点",
-    "session.setzero_sent": "[%s] ！！已发 0x10 设零点：整条臂会失能、把当前位姿写成零点 ！！",
-    "session.stop_all_fail": "[%s] 退出前补发 0x14 失败：%s",
+    "session.setzero_sent": "[%s] 已发送 0x10：六轴当前位姿将覆盖原零点",
+    "session.stop_all_fail": "[%s] 退出 STOP 发送失败：%s",
     "session.reopen_fail": "重开链路失败：%s",
-    "session.reopened": "链路已重开：%s（两台的目标角会在下一帧反馈后重新对齐）",
-    "session.link_lost": "链路断了：%s（正在自动重连，试满就停手等按 r）",
-    "session.link_lost_manual": "链路断了：%s（自动重连是关的 —— 检查接线后按 r 重开）",
-    "session.relinked": "链路已自动重连：%s（两台的目标角会在下一帧反馈后重新对齐）",
+    "session.reopened": "链路已重开：%s；下一帧反馈后对齐双臂目标",
+    "session.link_lost": "链路断开：%s；正在重连，达到上限后按 r 重试",
+    "session.link_lost_manual": "链路断开：%s；检查接线后按 r 重开",
+    "session.relinked": "链路已自动重连：%s；下一帧反馈后对齐双臂目标",
     "session.relink_giveup":
-        "自动重连已经停手：试满 %d 次都没连上（%s）。插好线按 r 再开一轮。",
-    "session.fake_board": "假板子",
-    "session.ctrl_tx_fail": "[%s] 控制帧发不出去：%s",
-    "session.keepalive_tx_fail": "[%s] 保活帧发不出去：%s",
+        "重连已停止：%d 次失败（%s）；检查接线后按 r 重试",
+    "session.fake_board": "模拟器",
+    "session.ctrl_tx_fail": "[%s] 控制帧发送失败：%s",
+    "session.keepalive_tx_fail": "[%s] 保活发送失败：%s",
     "session.hs_fb_only":
-        "已收到反馈帧，但一帧版本包都没看到（板子握手前每 100 ms 自己发一帧版本包，"
-        "多半是那几帧丢了；本机版本码 0x%08X 可对照）",
-    "session.hs_ok": "已握手：板子版本码 0x%08X 相符（%s）",
+        "已收到反馈，尚无版本帧；SDK 版本码 0x%08X",
+    "session.hs_ok": "握手成功：固件版本 0x%08X 匹配（%s）",
     "session.hs_bad":
-        "版本码不符：板子 0x%08X / 本机 0x%08X —— 板子不回你的版本帧"
-        "（它自己每 100 ms 报一次版本码）；把两边版本串改一致后重发就能握手，"
-        "不用复位板子",
+        "版本不匹配：固件 0x%08X，SDK 0x%08X；请使用匹配的型号、SDK 和固件",
     "session.why.first_fb": "首帧反馈",
     "session.grip_uncal":
-        "[%s] 夹爪没标定：面板上那一行显原始角，想要米就在终端跑 "
-        "python3 -m sdk.calibrate_gripper --arm-id %d",
+        "[%s] 夹爪未标定，显示原始角；标定：python3 -m sdk.calibrate_gripper --arm-id %d",
     "session.state_changed": "[%s] 状态 %s → %s",
-    "session.why.wait_init": "重新回到待初始化",
-    "session.why.reset_tail": "复位收尾",
+    "session.why.wait_init": "返回待初始化",
+    "session.why.reset_tail": "复位结束",
     "session.reset_skipped":
-        "[%s] 复位**疑似没执行**：%s 仍偏离复位位姿超过 ±%.0f°"
-        "（规划池满时板上会静默跳过；或中途被打断）",
-    "session.reset_done": "[%s] 复位完成，6 个关节已到复位位姿",
+        "[%s] 复位未到位：%s 偏差仍超过 %.0f°；动作可能未执行或被中断",
+    "session.reset_done": "[%s] 六轴复位完成",
     "session.mode_changed": "[%s] 模式 %s → %s",
-    "session.mode_tail_normal": "（一键动作收尾的正常返回，臂已松劲）",
-    "session.why.enter_run": "进入 run",
-    "session.ctrl_stopped": "（0x16 已自动停发）",
-    "session.motor_lost": "[%s] 电机掉线: %s（掩码 0x%02X）",
-    "session.motor_recovered": "[%s] 掉线已恢复（掩码 0x%02X）",
-    "session.why.reseed": "补播种",
-    "session.initing_note": "[%s] 初始化中：应在复位阶段，马上轮到夹爪找零",
+    "session.mode_tail_normal": "（动作结束，进入阻尼）",
+    "session.why.enter_run": "进入 RUN",
+    "session.ctrl_stopped": "（位置目标已停发）",
+    "session.motor_lost": "[%s] 电机离线：%s，掩码 0x%02X",
+    "session.motor_recovered": "[%s] 电机恢复在线，掩码 0x%02X",
+    "session.why.reseed": "重新对齐目标",
+    "session.initing_note": "[%s] 初始化中，等待完成反馈",
     "session.pose_dev_item": "%s 偏 %.1f°",
     "session.pose_dev_sep": "，",
 })
@@ -109,95 +102,76 @@ _EN.update({
     "session.tid.gravity": "0x13 gravity comp",
     "session.tid.stop": "0x14 stop",
     "session.tid.damping": "0x15 damping",
-    "session.arm_id.type": "--arm-id must be an integer (0..%d)",
-    "session.arm_id.range": "--arm-id must be 0..%d (board ARM_NUM=%d)",
+    "session.arm_id.type": "--arm-id must be an integer in 0..%d",
+    "session.arm_id.range": "--arm-id must be 0..%d; arm count: %d",
     "session.switch_arm":
-        "panel now on %s (both arms keep being driven; the one you left keeps "
-        "tracking its own target angles)",
+        "Current arm: %s; both arms remain active",
     "session.no_feedback": "no feedback",
-    "session.seeded": "[%s] target angles seeded from feedback (%s)",
+    "session.seeded": "[%s] Target aligned to feedback (%s)",
     "session.no_feedback_yet":
-        "no feedback frame yet, hold off -- without feedback the target cannot be "
-        "aligned to the current pose",
+        "No feedback; cannot align target",
     "session.grip_limit_m":
-        "[%s] gripper asked for %.4f m, outside soft limits [%.4f, %.4f] m; "
-        "stopped at %.4f m",
+        "[%s] Gripper target %.4f m outside [%.4f, %.4f] m; clamped to %.4f m",
     "session.axis_limit":
-        "[%s] %s asked for %.2f°, outside soft limits [%.2f, %.2f]; stopped at %.2f°",
+        "[%s] %s target %.2f° outside [%.2f, %.2f]°; clamped to %.2f°",
     "session.step": "[%s] step = %s",
     "session.send_gated": "[%s] %s not sent: %s",
-    "session.send_error": "[%s] %s failed: %s",
+    "session.send_error": "[%s] %s send failed: %s",
     "session.sent_mode": "[%s] sent %s (%s)",
     "session.init_no_fb":
-        "[%s] no feedback frame yet, not sending 0x02 (the board's step is unknown)",
+        "[%s] No feedback; initialization not sent",
     "session.init_pose_bad":
-        "[%s] pose is more than ±%.0f° away from the reset pose (%s) -- move it "
-        "back to %s under disable/damping first; pressing i again forces 0x02 "
-        "through (the board uses the same test, so a bad pose is dropped silently "
-        "either way)",
+        "[%s] Reset-pose error exceeds %.0f° (%s). Move to %s in STOP/damping; press i again to skip the host pose check. Firmware checks still apply",
     "session.init_force":
-        "[%s] (forcing 0x02: the pose pre-check is skipped, every other gate still "
-        "applies)",
+        "[%s] Skipping pose pre-check; other checks remain active",
     "session.what.init": "0x02 init",
     "session.init_sent":
-        "[%s] sent 0x02 init: the board runs \"one-key reset -> one-key gripper "
-        "homing\", about 7 s; keep the keepalive going",
+        "[%s] Sent 0x02 initialization; keep alive and wait for completion feedback",
     "session.what.reset": "0x18 reset",
     "session.reset_sent":
-        "[%s] sent 0x18 reset: about 2 s back to %s, then it stops in damping and "
-        "**the 0x16 stream stops by itself** (press s to resume position control)",
+        "[%s] Sent 0x18: reset to %s in about 2 s, then damping; press s to resume position control",
     "session.what.setzero": "0x10 set zero",
     "session.setzero_sent":
-        "[%s] !! sent 0x10 set zero: the whole arm disables and the current pose "
-        "becomes the zero point !!",
-    "session.stop_all_fail": "[%s] sending 0x14 on exit failed: %s",
+        "[%s] Sent 0x10: current joint pose will overwrite all six joint zero points",
+    "session.stop_all_fail": "[%s] Exit STOP send failed: %s",
     "session.reopen_fail": "reopening the link failed: %s",
     "session.reopened":
-        "link reopened: %s (both arms re-seed their targets on the next feedback frame)",
+        "Link reopened: %s; both targets align on the next feedback frame",
     "session.link_lost":
-        "link down: %s (auto-reconnecting; it stops after the retry cap, then press r)",
+        "Link lost: %s; reconnecting, press r if retries are exhausted",
     "session.link_lost_manual":
-        "link down: %s (auto-reconnect is off -- check the wiring, then press r)",
+        "Link lost: %s; check wiring, then press r to reopen",
     "session.relinked":
-        "the link came back on its own: %s (both arms re-seed their targets on the next "
-        "feedback frame)",
+        "Link reconnected: %s; both targets align on the next feedback frame",
     "session.relink_giveup":
-        "auto-reconnect stopped: %d tries, none of them worked (%s). Check the cable, then "
-        "press r for another round.",
-    "session.fake_board": "fake board",
-    "session.ctrl_tx_fail": "[%s] control frame not sent: %s",
-    "session.keepalive_tx_fail": "[%s] keepalive frame not sent: %s",
+        "Reconnect stopped after %d failures (%s); check wiring, then press r",
+    "session.fake_board": "simulator",
+    "session.ctrl_tx_fail": "[%s] Control frame send failed: %s",
+    "session.keepalive_tx_fail": "[%s] Keepalive send failed: %s",
     "session.hs_fb_only":
-        "feedback frame received, but not a single version packet (before handshake "
-        "the board sends one by itself every 100 ms -- those frames were probably "
-        "lost; local version code 0x%08X to compare)",
-    "session.hs_ok": "handshake done: board version code 0x%08X matches (%s)",
+        "Feedback received, no version frame yet; SDK version 0x%08X",
+    "session.hs_ok": "Handshake complete: firmware version 0x%08X matches (%s)",
     "session.hs_bad":
-        "version code mismatch: board 0x%08X / local 0x%08X -- the board does not "
-        "answer your version frame (it announces its own code every 100 ms); make "
-        "the two version strings match and send again -- no board reset needed",
+        "Version mismatch: firmware 0x%08X, SDK 0x%08X; check profile, SDK and firmware",
     "session.why.first_fb": "first feedback frame",
     "session.grip_uncal":
-        "[%s] gripper not calibrated: that panel row shows the raw angle; for "
-        "metres run python3 -m sdk.calibrate_gripper --arm-id %d in a terminal",
+        "[%s] Gripper uncalibrated; showing raw angle. Run: python3 -m sdk.calibrate_gripper --arm-id %d",
     "session.state_changed": "[%s] state %s -> %s",
-    "session.why.wait_init": "back to WAIT_INIT",
-    "session.why.reset_tail": "reset finished",
+    "session.why.wait_init": "returned to WAIT_INIT",
+    "session.why.reset_tail": "reset ended",
     "session.reset_skipped":
-        "[%s] reset **probably did not run**: %s still more than ±%.0f° from the "
-        "reset pose (the board skips silently when the temp plan pool is full, or "
-        "it got interrupted)",
-    "session.reset_done": "[%s] reset done, all 6 joints are at the reset pose",
+        "[%s] Reset target not reached: %s error exceeds %.0f°; motion may have been skipped or interrupted",
+    "session.reset_done": "[%s] All six joints reached the reset pose",
     "session.mode_changed": "[%s] mode %s -> %s",
     "session.mode_tail_normal":
-        "(normal return from a one-key action, the arm has gone slack)",
-    "session.why.enter_run": "entering run",
-    "session.ctrl_stopped": "(0x16 stopped automatically)",
-    "session.motor_lost": "[%s] motor(s) lost: %s (mask 0x%02X)",
-    "session.motor_recovered": "[%s] motors back online (mask 0x%02X)",
-    "session.why.reseed": "late seed",
+        "(motion ended; damping)",
+    "session.why.enter_run": "entered RUN",
+    "session.ctrl_stopped": "(position stream stopped)",
+    "session.motor_lost": "[%s] Motors offline: %s, mask 0x%02X",
+    "session.motor_recovered": "[%s] Motors online again, mask 0x%02X",
+    "session.why.reseed": "realign target",
     "session.initing_note":
-        "[%s] initializing: reset phase expected, gripper homing comes next",
+        "[%s] Initializing; waiting for completion feedback",
     "session.pose_dev_item": "%s off by %.1f°",
     "session.pose_dev_sep": ", ",
 })
@@ -206,92 +180,85 @@ _EN.update({
 _ZH.update({
     # 每项对应一行帮助，空行不进入文案表。
     "app.help.select": "1-6 / 0 / Tab      选中 j1..j6 / 夹爪 / 下一个",
-    "app.help.jog": "← ↓ / → ↑ / + -    选中轴 ∓ 一个步长（只改目标角，实际下发按 --ctrl-hz）",
+    "app.help.jog": "← ↓ / → ↑ / + -    调整选中轴目标，按 --ctrl-hz 周期发送",
     "app.help.step":
-        "[ / ]              步长档（rad）0.005 0.01 0.02 0.05 0.1 0.2，默认 0.02；"
-        "夹爪标定过时那一行改用米档 0.0005 0.001 0.002 0.005 0.01 0.02",
+        "[ / ]              切换步长：关节 rad，已标定夹爪 m",
     "app.help.arm":
-        "a                  切「当前臂」（两台都在被同时驱动，切走的那台继续跑它自己的目标角）",
+        "a                  切换当前臂，双臂控制继续运行",
     "app.help.align":
-        "c                  目标角对齐当前反馈（重播种；板子切档/掉线后建议先按一下）",
+        "c                  目标对齐当前反馈",
     "app.help.modes":
-        "s / d / v / x      0x12 进 run / 0x15 阻尼 / 0x13 重力补偿 / 0x14 停止(松劲)",
+        "s / d / v / x      RUN / 阻尼 / 重力补偿 / STOP 软停机",
     "app.help.init":
-        "i                  0x02 初始化（板子跑一键复位 → 一键夹爪找零，约 7 s；"
-        "待初始化态、或正常运行态的 stop/damping 档发）",
+        "i                  初始化：待初始化，或正常运行的 STOP/阻尼模式",
     "app.help.reset":
-        "o                  0x18 一键复位（只收臂回复位位姿 0/0.5/0.5/0/0/0 度，约 2 s；"
-        "正常运行态发）",
-    "app.help.setzero": "z                  0x10 设零点 —— 要逐字敲 SETZERO 再敲 CONFIRM 才发！",
-    "app.help.hold": "Space              暂停/继续发 0x16（冻结目标，臂保持不动，不是停机）",
+        "o                  回复位：正常运行时执行，约 2 s",
+    "app.help.setzero": "z                  覆盖六轴零点，须输入 SETZERO 和 CONFIRM",
+    "app.help.hold": "Space              暂停/继续位置目标流；暂停不是停机",
     "app.help.misc":
-        "r / e / h / q      重开串口 / 清事件 / 本帮助 / 退出（任一台正发 0x16 时会二次确认）",
+        "r / e / h / q      重开链路 / 清事件 / 帮助 / 退出",
     "app.help.si1":
-        "**面板上的单位是 SI**：关节 rad / rad·s⁻¹、夹爪 m（要标定，见 sdk/README「夹爪标定」）；",
-    "app.help.si2": "夹爪没标定时那一行显示的是**电机原始角**（rad），软限位由所选机型决定。",
+        "界面单位：关节 rad、rad/s，已标定夹爪 m。",
+    "app.help.si2": "夹爪未标定时显示原始角 rad，限位取自型号配置。",
     "app.help.si3":
-        "事件日志里角度一律写 deg（和固件对得上），和面板上差一个 57.3 —— 不是哪个错了。",
-    "app.help.gate1": "状态从反馈帧派生，不自己造：0x16 只在「正常运行 + run + 没暂停」时才发；",
-    "app.help.gate2": "其它时候每 150 ms 补一帧 0x01 保活（板子 3 s 无有效帧就把臂切回阻尼）。",
+        "日志中的角度使用 deg。",
+    "app.help.gate1": "位置目标仅在正常运行、RUN 且未暂停时发送。",
+    "app.help.gate2": "其他时间每 150 ms 保活；3 s 无有效命令触发通信超时。",
     "app.help.gate3":
-        "被板子丢弃的 0x16 也算保活（板子的 s_last_rx_ms 在分派之前刷新），所以放心发。",
+        "发送成功只代表提交，请通过反馈确认执行结果。",
     "app.help.two1":
-        "**两台臂各自跑各的状态机**：i/o/s/d/v/x 只作用于「当前臂」（底下那行 > 标着的那台）。",
-    "app.help.two2": "一条链路上开两个进程会互相抢字节，所以一次只开这一个。",
-    "app.help.exit": "退出不发 0x14：目标冻结、臂保持，约 3 s 后板子自己因无帧进 damping。",
+        "i/o/s/d/v/x 仅作用于 > 标记的当前臂。",
+    "app.help.two2": "同一串口只运行一个控制进程。",
+    "app.help.exit": "默认退出仅关闭链路，固件约 3 s 后处理超时；--stop-on-exit 可发送 STOP。",
     # 面板
     "app.log_head": "# sdk.tui 启动 %s port=%s fake=%s 当前臂=%d\n",
-    "app.log_warn": "警告：日志文件打不开(%s)，只在屏幕上显示",
+    "app.log_warn": "日志文件打开失败（%s），仅显示在屏幕",
     "app.too_small": "窗口太小（%dx%d），至少要 12 行 60 列",
     "app.title": "机械臂控制台  [当前] %s  %s  %s",
-    "app.fake_tag": "（--fake 假板子）",
+    "app.fake_tag": "（模拟模式）",
     "app.link_line": "链路 %s",
-    "app.link_down": "**断开**",
+    "app.link_down": "断开",
     "app.link_retry": "（自动重连中 %d/%d）",
     "app.link_retry_on": "（自动重连中）",
-    "app.link_giveup": "（自动重连已停：试满 %d 次，按 r 再开一轮）",
+    "app.link_giveup": "（重连失败 %d 次；按 r 重试）",
     "app.link_manual": "（按 r 重开）",
     "app.stats": "  收%u(0x80 %u, %.0f Hz)  发%u  丢字节%u  CRC错%u",
-    "app.streaming": "在发",
+    "app.streaming": "发送中",
     "app.idle": "停发",
-    "app.lost_tag": "  **掉线**",
+    "app.lost_tag": "  离线",
     "app.arms_line": "两台：%s",
-    "app.no_fb": "还没收到任何反馈帧……",
-    "app.link_dead": "串口断了：检查接线；自动重连开着的话它自己会回来，也可以按 r 立刻重开。",
-    "app.hs_timeout": "握手超时（%ds 没收到一个字节）—— 按顺序查：",
-    "app.hs1": "1) 接线方向：适配器 TX → 板子 RX、适配器 RX → 板子 TX、GND 共地"
-               "（板子跑 UART 那条时是 RS485 半双工）；",
-    "app.hs2": "2) 波特率 921600；3) 板子上跑的是不是这份固件（比对版本码 0x%08X / 版本串 %s）；",
-    "app.hs3": "4) 版本码不符时板子不回你的版本帧，但它**自己每 100 ms 发一帧**"
-               "（对不上事件区会报「版本码不符」）；把版本串改对再发就能握手，"
-               "不用复位板子；",
-    "app.hs4": "5) 板子的 ROBOT_LINK 是编译期二选一（UART/USB），和插的那个口子要对得上；",
-    "app.hs5": "6) 这两条查完还没字节，看下面事件里「版本码不符」那一条。",
+    "app.no_fb": "尚无反馈",
+    "app.link_dead": "串口断开；检查接线和重连状态，可按 r 重开",
+    "app.hs_timeout": "握手超时（%d s 无反馈），请检查：",
+    "app.hs1": "1) 检查供电，以及 USB CDC 或 RS485 接线。",
+    "app.hs2": "2) 核对串口波特率 921600，版本码 0x%08X，版本串 %s。",
+    "app.hs3": "3) SDK 型号参数须与运行的固件匹配。",
+    "app.hs4": "4) 固件 ROBOT_LINK（UART/USB）须与接线一致。",
+    "app.hs5": "5) 查看事件区的链路或版本错误。",
     "app.lost_prefix": "  掉线: ",
     "app.uninit_prefix": "  未初始化: ",
-    "app.grip_limit_note": "（夹爪软限位要一次成功设零才生效）",
+    "app.grip_limit_note": "（夹爪软限位依赖初始化成功）",
     "app.ctrl_prefix": "控制帧 %s",
     "app.hold_tag": "（已暂停 Space）",
     "app.ctrl_meta": "  %.0f Hz  步长 %s  选中 %s",
-    "app.initing": "初始化中 %.1f s（复位 → 夹爪找零）  保活中",
+    "app.initing": "初始化 %.1f s，保活中",
     "app.resetting": "复位中 %.1f s（目标 %s rad）  保活中",
     "app.table_head": " 轴    目标角        反馈角        偏差      软限位(rad)      温度/单位",
     "app.grip_uncal_hint":
-        "夹爪未标定：那一行是**电机原始角**(rad)，软限位 ∓%.3f rad。"
-        "想要米就跑 python3 -m sdk.calibrate_gripper --arm-id %d",
+        "夹爪未标定，显示原始角 rad，上限 %.3f rad；标定：python3 -m sdk.calibrate_gripper --arm-id %d",
     "app.setzero_ack": "上次设零 0x11: %s  耗时 %d ms  结果 %s",
     "app.setzero_unconfirmed":
-        "  未确认(1)=达妙本来就在读数 0 附近，无法证明写进去了 —— 不是故障",
+        "  未确认(1)：无法确认零点写入，不等同于失败",
     "app.hotkeys":
         "a 切臂  1-6/0/Tab 选轴  ←↓→↑/+- 步进  [/] 步长  c 对齐  s run  "
         "d 阻尼  x 停  v 重力  i 初始化  o 复位  z 设零  Space 暂停  "
         "h 帮助  q 退出",
     # 按键与对话框
     "app.events_cleared": "事件已清",
-    "app.quit_confirm": "有臂正发/曾发控制帧，确定退出？(y/n) ",
-    "app.no_fb_align": "还没反馈帧，没法对齐",
-    "app.why_manual": "手动 c",
-    "app.hold_toggle": "0x16 流已%s（目标冻结，臂保持；真松劲请按 x）",
+    "app.quit_confirm": "有臂处于控制或暂停状态，确定退出？(y/n) ",
+    "app.no_fb_align": "尚无反馈，无法对齐",
+    "app.why_manual": "手动对齐",
+    "app.hold_toggle": "位置目标流已%s；暂停不是停机，STOP 按 x",
     "app.hold_paused": "暂停",
     "app.hold_resumed": "继续",
     "app.tid.start": "0x12 启动",
@@ -299,123 +266,118 @@ _ZH.update({
     "app.tid.gravity": "0x13 重力补偿",
     "app.tid.stop": "0x14 停止",
     "app.reset_pose_warn":
-        "姿态离复位位姿超过 ±%.4f rad（%s）—— 复位期间是 run 档、臂会**使劲收拢**，行程里别站人",
+        "偏离复位角超过 %.4f rad（%s）；复位会驱动机械臂，请清空运动路径",
     "app.pose_dev_sep": "，",
-    "app.reset_confirm": "确定运行一键复位？(y/n) ",
-    "app.reset_cancelled": "一键复位已取消",
-    "app.setzero_no_fb": "还没反馈帧，不发 0x10",
-    "app.setzero_state": "0x10 只能在「待初始化」发（现在 %s）",
-    "app.setzero_warn1": "0x10 会把**当前位姿**写成零点，并覆盖电机里的原零点！",
+    "app.reset_confirm": "确定回复位？(y/n) ",
+    "app.reset_cancelled": "复位已取消",
+    "app.setzero_no_fb": "尚无反馈，设零未发送",
+    "app.setzero_state": "设零要求待初始化，当前为 %s",
+    "app.setzero_warn1": "设零会以六轴当前位姿覆盖原零点。",
     "app.setzero_warn2": "当前姿态(rad)：%s（复位位姿 %s）",
-    "app.setzero_step1": "第1步/2：把机械臂摆到基准位姿后逐字输入 SETZERO >",
-    "app.setzero_cancel1": "设零已取消（第 1 步没通过）",
-    "app.setzero_step2": "第2步/2：再逐字输入 CONFIRM 真正发送 0x10 >",
-    "app.setzero_cancel2": "设零已取消（第 2 步没通过）",
+    "app.setzero_step1": "1/2：摆到基准位姿后输入 SETZERO >",
+    "app.setzero_cancel1": "设零已取消：第 1 步未确认",
+    "app.setzero_step2": "2/2：输入 CONFIRM 发送设零命令 >",
+    "app.setzero_cancel2": "设零已取消：第 2 步未确认",
 })
 
 # 命令行提示
 _ZH.update({
-    "main.cli_description": "机械臂上位机控制台（curses 全屏面板）。UART / USB 两条链路、两台臂都能跑。",
+    "main.cli_description": "H7 双臂控制台，支持 USB CDC 和 RS485。",
     "main.epilog": "按 h 看按键表；--selftest / --fake 都不需要硬件。",
-    "main.help.lang": "界面语言（默认 zh 中文；--lang en 换成英文面板和英文报错）",
-    "main.help.port": "串口设备（默认自动挑：优先板子 USB 0483:5740，退回 1a86 适配器）",
+    "main.help.lang": "界面与消息语言：zh 中文、en 英文（默认 zh）",
+    "main.help.port": "串口路径；默认优先板载 USB，其次 1a86 适配器",
     "main.help.baud": "波特率（默认 921600）",
     "main.help.robot_type": "H7 链路使用的上位机机械臂参数（默认 arx_x5）",
-    "main.help.arm_id": "启动时「当前臂」是谁：0=CAN1/臂A，1=CAN2/臂B（默认 %d）。"
-                        "**两台都在被同时驱动**，面板里按 a 随时切",
+    "main.help.arm_id": "当前臂：0=CAN1/A，1=CAN2/B（默认 %d）；按 a 切换",
     "main.help.ctrl_hz": "0x16 下发频率（默认 100，每台）",
     "main.help.fb_hz": "面板刷新率（默认 5，按键响应不受影响）",
     "main.help.step": "初始步长 rad（%s；默认 %g）",
-    "main.help.handshake": "多久没收到字节就提示握手超时",
-    "main.help.init_tol": "姿态复核容差 rad（默认取所选机械臂参数）。只用于 0x18 前的弹确认和"
-                          "复位收尾的显示判据；0x02 的闸门使用所选参数中的初始化容差",
-    "main.help.fake": "不接硬件，用内置假板子（sdk/sim.py）",
-    "main.help.fake_lost": "假板子每隔一会给「当前臂」制造这个掉线掩码（如 0x41）",
+    "main.help.handshake": "无反馈时的握手超时提示阈值，单位 s",
+    "main.help.init_tol": "复位确认与到位判断容差，单位 rad；默认取型号参数，不改变初始化预检",
+    "main.help.fake": "使用 H7 协议模拟器，不连接硬件",
+    "main.help.fake_lost": "周期模拟所选臂的电机掉线掩码，如 0x41",
     "main.help.selftest": "离线自测，不接硬件不起 curses",
-    "main.help.log": "把事件追加写到文件（用 .log 名字，*.json 被 gitignore）",
-    "main.help.stop_on_exit": "退出前给**两台**补发 0x14（默认不发：只停 0x16，约 3 s 后板子自己进 damping）",
-    "main.bad_step": "--step 只能是 %s 之一（单位是 rad）",
+    "main.help.log": "追加事件日志到指定文件",
+    "main.help.stop_on_exit": "退出前向双臂发送 STOP；默认仅关闭链路",
+    "main.bad_step": "--step 必须取自 %s，单位 rad",
     "main.no_device": "链路设备 %s 不存在。\n  %s",
-    "main.no_links": "    （一个都没有：两条链路都没插）",
-    "main.no_pyserial": "缺 pyserial：pip3 install -r sdk/requirements.txt",
+    "main.no_links": "    未找到候选串口",
+    "main.no_pyserial": "缺少 pyserial；安装：python3 -m pip install pyserial",
     "main.open_failed": "打开 %s 失败：%s",
-    "main.permission_hint": "（多半是权限：把用户加进 dialout 组，或 sudo 跑）",
+    "main.permission_hint": "串口权限不足；请检查设备权限或 dialout 组",
     "main.link_info": "链路 %s",
     "main.robot_type": "上位机机械臂参数：%s",
-    "main.fake_link": "假板子（--fake，不接硬件）",
-    "main.two_arms": "两台臂都在被驱动：%s、%s（一条链路、每台一个 Arm）；面板上按 a 切「当前臂」，"
-                     "现在看的是 %s",
-    "main.usb_note": "板子 USB CDC：波特率 %d 在这条上无意义（CDC 是包传输）",
-    "main.unknown_kind": "这个口子既不是板子 USB(0483:5740)也不是 1a86 适配器，"
-                         "确认板子的 ROBOT_LINK 和它是对得上的",
-    "main.stopped": "已给 %s 补发 0x14 停止。",
+    "main.fake_link": "H7 协议模拟器，无硬件连接",
+    "main.two_arms": "双臂：%s、%s；当前 %s，按 a 切换",
+    "main.usb_note": "USB CDC 不使用波特率设置 %d 控制传输速度",
+    "main.unknown_kind": "未识别链路类型，请核对端口与固件 ROBOT_LINK 配置",
+    "main.stopped": "已向 %s 发送 STOP。",
     "main.stop_sep": "、",
-    "main.exit_note": "已停发两台的 0x16（目标冻结、臂保持）。约 3 s 收不到有效帧，板子会把"
-                      "臂切回 damping（总模式不变）；要立刻松劲按 x，或用 --stop-on-exit。",
+    "main.exit_note": "已停止双臂目标流并关闭链路；固件约 3 s 后处理通信超时。",
 })
 
 # 自测项目与结果
 _ZH.update({
-    "selftest.hdr_sdk": "1) sdk 离线自测（协议 / 闸门 / 假板子）",
-    "selftest.hdr_tui": "2) 控制台后端自测（sdk.tui.session，用假板子跑）",
+    "selftest.hdr_sdk": "1) SDK 自测：协议、预检与模拟器",
+    "selftest.hdr_tui": "2) TUI 会话自测",
     "selftest.sec_units": "单位与软限位（rad）",
     "selftest.j1_hi": "j1 上限 = 90°",
     "selftest.j1_lo": "j1 下限 = -115°",
     "selftest.grip_limit": "ARX-X5 夹爪软限位 = -157°～142°",
     "selftest.clamp_hi": "夹到上限 90°",
     "selftest.clamp_lo": "夹到下限 -115°",
-    "selftest.clamp_in": "界内不夹、也不报夹过（就是拍板不要那个数）",
+    "selftest.clamp_in": "限位内目标保持不变",
     "selftest.sec_step": "步长档与 --arm-id",
     "selftest.step_rad": "rad 档是 0.005/0.01/0.02/0.05/0.1/0.2",
-    "selftest.step_default": "默认 rad 档在档位里（≈ 旧版的 1.0°）",
-    "selftest.step_m": "米档递增且默认档在档位里",
+    "selftest.step_default": "默认关节步长属于预设列表",
+    "selftest.step_m": "米制步长递增，默认值有效",
     "selftest.arm_id": "parse_arm_id 收 0/1/0x1/空格，拒 2/-1/x/空/1.0",
-    "selftest.sec_two": "两台臂（一条链路、两个 Arm、状态机各跑各的）",
-    "selftest.pass": "自测全部通过（sdk + 控制台后端）。",
-    "selftest.two_fb": "两台都收到反馈帧（0x80 按 arm_id 分流）",
-    "selftest.two_target": "两台的目标角是各自独立的列表",
-    "selftest.two_seeded": "两台各自被播种（都对到自己的反馈上）",
-    "selftest.snap_keys": "snapshot 的键齐（面板的契约）",
-    "selftest.fb_keys": "fb 的键齐",
-    "selftest.fb_rad": "joint 是 6 个 rad（不是 deg）",
-    "selftest.grip_cal": "夹爪：标定标志与米数一致（没标定时 m 为 None，原始角一直在）",
-    "selftest.n_rx_fb": "n_rx_fb 是本臂口径（= 当前臂的 n_feedback）",
-    "selftest.arms_sorted": "arms 概览两台都在、按 id 排序",
-    "selftest.sw_to_b": "a 键切到臂B（当前臂 = 1）",
-    "selftest.jog_cur": "点动只动当前臂（臂A 的目标角一动没动）",
-    "selftest.target_cur": "sess.target 读的是当前臂那份",
-    "selftest.sw_back": "再切回臂A",
-    "selftest.hold_cur": "hold 也按当前臂走（只挂臂A）",
-    "selftest.sec_cmd": "命令与闸门（假板子的闸门是真的）",
-    "selftest.a_wait_init": "臂A 走到「待初始化」",
-    "selftest.init_sent": "待初始化态按 i → 真的发出 0x02（盖当前臂的 arm_id）",
-    "selftest.init_done": "初始化跑完回到「正常运行」（板子 ~7 s）",
+    "selftest.sec_two": "共享链路与双臂独立状态",
+    "selftest.pass": "SDK 和 TUI 自测全部通过。",
+    "selftest.two_fb": "反馈按 arm_id 分流到双臂",
+    "selftest.two_target": "双臂目标独立",
+    "selftest.two_seeded": "双臂目标分别对齐反馈",
+    "selftest.snap_keys": "快照字段完整",
+    "selftest.fb_keys": "反馈字段完整",
+    "selftest.fb_rad": "关节反馈为六项 rad",
+    "selftest.grip_cal": "夹爪标定标志与开口值一致，原始角可读",
+    "selftest.n_rx_fb": "当前臂反馈计数等于 n_feedback",
+    "selftest.arms_sorted": "双臂概览按编号排序",
+    "selftest.sw_to_b": "切换到臂 B",
+    "selftest.jog_cur": "点动仅修改当前臂目标",
+    "selftest.target_cur": "sess.target 指向当前臂",
+    "selftest.sw_back": "切回臂 A",
+    "selftest.hold_cur": "暂停仅作用于当前臂",
+    "selftest.sec_cmd": "命令与预检",
+    "selftest.a_wait_init": "臂 A 进入待初始化",
+    "selftest.init_sent": "待初始化时发送本臂 0x02",
+    "selftest.init_done": "初始化完成后进入正常运行",
     "selftest.tid_start": "0x12 启动",
-    "selftest.start_ok": "正常运行态按 s → 发出 0x12（进 run）",
-    "selftest.run_ok": "进 run 了（0x16 才有可能被受理）",
-    "selftest.i_no_frame": "run 档下按 i → **一帧没发**（不谎报「已发」）",
-    "selftest.i_one_warn": "run 档下按 i 给出恰好一条 warn（SDK 说清缺哪条闸门）",
-    "selftest.i_again": "run 档下再按一次 i → 依然一帧没发（强发通道只给姿态闸门）",
-    "selftest.z_no_frame": "正常运行态按 z → 一帧没发（0x10 只认待初始化）",
-    "selftest.b_still": "臂B 还停在「待初始化」（两台状态机各跑各的）",
-    "selftest.a_stream": "臂A 在发 0x16、臂B 没在发（控制流按台独立）",
-    "selftest.streaming_any": "streaming_any() 看的是两台（退出确认用）",
-    "selftest.b_init": "臂B 按 i → 0x02 盖的是 arm_id=1（不是当前面板看的那台那么简单）",
-    "selftest.b_done": "臂B 初始化完到「正常运行」",
-    "selftest.b_run": "臂B 进 run",
-    "selftest.both_stream": "两台都在发 0x16，各盖各的 arm_id",
-    "selftest.sec_reopen": "reopen（r 键 / 拔线重开）",
+    "selftest.start_ok": "正常运行时发送 0x12",
+    "selftest.run_ok": "收到 RUN 模式反馈",
+    "selftest.i_no_frame": "RUN 时拒绝初始化，不发送命令",
+    "selftest.i_one_warn": "初始化被拒绝时报告一次警告",
+    "selftest.i_again": "重复初始化仍须通过状态预检",
+    "selftest.z_no_frame": "正常运行时拒绝设零",
+    "selftest.b_still": "臂 B 保持待初始化",
+    "selftest.a_stream": "仅臂 A 发送位置目标",
+    "selftest.streaming_any": "控制状态检查覆盖双臂",
+    "selftest.b_init": "臂 B 初始化使用 arm_id=1",
+    "selftest.b_done": "臂 B 初始化完成",
+    "selftest.b_run": "臂 B 进入 RUN",
+    "selftest.both_stream": "双臂按各自编号发送位置目标",
+    "selftest.sec_reopen": "重开链路",
     "selftest.reopen_ok": "reopen 成功",
-    "selftest.reopen_cleared": "reopen 后两台的播种都清了（等下一帧反馈）",
-    "selftest.reopen_seeded": "reopen 后两台都重新握手+播种（假板子重上电 → 0→1→2）",
-    "selftest.stop_two": "退出补 0x14：两台都发、都带各自的 arm_id",
-    "selftest.sec_relink": "掉线自动重连（收包线程接回来的那种）",
-    "selftest.relink_snap": "快照报的是重连状态（断开 / 试到第几次 / 停手了）",
-    "selftest.relink_seeded": "自己重连回来 → 两台重新对齐目标（和按 r 同一套复位）",
-    "selftest.relink_msg": "事件流里报了「已自动重连」",
-    "selftest.relink_giveup": "试满上限停手 → 事件流里报了「已停手」+ 原因",
-    "selftest.fail": "自测**没过**：见上面 FAIL。",
-    "selftest.table_bad": "语言表有问题（%d 条）：",
+    "selftest.reopen_cleared": "重开后清除双臂目标对齐标志",
+    "selftest.reopen_seeded": "重开后双臂重新握手并对齐目标",
+    "selftest.stop_two": "退出向双臂分别发送 STOP",
+    "selftest.sec_relink": "自动重连",
+    "selftest.relink_snap": "快照包含断开、重试次数和停止状态",
+    "selftest.relink_seeded": "重连后双臂重新对齐目标",
+    "selftest.relink_msg": "记录自动重连成功",
+    "selftest.relink_giveup": "记录重连停止及原因",
+    "selftest.fail": "自测失败，详见 FAIL 项。",
+    "selftest.table_bad": "文案表错误：%d 项",
     "selftest.fb_counts": "0x80 帧数 臂A=%s 臂B=%s",
     "selftest.sent": "发出的：%r",
 })
@@ -423,94 +385,72 @@ _ZH.update({
 # Arm 预检和连接诊断。
 # 公共状态名称保留中文；消息中的名称按当前语言显示。
 _ZH.update({
-    "arm.snapshot_line": "臂%s state=%s mode=%s 关节(rad) %s 夹爪 %s 温度 %s 丢 %s",
+    "arm.snapshot_line": "臂%s 状态=%s 模式=%s 关节(rad)=%s 夹爪=%s 温度(℃)=%s 离线=%s",
     "arm.grip_uncal": "未标定(raw %.2f°)",
-    "arm.grip_inited_hint": "  （夹爪 motor_inited = 1，零点已经建立了，可以标）",
+    "arm.grip_inited_hint": "  夹爪已初始化，可进行标定",
     "arm.grip_not_homed":
-        "  ⚠ 反馈里夹爪的 motor_inited 位是 0 —— **夹爪还没找过零**，它的原始角零点"
-        "现在没有含义。先做一次初始化（0x02，里面带夹爪找零）再标。",
-    "arm.no_feedback_yet": "  （现在一帧反馈都没收到，先 connect()）",
-    "arm.arm_id_range": "arm_id 只能是 0..%d（板上 ARM_NUM=%d），收到 %r",
-    "arm.no_version": "(没收到 —— 板子一个字节都没发)",
+        "  夹爪未初始化；请完成初始化后再标定",
+    "arm.no_feedback_yet": "  尚无反馈，请先 connect()",
+    "arm.arm_id_range": "arm_id 应为 0..%d（臂数 %d），收到 %r",
+    "arm.no_version": "未收到版本帧",
     "arm.ver_ok": "0x%08X（和 SDK 一致）",
-    "arm.ver_mismatch": "0x%08X  ← **和 SDK 的 0x%08X 不一致，板子不会握手**"
-                        "（左边这个码就是它自己每 100 ms 报上来的）",
-    "arm.connect_timeout": "%.1fs 内没等到 %s 的反馈帧。",
-    "arm.connect_port": "  口子：%s",
-    "arm.no_port": "(没挑到口子)",
+    "arm.ver_mismatch": "固件 0x%08X 与 SDK 0x%08X 不匹配，无法握手",
+    "arm.connect_timeout": "连接超时：%.1f s 内未收到 %s 的反馈",
+    "arm.connect_port": "  端口：%s",
+    "arm.no_port": "未选择端口",
     "arm.connect_link": "  链路：open=%s up=%s",
     "arm.link_error": "  错误：%s",
     "arm.connect_rx": "  收到 %d 帧（CRC8 错 %d、CRC16 错 %d、丢弃字节 %d）",
-    "arm.connect_board_ver": "  板子回的版本码：%s",
-    "arm.connect_zero_bytes": "  一个字节都没收到：口子挑错 / 线没插 / 板子跑的是另一条链路。",
-    "arm.bytes_no_version": "  收到了字节但没有版本包：多半是噪声（板子没握手时"
-                            "每 100 ms 会自己发一帧版本包）。",
+    "arm.connect_board_ver": "  固件版本：%s",
+    "arm.connect_zero_bytes": "  未收到有效帧；请检查接线、端口及固件 ROBOT_LINK",
+    "arm.bytes_no_version": "  已收到帧但无版本帧；请检查协议版本和链路",
     "arm.joint_angle": "关节角(rad)",
-    "arm.gate_init_state": "总模式不对：现在 %s / %s。要能在「%s」，或「%s」+ mode 是 "
-                           "stop/damping（run/gravity 下位置环在跑，板子故意不接）。",
-    "arm.gate_setzero_state": "总模式不对：现在 %s，设零只能在「%s」发起。",
-    "arm.gate_mode_state": "总模式不对：现在 %s，切 Arm_mode 只能在「%s」发。",
-    "arm.gate_ctrl_state": "总模式不对：现在 %s，控制帧只能在「%s」发。",
-    "arm.gate_not_run": "Arm_mode 不是 run：现在 %s。先 start()。",
-    "arm.gate_reset_state": "总模式不对：现在 %s，一键复位只能在「%s」发。",
-    "arm.payload_type": "payload 要给 bytes，收到 %r",
-    "arm.setzero_timeout": "%.1fs 内没等到设零回复(0x11)。现在 state=%s。\n"
-                           "  0x11 是**跑完一轮才发**的，几秒到十几秒都正常；再等就加大 "
-                           "timeout。\n"
-                           "  一直不来要查：0x10 有没有真的发出去（闸门？遥控器在线？）、"
-                           "板子是不是还在校准零点(6)。",
-    "arm.stale_no_fb": "%s 要看板子的状态，但 %s 一帧反馈都没收到。"
-                       "先 connect()（它等第一帧反馈）。",
-    "arm.stale_old": "%s 要看板子的状态，但手上这帧反馈已经 %.0f ms 旧了（阈值 %.0f ms）"
-                     "——不拿旧状态猜。\n"
-                     "  反馈断了要查：板子在不在跑、链路 link_up=%s、口子对不对。\n"
-                     "  要跳过这一层用 force=True（但闸门判错的责任就归你了）。",
-    "arm.gate_rejected": "%s 被客户端预检挡下（**这一帧没发出去**）：\n  - %s\n"
-                         "  现在：state=%s(robot_state=%s) mode=%s(%s) 掉线=%s\n"
-                         "  （板子对所有命令都是静默丢弃、没有 NACK，所以这里先替你算一遍。\n"
-                         "   预检**查不到「遥控器在线」**这一条 —— 那是板子才知道的。\n"
-                         "   确认过闸门真的会过，用 force=True 跳过预检。）",
-    "arm.motors_lost": "有电机掉线：%s。板子会拒（掉线会强制 arm_stop，动作根本跑不动）。",
-    "arm.pose_dev": "姿态偏差 %.2f° > %.0f°（关节 %s 差得最多：现在 %.2f°，要 %.2f°）。"
-                    "先把臂摆回复位位姿 —— 注意它是按**反馈角**比的，不是你要它去的地方。",
-    "arm.grip_two_targets": "gripper_m 和 gripper_raw_deg 只能给一个"
-                            "（两个都给就不知道听谁的）",
-    "arm.grip_no_target": "没给夹爪目标、又没收到过反馈帧，不知道该把夹爪放哪儿。\n"
-                          "  给一个 gripper_m= 或 gripper_raw_deg=；或者先 connect() "
-                          "让我拿当前角当目标（保持不动）。",
+    "arm.gate_init_state": "当前 %s / %s；初始化要求 %s，或 %s 且为 STOP/阻尼",
+    "arm.gate_setzero_state": "当前 %s；设零要求 %s",
+    "arm.gate_mode_state": "当前 %s；切换模式要求 %s",
+    "arm.gate_ctrl_state": "当前 %s；发送目标要求 %s",
+    "arm.gate_not_run": "当前模式 %s；请先 start() 并等待 RUN 反馈",
+    "arm.gate_reset_state": "当前 %s；复位要求 %s",
+    "arm.payload_type": "payload 必须为 bytes，收到 %r",
+    "arm.setzero_timeout": "设零超时：%.1f s 内未收到 0x11，当前状态 %s。请检查命令是否受理及校准进度",
+    "arm.stale_no_fb": "%s 未发送：%s 尚无反馈，请先 connect()",
+    "arm.stale_old": "%s 未发送：反馈年龄 %.0f ms，超过 %.0f ms；link_up=%s，请检查链路",
+    "arm.gate_rejected": "%s 未发送，预检未通过：\n  - %s\n  状态=%s(%s)，模式=%s(%s)，离线=%s",
+    "arm.motors_lost": "电机离线：%s",
+    "arm.pose_dev": "位姿偏差 %.2f° 超过 %.0f°；%s 当前 %.2f°，复位角 %.2f°",
+    "arm.grip_two_targets": "gripper_m 与 gripper_raw_deg 不能同时指定",
+    "arm.grip_no_target": "缺少夹爪目标和反馈；请指定目标或先 connect()",
     "arm.desc_line": "%s：%s",
-    "arm.describe_no_fb": "%s：还没收到反馈（link_up=%s）",
+    "arm.describe_no_fb": "%s：尚无反馈，link_up=%s",
     "arm.no_feedback": "无反馈",
-    "arm.no_port_open": "(未开口子)",
+    "arm.no_port_open": "串口未打开",
 })
 
 # 串口选择与连接错误
 _ZH.update({
-    "link.kind_usb": "板子 USB CDC",
+    "link.kind_usb": "H7 USB CDC",
     "link.kind_rs485": "USB 转 RS485 适配器",
-    "link.kind_fake": "假板子（sdk.sim，不接硬件）",
+    "link.kind_fake": "H7 协议模拟器",
     "link.kind_unknown": "未知链路",
-    "link.not_link_dev": "，**不是链路设备**",
+    "link.not_link_dev": "，非控制链路",
     "link.desc_port": "%s（USB %s:%s %s %s%s）",
     "link.desc_no_ident": "%s（查不到 USB 身份）",
     "link.desc_kind_tag": "，%s",
-    "link.hint_uart": "跑 UART 那条(ROBOT_LINK_UART)要接 USB 转 RS485 适配器；",
-    "link.hint_usb": "跑 USB 那条(ROBOT_LINK_USB)要把板子自己的 USB 口插上（%s:%s）。",
-    "link.hint_cands": "现在机器上看到这些候选：",
-    "link.hint_no_tty": "现在一个 ttyUSB*/ttyACM* 都没看到 —— 线插了吗？",
-    "link.hint_port_arg": "用 port= 可以指定口子。",
-    "link.reject_probe_ident": "拒绝打开 %s：查出来是 J-Link 探针的 VCOM 口。\n"
-                               "  探针要留给 JLink / 烧录用（占着它就连不上）。\n  %s",
-    "link.reject_probe_name": "拒绝打开 %s：查不到它的 USB 身份，而名字像 J-Link 的探针口。\n"
-                              "  别赌（探针那条多半也在 ttyACM* 上）。\n  %s",
-    "link.not_open": "链路还没 open（先 link.open() 或 arm.connect()）",
-    "link.down_reconnecting": "链路断了，正在自动重连（第 %d/%d 次）：这一帧没发出去",
+    "link.hint_uart": "ROBOT_LINK_UART：连接 USB 转 RS485 适配器；",
+    "link.hint_usb": "ROBOT_LINK_USB：连接板载 USB CDC（%s:%s）。",
+    "link.hint_cands": "候选端口：",
+    "link.hint_no_tty": "未发现 ttyUSB/ttyACM 设备，请检查接线",
+    "link.hint_port_arg": "可用 port= 指定端口。",
+    "link.reject_probe_ident": "拒绝打开 %s：J-Link 调试端口，请改用控制链路。\n  %s",
+    "link.reject_probe_name": "拒绝打开 %s：无法确认 USB 身份，路径疑似调试端口。\n  %s",
+    "link.not_open": "链路未打开；请先 link.open() 或 arm.connect()",
+    "link.down_reconnecting": "链路断开，重连 %d/%d；本帧未发送",
     "link.open_failed": "打不开 %s：%s\n%s",
     "link.write_link_err": "写串口失败: %s",
     "link.write_failed": "写 %s 失败：%s",
     "link.read_link_err": "读串口失败: %s",
     "link.parse_link_err": "解析失败: %s",
-    "link.arm_id_range": "arm_id 只能是 0..%d（板上 ARM_NUM=%d），收到 %r",
+    "link.arm_id_range": "arm_id 应为 0..%d（臂数 %d），收到 %r",
     "link.describe_line": "%s，%s",
     "link.auto_port": "(自动)",
 })
@@ -519,114 +459,84 @@ _EN.update({
     # 帮助页
     "app.help.select": "1-6 / 0 / Tab      select j1..j6 / gripper / next",
     "app.help.jog":
-        "← ↓ / → ↑ / + -    nudge the selected axis ∓ one step "
-        "(target only; sending is paced by --ctrl-hz)",
+        "← ↓ / → ↑ / + -    adjust selected target; send at --ctrl-hz",
     "app.help.step":
-        "[ / ]              step size (rad) 0.005 0.01 0.02 0.05 0.1 0.2, default "
-        "0.02; a calibrated gripper row uses the metre steps "
-        "0.0005 0.001 0.002 0.005 0.01 0.02",
+        "[ / ]              change step: joints in rad, calibrated gripper in m",
     "app.help.arm":
-        "a                  switch which arm the panel watches (both are driven; "
-        "the one you leave keeps tracking its own target angles)",
+        "a                  switch current arm; both arms remain active",
     "app.help.align":
-        "c                  align target angles to current feedback (re-seed; press "
-        "it after a mode change or a lost motor)",
+        "c                  align target to current feedback",
     "app.help.modes":
-        "s / d / v / x      0x12 run / 0x15 damping / 0x13 gravity comp / "
-        "0x14 stop (go slack)",
+        "s / d / v / x      RUN / damping / gravity compensation / STOP",
     "app.help.init":
-        "i                  0x02 init (the board runs one-key reset -> one-key "
-        "gripper homing, about 7 s; allowed in WAIT_INIT, or in NORMAL at "
-        "stop/damping)",
+        "i                  initialize in WAIT_INIT, or NORMAL with STOP/damping",
     "app.help.reset":
-        "o                  0x18 one-key reset (folds back to 0/0.5/0.5/0/0/0 deg, "
-        "about 2 s; NORMAL only)",
+        "o                  reset to profile reference in NORMAL, about 2 s",
     "app.help.setzero":
-        "z                  0x10 set zero -- you must type SETZERO then CONFIRM "
-        "before anything is sent!",
+        "z                  overwrite joint zeros; type SETZERO then CONFIRM",
     "app.help.hold":
-        "Space              pause/resume the 0x16 stream (freezes the target; the "
-        "arm holds, this is not a stop)",
+        "Space              pause/resume position stream; pause is not STOP",
     "app.help.misc":
-        "r / e / h / q      reopen port / clear events / this help / quit "
-        "(double-confirms while any arm streams 0x16)",
+        "r / e / h / q      reopen link / clear events / help / quit",
     "app.help.si1":
-        "**Panel units are SI**: joints rad / rad·s⁻¹, gripper m (needs "
-        "calibration, see sdk/README);",
+        "Panel units: joints rad and rad/s; calibrated gripper m.",
     "app.help.si2":
-        "an uncalibrated gripper row shows the **raw motor angle** (rad), soft "
-        "limits follow the selected robot profile.",
+        "Uncalibrated grippers show raw rad; limits follow the selected profile.",
     "app.help.si3":
-        "event-log angles are always deg (they line up with the firmware), 57.3 "
-        "away from the panel -- neither one is wrong.",
+        "Log angles use deg.",
     "app.help.gate1":
-        "State is derived from feedback frames, never invented: 0x16 goes out only "
-        "in NORMAL + run + not held;",
+        "Position targets require NORMAL, RUN and an unpaused stream.",
     "app.help.gate2":
-        "otherwise a 0x01 keepalive goes out every 150 ms (3 s without a valid "
-        "frame drops the arm back to damping).",
+        "Otherwise keep alive every 150 ms; no valid command for 3 s triggers timeout.",
     "app.help.gate3":
-        "a 0x16 the board drops still counts as keepalive (its s_last_rx_ms is "
-        "refreshed before dispatch), so sending is always safe.",
+        "A successful send confirms submission; check feedback for execution.",
     "app.help.two1":
-        "**Each arm runs its own state machine**: i/o/s/d/v/x only affect the "
-        "current arm (the one marked > on the line below).",
+        "i/o/s/d/v/x affect only the current arm marked >.",
     "app.help.two2":
-        "two processes on one link steal bytes from each other, so run only this one.",
+        "Use one control process per serial port.",
     "app.help.exit":
-        "quitting sends no 0x14: the target freezes, the arm holds, and about "
-        "3 s later the board drops to damping on its own.",
+        "Exit closes the link; firmware handles timeout after about 3 s. --stop-on-exit sends STOP.",
     # 面板
     "app.log_head": "# sdk.tui started %s port=%s fake=%s arm=%d\n",
-    "app.log_warn": "warning: cannot open the log file (%s), showing on screen only",
+    "app.log_warn": "Cannot open log file (%s); using screen output only",
     "app.too_small": "window too small (%dx%d), need at least 12 rows x 60 cols",
     "app.title": "Arm Console  [current] %s  %s  %s",
-    "app.fake_tag": "(--fake fake board)",
+    "app.fake_tag": "(simulation)",
     "app.link_line": "Link %s",
-    "app.link_down": "**DOWN**",
+    "app.link_down": "DOWN",
     "app.link_retry": " (auto-reconnecting %d/%d)",
     "app.link_retry_on": " (auto-reconnecting)",
-    "app.link_giveup": " (auto-reconnect stopped after %d tries -- press r for another round)",
+    "app.link_giveup": " (reconnect failed %d times; press r to retry)",
     "app.link_manual": " (press r to reopen)",
     "app.stats": "  rx%u(0x80 %u, %.0f Hz)  tx%u  drop bytes%u  crc err%u",
     "app.streaming": "streaming",
     "app.idle": "idle",
-    "app.lost_tag": "  **LOST**",
+    "app.lost_tag": "  OFFLINE",
     "app.arms_line": "Arms: %s",
-    "app.no_fb": "no feedback frame received yet...",
-    "app.link_dead": "serial link is down: check the wiring; with auto-reconnect on it also "
-                     "comes back by itself, or press r to reopen right away.",
-    "app.hs_timeout": "handshake timeout (%ds without a single byte) -- check in order:",
-    "app.hs1": "1) wiring: adapter TX -> board RX, adapter RX -> board TX, common GND "
-               "(RS485 half-duplex when the board runs the UART link);",
-    "app.hs2": "2) baud 921600; 3) is the board running this firmware (compare version "
-               "code 0x%08X / version string %s);",
-    "app.hs3": "4) on a version-code mismatch the board does not answer your version "
-               "frame, but it **sends one by itself every 100 ms** (a mismatch is "
-               "reported in the event area); fix the version string and send again -- "
-               "no board reset needed;",
-    "app.hs4": "5) the board's ROBOT_LINK is a compile-time either/or (UART/USB) and "
-               "must match the port you plugged in;",
-    "app.hs5": "6) still no bytes after all that: look for the \"version code mismatch\" "
-               "event below.",
+    "app.no_fb": "No feedback yet",
+    "app.link_dead": "Serial link lost; check wiring and reconnect status, or press r",
+    "app.hs_timeout": "Handshake timeout (%d s without feedback); check:",
+    "app.hs1": "1) Check power and USB CDC or RS485 wiring.",
+    "app.hs2": "2) Check baud 921600, version code 0x%08X and version string %s.",
+    "app.hs3": "3) Match the SDK robot profile to the running firmware.",
+    "app.hs4": "4) Match firmware ROBOT_LINK (UART/USB) to the connection.",
+    "app.hs5": "5) Check link and version errors in the event log.",
     "app.lost_prefix": "  lost: ",
     "app.uninit_prefix": "  not initialized: ",
     "app.grip_limit_note":
-        "(gripper soft limits only take effect after one successful set-zero)",
+        "(gripper soft limits require successful initialization)",
     "app.ctrl_prefix": "control stream %s",
     "app.hold_tag": "(held with Space)",
     "app.ctrl_meta": "  %.0f Hz  step %s  selected %s",
-    "app.initing": "initializing %.1f s (reset -> gripper homing)  keepalive on",
+    "app.initing": "Initializing %.1f s; keepalive active",
     "app.resetting": "resetting %.1f s (target %s rad)  keepalive on",
     "app.table_head": " axis target      feedback      delta          "
                       "soft limits(rad)   temp/unit",
     "app.grip_uncal_hint":
-        "gripper not calibrated: that row is the **raw motor angle** (rad), soft "
-        "limits ∓%.3f rad. For metres run python3 -m sdk.calibrate_gripper --arm-id %d",
+        "Gripper uncalibrated: raw rad, upper limit %.3f rad. Run: python3 -m sdk.calibrate_gripper --arm-id %d",
     "app.setzero_ack": "last set-zero 0x11: %s  took %d ms  result %s",
     "app.setzero_unconfirmed":
-        "  UNCONFIRMED(1) = the DM motor was already reading ~0, so the write "
-        "cannot be proven -- not a fault",
+        "  UNCONFIRMED(1): zero write not verified; not a confirmed failure",
     "app.hotkeys":
         "a switch arm  1-6/0/Tab pick axis  ←↓→↑/+- step  [/] step size  c align  "
         "s run  d damping  x stop  v gravity  i init  o reset  z set-zero  "
@@ -634,11 +544,11 @@ _EN.update({
     # 按键与对话框
     "app.events_cleared": "events cleared",
     "app.quit_confirm":
-        "an arm is streaming (or has streamed) control frames -- quit anyway? (y/n) ",
-    "app.no_fb_align": "no feedback frame yet, cannot align",
-    "app.why_manual": "manual c",
+        "An arm is controlling or paused. Quit? (y/n) ",
+    "app.no_fb_align": "No feedback; cannot align",
+    "app.why_manual": "manual alignment",
     "app.hold_toggle":
-        "0x16 stream %s (target frozen, arm holds; for real slack press x)",
+        "Position stream %s; pause is not STOP, press x for STOP",
     "app.hold_paused": "paused",
     "app.hold_resumed": "resumed",
     "app.tid.start": "0x12 start",
@@ -646,259 +556,193 @@ _EN.update({
     "app.tid.gravity": "0x13 gravity comp",
     "app.tid.stop": "0x14 stop",
     "app.reset_pose_warn":
-        "pose is more than ±%.4f rad from the reset pose (%s) -- during a reset the "
-        "arm is in run and **folds in hard**; keep clear of its travel",
+        "Reset-pose error exceeds %.4f rad (%s); reset moves the arm, keep its path clear",
     "app.pose_dev_sep": ", ",
-    "app.reset_confirm": "run the one-key reset? (y/n) ",
-    "app.reset_cancelled": "one-key reset cancelled",
-    "app.setzero_no_fb": "no feedback frame yet, not sending 0x10",
-    "app.setzero_state": "0x10 can only be sent in WAIT_INIT (now %s)",
+    "app.reset_confirm": "Move to the reset pose? (y/n) ",
+    "app.reset_cancelled": "Reset cancelled",
+    "app.setzero_no_fb": "No feedback; set-zero not sent",
+    "app.setzero_state": "Set-zero requires WAIT_INIT; current state: %s",
     "app.setzero_warn1":
-        "0x10 writes the **current pose** as the zero point and overwrites the "
-        "motor's original zero!",
+        "Set-zero overwrites all six joint zero points with the current pose.",
     "app.setzero_warn2": "current pose (rad): %s (reset pose %s)",
     "app.setzero_step1":
-        "step 1/2: put the arm at the reference pose, then type SETZERO >",
-    "app.setzero_cancel1": "set zero cancelled (step 1 not passed)",
-    "app.setzero_step2": "step 2/2: type CONFIRM to actually send 0x10 >",
-    "app.setzero_cancel2": "set zero cancelled (step 2 not passed)",
+        "1/2: move to the reference pose, then type SETZERO >",
+    "app.setzero_cancel1": "Set-zero cancelled: step 1 not confirmed",
+    "app.setzero_step2": "2/2: type CONFIRM to send set-zero >",
+    "app.setzero_cancel2": "Set-zero cancelled: step 2 not confirmed",
 })
 
 # 命令行提示
 _EN.update({
     "main.cli_description":
-        "Arm console for the board (curses full-screen panel). "
-        "Both links (UART / USB) and both arms.",
+        "H7 dual-arm console over USB CDC or RS485.",
     "main.epilog": "press h for the key list; --selftest / --fake need no hardware.",
-    "main.help.lang": "UI language (default zh; --lang en switches the panel and the errors)",
-    "main.help.port": "serial device (default: auto-pick -- board USB 0483:5740 first, "
-                      "then a 1a86 adapter)",
+    "main.help.lang": "UI and message language: zh or en (default zh)",
+    "main.help.port": "Serial path; prefer board USB, then a 1a86 adapter",
     "main.help.baud": "baud rate (default 921600)",
     "main.help.robot_type": "host robot parameters for the H7 link (default arx_x5)",
-    "main.help.arm_id": "which arm starts as the current one: 0=CAN1/ArmA, 1=CAN2/ArmB "
-                        "(default %d). **both are driven at once**; press a to switch",
+    "main.help.arm_id": "Current arm: 0=CAN1/A, 1=CAN2/B (default %d); press a to switch",
     "main.help.ctrl_hz": "0x16 send rate (default 100, per arm)",
     "main.help.fb_hz": "panel refresh rate (default 5; key handling is unaffected)",
     "main.help.step": "initial step in rad (%s; default %g)",
-    "main.help.handshake": "how long without a byte before reporting a handshake timeout",
-    "main.help.init_tol": "pose-check tolerance in rad (default from the selected robot parameters). "
-                          "Only used for the confirm prompt before 0x18 and the reset-end "
-                          "display check; the 0x02 gate uses the selected initialization tolerance",
-    "main.help.fake": "no hardware: use the built-in fake board (sdk/sim.py)",
-    "main.help.fake_lost": "the fake board periodically reports this lost mask for the current "
-                           "arm (e.g. 0x41)",
+    "main.help.handshake": "Handshake warning timeout without feedback, in s",
+    "main.help.init_tol": "Reset confirmation and completion tolerance in rad; defaults to profile, does not change initialization checks",
+    "main.help.fake": "Use the H7 protocol simulator without hardware",
+    "main.help.fake_lost": "Periodically simulate this lost-motor mask on the selected arm, e.g. 0x41",
     "main.help.selftest": "offline self-test; no hardware, no curses",
-    "main.help.log": "append events to a file (use a .log name; *.json is gitignored)",
-    "main.help.stop_on_exit": "send 0x14 to **both** arms on exit (default: no -- just stop "
-                              "0x16 and the board drops to damping about 3 s later)",
-    "main.bad_step": "--step must be one of %s (the unit is rad)",
+    "main.help.log": "Append event logs to this file",
+    "main.help.stop_on_exit": "Send STOP to both arms on exit; default only closes the link",
+    "main.bad_step": "--step must be one of %s, in rad",
     "main.no_device": "link device %s does not exist.\n  %s",
-    "main.no_links": "    (none at all: neither link is plugged in)",
-    "main.no_pyserial": "pyserial is missing: pip3 install -r sdk/requirements.txt",
+    "main.no_links": "    No candidate serial ports found",
+    "main.no_pyserial": "pyserial missing; run: python3 -m pip install pyserial",
     "main.open_failed": "opening %s failed: %s",
-    "main.permission_hint": "(probably permissions: add your user to the dialout group, "
-                            "or run with sudo)",
+    "main.permission_hint": "Serial permission denied; check device permissions or dialout membership",
     "main.link_info": "Link %s",
     "main.robot_type": "Host robot parameters: %s",
-    "main.fake_link": "fake board (--fake, no hardware)",
-    "main.two_arms": "both arms are driven: %s, %s (one link, one Arm each); press a to "
-                     "switch the current arm, now watching %s",
-    "main.usb_note": "board USB CDC: baud %d is meaningless here (CDC is packet transport)",
-    "main.unknown_kind": "this port is neither board USB (0483:5740) nor a 1a86 adapter -- "
-                         "make sure the board's ROBOT_LINK matches it",
-    "main.stopped": "sent 0x14 stop to %s.",
+    "main.fake_link": "H7 protocol simulator, no hardware connection",
+    "main.two_arms": "Arms: %s, %s; current: %s, press a to switch",
+    "main.usb_note": "USB CDC does not use baud setting %d to set transfer speed",
+    "main.unknown_kind": "Unknown link type; check port and firmware ROBOT_LINK setting",
+    "main.stopped": "Sent STOP to %s.",
     "main.stop_sep": ", ",
-    "main.exit_note": "stopped 0x16 for both arms (target frozen, arms hold). About 3 s "
-                      "later the board drops the arms to damping on its own; press x for "
-                      "slack right away, or use --stop-on-exit.",
+    "main.exit_note": "Both position streams stopped and link closed; firmware handles timeout after about 3 s.",
 })
 
 # 自测提示
 _EN.update({
-    "selftest.hdr_sdk": "1) sdk offline self-test (protocol / gates / fake board)",
-    "selftest.hdr_tui": "2) console backend self-test (sdk.tui.session, on the fake board)",
+    "selftest.hdr_sdk": "1) SDK tests: protocol, pre-checks and simulator",
+    "selftest.hdr_tui": "2) TUI session tests",
     "selftest.sec_units": "units and soft limits (rad)",
     "selftest.j1_hi": "j1 upper = 90 deg",
     "selftest.j1_lo": "j1 lower = -115 deg",
     "selftest.grip_limit": "ARX-X5 gripper soft limit = -157..142 deg",
     "selftest.clamp_hi": "clamped at the 90 deg upper limit",
     "selftest.clamp_lo": "clamped at the -115 deg lower limit",
-    "selftest.clamp_in": "inside the range: not clamped, not reported as clamped (that is "
-                         "what the caller asked for)",
+    "selftest.clamp_in": "Targets within limits remain unchanged",
     "selftest.sec_step": "step choices and --arm-id",
     "selftest.step_rad": "rad choices are 0.005/0.01/0.02/0.05/0.1/0.2",
-    "selftest.step_default": "the default rad step is one of the choices (about the old 1.0 deg)",
-    "selftest.step_m": "metre choices increase and the default is one of them",
+    "selftest.step_default": "Default joint step belongs to the presets",
+    "selftest.step_m": "Metric steps increase and the default is valid",
     "selftest.arm_id": "parse_arm_id takes 0/1/0x1/space, rejects 2/-1/x/empty/1.0",
-    "selftest.sec_two": "two arms (one link, two Arms, independent state machines)",
-    "selftest.pass": "self-test passed (sdk + console backend).",
-    "selftest.two_fb": "both arms get feedback frames (0x80 split by arm_id)",
-    "selftest.two_target": "the two arms keep separate target lists",
-    "selftest.two_seeded": "both arms seeded (each aligned to its own feedback)",
-    "selftest.snap_keys": "snapshot keys are complete (the panel's contract)",
-    "selftest.fb_keys": "fb keys are complete",
-    "selftest.fb_rad": "joint is 6 values in rad (not deg)",
-    "selftest.grip_cal": "gripper: the calibrated flag matches the metre value (uncalibrated "
-                         "-> m is None, the raw angle is always there)",
-    "selftest.n_rx_fb": "n_rx_fb is this arm's own count (= the current arm's n_feedback)",
-    "selftest.arms_sorted": "the arms overview has both, sorted by id",
-    "selftest.sw_to_b": "press a switches to arm B (current arm = 1)",
-    "selftest.jog_cur": "jog moves the current arm only (arm A's target did not move)",
-    "selftest.target_cur": "sess.target reads the current arm's list",
-    "selftest.sw_back": "switching back to arm A",
-    "selftest.hold_cur": "hold follows the current arm too (arm A only)",
-    "selftest.sec_cmd": "commands and gates (the fake board's gates are real)",
-    "selftest.a_wait_init": "arm A reaches WAIT_INIT",
-    "selftest.init_sent": "WAIT_INIT + i -> 0x02 really goes out (stamped with the current "
-                          "arm's arm_id)",
-    "selftest.init_done": "init finishes back in NORMAL (about 7 s on the board)",
+    "selftest.sec_two": "Shared link and independent arm states",
+    "selftest.pass": "SDK and TUI tests passed.",
+    "selftest.two_fb": "Feedback routes to both arms by arm_id",
+    "selftest.two_target": "Arm targets are independent",
+    "selftest.two_seeded": "Each arm target aligns to its feedback",
+    "selftest.snap_keys": "Snapshot fields are complete",
+    "selftest.fb_keys": "Feedback fields are complete",
+    "selftest.fb_rad": "Joint feedback contains six rad values",
+    "selftest.grip_cal": "Gripper calibration flag matches opening value; raw angle is available",
+    "selftest.n_rx_fb": "Current-arm feedback count matches n_feedback",
+    "selftest.arms_sorted": "Arm overview is sorted by ID",
+    "selftest.sw_to_b": "Switch to arm B",
+    "selftest.jog_cur": "Jog changes only the current arm target",
+    "selftest.target_cur": "sess.target refers to the current arm",
+    "selftest.sw_back": "Switch back to arm A",
+    "selftest.hold_cur": "Hold affects only the current arm",
+    "selftest.sec_cmd": "Commands and pre-checks",
+    "selftest.a_wait_init": "Arm A enters WAIT_INIT",
+    "selftest.init_sent": "WAIT_INIT sends 0x02 for the current arm",
+    "selftest.init_done": "Initialization completes in NORMAL",
     "selftest.tid_start": "0x12 start",
-    "selftest.start_ok": "NORMAL + s -> 0x12 goes out (enters run)",
-    "selftest.run_ok": "in run now (only then can 0x16 be accepted)",
-    "selftest.i_no_frame": "i in run -> **not a single frame** (no bogus \"sent\")",
-    "selftest.i_one_warn": "i in run gives exactly one warn (the SDK says which gate is missing)",
-    "selftest.i_again": "i again in run -> still not a single frame (the force path is only "
-                        "for the pose gate)",
-    "selftest.z_no_frame": "z in NORMAL -> not a single frame (0x10 only exists in WAIT_INIT)",
-    "selftest.b_still": "arm B is still in WAIT_INIT (the two state machines are independent)",
-    "selftest.a_stream": "arm A streams 0x16, arm B does not (the control stream is per arm)",
-    "selftest.streaming_any": "streaming_any() looks at both arms (used by the quit prompt)",
-    "selftest.b_init": "i for arm B -> 0x02 is stamped arm_id=1 (not just whichever arm "
-                       "the panel happens to show)",
-    "selftest.b_done": "arm B finishes init in NORMAL",
-    "selftest.b_run": "arm B enters run",
-    "selftest.both_stream": "both arms stream 0x16, each stamped with its own arm_id",
-    "selftest.sec_reopen": "reopen (the r key / replugging)",
+    "selftest.start_ok": "NORMAL sends 0x12",
+    "selftest.run_ok": "RUN mode feedback received",
+    "selftest.i_no_frame": "Initialization in RUN is rejected without sending",
+    "selftest.i_one_warn": "Rejected initialization reports one warning",
+    "selftest.i_again": "Repeated initialization still requires a valid state",
+    "selftest.z_no_frame": "Set-zero is rejected in NORMAL",
+    "selftest.b_still": "Arm B remains in WAIT_INIT",
+    "selftest.a_stream": "Only arm A sends position targets",
+    "selftest.streaming_any": "Streaming check covers both arms",
+    "selftest.b_init": "Arm B initialization uses arm_id=1",
+    "selftest.b_done": "Arm B initialization completes",
+    "selftest.b_run": "Arm B enters RUN",
+    "selftest.both_stream": "Both arms send targets with their own IDs",
+    "selftest.sec_reopen": "Reopen link",
     "selftest.reopen_ok": "reopen succeeded",
-    "selftest.reopen_cleared": "reopen clears both arms' seeds (waiting for the next frame)",
-    "selftest.reopen_seeded": "after reopen both arms handshake and seed again (the fake "
-                              "board reboots -> 0->1->2)",
-    "selftest.stop_two": "exit sends 0x14 to both arms, each with its own arm_id",
-    "selftest.sec_relink": "automatic reconnect (the RX thread bringing the link back)",
-    "selftest.relink_snap": "the snapshot reports the reconnect state (down / which try / "
-                            "gave up)",
-    "selftest.relink_seeded": "the link came back by itself -> both arms re-align their "
-                              "targets (same reset as the r key)",
-    "selftest.relink_msg": "the event log says it came back by itself",
-    "selftest.relink_giveup": "after the retry cap the event log says it stopped, with the "
-                              "reason",
-    "selftest.fail": "self-test **FAILED**: see the FAIL lines above.",
-    "selftest.table_bad": "language table problems (%d):",
+    "selftest.reopen_cleared": "Reopen clears both target-alignment flags",
+    "selftest.reopen_seeded": "Both arms handshake and align targets after reopen",
+    "selftest.stop_two": "Exit sends STOP to each arm",
+    "selftest.sec_relink": "Automatic reconnect",
+    "selftest.relink_snap": "Snapshot includes link loss, retry count and stopped status",
+    "selftest.relink_seeded": "Both targets realign after reconnect",
+    "selftest.relink_msg": "Automatic reconnect success is logged",
+    "selftest.relink_giveup": "Reconnect stop and reason are logged",
+    "selftest.fail": "Tests failed; see FAIL entries.",
+    "selftest.table_bad": "Message table errors: %d",
     "selftest.fb_counts": "0x80 frames A=%s B=%s",
     "selftest.sent": "sent: %r",
 })
 
 # Arm 提示
 _EN.update({
-    "arm.snapshot_line": "arm%s state=%s mode=%s joints(rad) %s gripper %s temp %s lost %s",
+    "arm.snapshot_line": "arm%s state=%s mode=%s joints(rad)=%s gripper=%s temp(C)=%s offline=%s",
     "arm.grip_uncal": "uncalibrated (raw %.2f deg)",
-    "arm.grip_inited_hint": "  (gripper motor_inited = 1, the zero point is established, "
-                            "safe to calibrate)",
+    "arm.grip_inited_hint": "  Gripper initialized; calibration available",
     "arm.grip_not_homed":
-        "  ! the gripper's motor_inited bit in the feedback is 0 -- **the gripper has never "
-        "been homed**, so its raw-angle zero means nothing yet. Run an init (0x02, which "
-        "includes gripper homing) before calibrating.",
-    "arm.no_feedback_yet": "  (no feedback frame at all yet -- call connect() first)",
-    "arm.arm_id_range": "arm_id must be 0..%d (ARM_NUM=%d on the board), got %r",
-    "arm.no_version": "(none -- the board sent not a single byte)",
+        "  Gripper not initialized; initialize before calibration",
+    "arm.no_feedback_yet": "  No feedback; call connect() first",
+    "arm.arm_id_range": "arm_id must be 0..%d (arm count %d), got %r",
+    "arm.no_version": "No version frame received",
     "arm.ver_ok": "0x%08X (matches the SDK)",
-    "arm.ver_mismatch": "0x%08X  <- **does not match the SDK's 0x%08X: the board will not "
-                        "handshake** (the code on the left is what it reports every 100 ms)",
-    "arm.connect_timeout": "%.1fs without a feedback frame from %s.",
-    "arm.connect_port": "  port: %s",
-    "arm.no_port": "(no port picked)",
+    "arm.ver_mismatch": "Firmware 0x%08X differs from SDK 0x%08X; handshake blocked",
+    "arm.connect_timeout": "Connection timeout: no feedback in %.1f s from %s",
+    "arm.connect_port": "  Port: %s",
+    "arm.no_port": "No port selected",
     "arm.connect_link": "  link: open=%s up=%s",
     "arm.link_error": "  error: %s",
     "arm.connect_rx": "  %d frames received (CRC8 err %d, CRC16 err %d, dropped bytes %d)",
-    "arm.connect_board_ver": "  version code from the board: %s",
-    "arm.connect_zero_bytes": "  not a single byte: wrong port / cable not plugged in / "
-                              "the board runs the other link.",
-    "arm.bytes_no_version": "  bytes arrived but no version packet: most likely noise "
-                            "(before handshake the board sends one by itself every 100 ms).",
+    "arm.connect_board_ver": "  Firmware version: %s",
+    "arm.connect_zero_bytes": "  No valid frames; check wiring, port and firmware ROBOT_LINK",
+    "arm.bytes_no_version": "  Frames received without a version frame; check protocol version and link",
     "arm.joint_angle": "joint angles (rad)",
-    "arm.gate_init_state": "wrong overall state: now %s / %s. Allowed in \"%s\", or in "
-                           "\"%s\" with mode stop/damping (under run/gravity the position "
-                           "loop is live and the board deliberately ignores it).",
-    "arm.gate_setzero_state": "wrong overall state: now %s; set-zero can only start in \"%s\".",
-    "arm.gate_mode_state": "wrong overall state: now %s; Arm_mode can only be changed in \"%s\".",
-    "arm.gate_ctrl_state": "wrong overall state: now %s; control frames can only be sent "
-                           "in \"%s\".",
-    "arm.gate_not_run": "Arm_mode is not run: now %s. Call start() first.",
-    "arm.gate_reset_state": "wrong overall state: now %s; the one-key reset can only be "
-                            "sent in \"%s\".",
+    "arm.gate_init_state": "Current %s / %s; initialization requires %s, or %s with STOP/damping",
+    "arm.gate_setzero_state": "Current %s; set-zero requires %s",
+    "arm.gate_mode_state": "Current %s; mode change requires %s",
+    "arm.gate_ctrl_state": "Current %s; target commands require %s",
+    "arm.gate_not_run": "Current mode %s; call start() and wait for RUN feedback",
+    "arm.gate_reset_state": "Current %s; reset requires %s",
     "arm.payload_type": "payload must be bytes, got %r",
-    "arm.setzero_timeout": "no set-zero reply (0x11) within %.1fs. state=%s now.\n"
-                           "  0x11 is sent **only after a whole round finishes**; several "
-                           "seconds to a dozen or so is normal, so raise the timeout if you "
-                           "need to.\n"
-                           "  If it never arrives, check whether 0x10 really went out "
-                           "(gate? remote online?) and whether the board is still in zero "
-                           "calibration (6).",
-    "arm.stale_no_fb": "%s needs the board's state, but %s has not received a single "
-                       "feedback frame. Call connect() first (it waits for the first frame).",
-    "arm.stale_old": "%s needs the board's state, but the frame in hand is already %.0f ms "
-                     "old (threshold %.0f ms) -- no guessing from a stale state.\n"
-                     "  If feedback stopped, check: is the board running, link_up=%s, is the "
-                     "port right.\n"
-                     "  To skip this layer use force=True (and the blame for a wrong gate "
-                     "call is yours).",
-    "arm.gate_rejected": "%s was blocked by the client-side pre-check (**the frame was not "
-                         "sent**):\n  - %s\n"
-                         "  now: state=%s(robot_state=%s) mode=%s(%s) lost=%s\n"
-                         "  (the board silently drops every command -- there is no NACK -- "
-                         "so this is computed for you up front.\n"
-                         "   The pre-check **cannot see \"remote online\"** -- only the "
-                         "board knows that.\n"
-                         "   If you are sure the gate really passes, use force=True to skip "
-                         "the pre-check.)",
-    "arm.motors_lost": "motors are lost: %s. The board will reject it (a lost motor forces "
-                       "arm_stop, the motion cannot run at all).",
-    "arm.pose_dev": "pose deviation %.2f deg > %.0f deg (joint %s is worst: now %.2f deg, "
-                    "want %.2f deg). Move the arm back to the reset pose first -- note this "
-                    "compares **feedback angles**, not where you are asking it to go.",
-    "arm.grip_two_targets": "give either gripper_m or gripper_raw_deg, not both (two targets "
-                            "and there is no telling which one wins)",
-    "arm.grip_no_target": "no gripper target given and no feedback frame ever received, so "
-                          "there is no telling where to put the gripper.\n"
-                          "  Pass gripper_m= or gripper_raw_deg=; or connect() first so I "
-                          "can hold the current angle as the target.",
+    "arm.setzero_timeout": "Set-zero timeout: no 0x11 within %.1f s, current state %s. Check command acceptance and calibration progress",
+    "arm.stale_no_fb": "%s not sent: %s has no feedback; call connect() first",
+    "arm.stale_old": "%s not sent: feedback age %.0f ms exceeds %.0f ms; link_up=%s, check link",
+    "arm.gate_rejected": "%s not sent; pre-check failed:\n  - %s\n  state=%s(%s), mode=%s(%s), offline=%s",
+    "arm.motors_lost": "Motors offline: %s",
+    "arm.pose_dev": "Pose error %.2f° exceeds %.0f°; %s current %.2f°, reset %.2f°",
+    "arm.grip_two_targets": "Specify either gripper_m or gripper_raw_deg, not both",
+    "arm.grip_no_target": "No gripper target or feedback; specify a target or call connect() first",
     "arm.desc_line": "%s: %s",
-    "arm.describe_no_fb": "%s: no feedback yet (link_up=%s)",
+    "arm.describe_no_fb": "%s: no feedback, link_up=%s",
     "arm.no_feedback": "no feedback",
-    "arm.no_port_open": "(port not open)",
+    "arm.no_port_open": "Port not open",
 })
 
 # 链路提示
 _EN.update({
-    "link.kind_usb": "board USB CDC",
+    "link.kind_usb": "H7 USB CDC",
     "link.kind_rs485": "USB-to-RS485 adapter",
-    "link.kind_fake": "fake board (sdk.sim, no hardware)",
+    "link.kind_fake": "H7 protocol simulator",
     "link.kind_unknown": "unknown link",
-    "link.not_link_dev": ", **not a link device**",
+    "link.not_link_dev": ", not a control link",
     "link.desc_port": "%s (USB %s:%s %s %s%s)",
     "link.desc_no_ident": "%s (no USB identity found)",
     "link.desc_kind_tag": ", %s",
-    "link.hint_uart": "the UART link (ROBOT_LINK_UART) needs a USB-to-RS485 adapter;",
-    "link.hint_usb": "the USB link (ROBOT_LINK_USB) needs the board's own USB port "
-                     "plugged in (%s:%s).",
-    "link.hint_cands": "candidates currently visible on this machine:",
-    "link.hint_no_tty": "not a single ttyUSB*/ttyACM* visible -- is the cable plugged in?",
-    "link.hint_port_arg": "pass port= to name one.",
-    "link.reject_probe_ident": "refusing to open %s: this is the J-Link probe's VCOM port.\n"
-                               "  The probe is for JLink / flashing (holding it blocks "
-                               "both).\n  %s",
-    "link.reject_probe_name": "refusing to open %s: no USB identity, and the name looks "
-                              "like a J-Link probe.\n"
-                              "  Do not gamble (the probe is usually on ttyACM* too).\n  %s",
-    "link.not_open": "link is not open yet (call link.open() or arm.connect() first)",
-    "link.down_reconnecting": "link is down and reconnecting automatically (try %d/%d): "
-                              "this frame was not sent",
+    "link.hint_uart": "ROBOT_LINK_UART: connect a USB-to-RS485 adapter;",
+    "link.hint_usb": "ROBOT_LINK_USB: connect board USB CDC (%s:%s).",
+    "link.hint_cands": "Candidate ports:",
+    "link.hint_no_tty": "No ttyUSB/ttyACM devices; check wiring",
+    "link.hint_port_arg": "Use port= to select a port.",
+    "link.reject_probe_ident": "Cannot open %s: J-Link debug port; use a control link.\n  %s",
+    "link.reject_probe_name": "Cannot open %s: unknown USB identity and possible debug port.\n  %s",
+    "link.not_open": "Link not open; call link.open() or arm.connect() first",
+    "link.down_reconnecting": "Link lost, reconnect %d/%d; frame not sent",
     "link.open_failed": "cannot open %s: %s\n%s",
     "link.write_link_err": "serial write failed: %s",
     "link.write_failed": "write to %s failed: %s",
     "link.read_link_err": "serial read failed: %s",
     "link.parse_link_err": "parse failed: %s",
-    "link.arm_id_range": "arm_id must be 0..%d (ARM_NUM=%d on the board), got %r",
+    "link.arm_id_range": "arm_id must be 0..%d (arm count %d), got %r",
     "link.describe_line": "%s, %s",
     "link.auto_port": "(auto)",
 })
