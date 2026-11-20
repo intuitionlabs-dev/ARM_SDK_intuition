@@ -10,17 +10,9 @@ import struct
 from dataclasses import dataclass
 from math import isfinite
 
-# ==================== CRC ====================
-#
-# 两张表**在这里生成**，而不是抄 256 个常数下来。理由：手抄 256 个数字出错了我自己看不出来，
-# 而这里从"多项式 + 初值"推出来的表和板子 `libs/soft_crc/soft_crc.c` 生成表的方式一模一样。
-# 生成出来的值仍然由 `selftest.py` 用**另一套位运算实现**逐字节比对，并且整帧字节要和板上
-# `FrameEncode()` 的真实输出对得上 —— 所以"自己算表"不降低可信度，只是消掉了抄错的余地。
-#
-# crc8  = CRC-8/MAXIM  ：多项式 0x31（反射 0x8C）、初值 0xFF
-# crc16 = CRC-16/X25   ：多项式 0x1021（反射 0x8408）、初值 0xFFFF
-#         （板子那边的注释写作 "MODBUS 0x8408"，实际用的是 0x8408 这个反射多项式；
-#           0x8408 才是 0x1021 的按位反转，别被那句注释带跑。）
+# CRC 查表按反射多项式生成，与固件 soft_crc.c 对应。
+# CRC8：多项式 0x8C，初值 0xFF。
+# CRC16：多项式 0x8408，初值 0xFFFF。自测以位运算实现和固定帧核对。
 
 _T8_POLY = 0x8C
 _T16_POLY = 0x8408
@@ -84,7 +76,7 @@ def crc16(data):
     return c & 0xFFFF
 
 
-# ==================== 版本 ====================
+# 版本
 
 def fnv1a32(s):
     """计算版本串的 FNV-1a 32 位哈希，与固件 FrameVersionHash 一致。"""
@@ -94,28 +86,27 @@ def fnv1a32(s):
     return h
 
 
-# arm_id 的语义：**arm_id 就是 CAN 总线索引**，0 = CAN1 = 臂A、1 = CAN2 = 臂B。
-# 板子只认 arm_id < ARM_NUM(2)，越界的帧**静默丢弃**（连版本包都不回）。
+# arm_id：0 对应 CAN1 / 臂 A，1 对应 CAN2 / 臂 B。固件丢弃越界编号。
 DEFAULT_ARM_ID = 0
 
-# ==================== 码表（libs/frame/type_id.h） ====================
+# 码表（libs/frame/type_id.h）
 
-TID_VERSION = 0x01            # 版本匹配 · 双向（上位机发"我是什么版本"，板子回自报家门）
-TID_ARM_INIT = 0x02           # 初始化命令 · 下发（空 payload）
-TID_MOTOR_SET_ZERO = 0x10     # 触发一轮设零 · 下发（空 payload）
-TID_MOTOR_SET_ZERO_ACK = 0x11  # 设零回复 · 上报
-TID_ARM_START = 0x12          # 进 run 档 · 下发（空 payload）
-TID_ARM_GRAVITY = 0x13        # 进重力补偿档 · 下发（空 payload）
-TID_ARM_STOP = 0x14           # 停止（松劲）· 下发（空 payload）
-TID_ARM_DAMPING = 0x15        # 进阻尼档 · 下发（空 payload）
-TID_ARM_CTRL_POS = 0x16       # 位置控制 · 下发
-TID_ARM_RESET = 0x18          # 一键复位 · 下发（空 payload，不做夹爪找零）
-TID_ARM_FEEDBACK = 0x80       # 机械臂反馈帧 · 上报（握手通过后 250 Hz 常流）
-TID_LINK_STATUS = 0x81        # 链路状态帧 · 上报（握手通过后 10 Hz，链路级只一帧）
+TID_VERSION = 0x01            # 版本握手，双向
+TID_ARM_INIT = 0x02           # 初始化，空载荷
+TID_MOTOR_SET_ZERO = 0x10     # 设零请求，空载荷
+TID_MOTOR_SET_ZERO_ACK = 0x11  # 设零回复
+TID_ARM_START = 0x12          # RUN，空载荷
+TID_ARM_GRAVITY = 0x13        # 重力补偿，空载荷
+TID_ARM_STOP = 0x14           # STOP 软停机，空载荷
+TID_ARM_DAMPING = 0x15        # 阻尼，空载荷
+TID_ARM_CTRL_POS = 0x16       # 位置控制
+TID_ARM_RESET = 0x18          # 复位，空载荷，不执行夹爪找零
+TID_ARM_FEEDBACK = 0x80       # 反馈，握手后目标频率 250 Hz
+TID_LINK_STATUS = 0x81        # 链路统计，握手后 10 Hz
 
 EMPTY_MODE_TIDS = (TID_ARM_START, TID_ARM_GRAVITY, TID_ARM_STOP, TID_ARM_DAMPING)
 
-# 线上固定尺寸（协议定的，不是 App 的 ARM_JOINT_NUM / ARM_MOTOR_NUM）
+# 协议固定轴数，与应用层定义独立。
 PKT_JOINT_NUM = 6
 PKT_MOTOR_NUM = 7
 
@@ -125,9 +116,8 @@ CTRL_POS_LEN = _CTRL_POS.size
 SET_ZERO_ACK_LEN = 12          # u8 + u8[7] + u32
 LINK_STATUS_LEN = 84           # 10×u32 + 11×u32
 
-# 0x81 里 rx_by_tid[] 的分类顺序：**下标就是它在元组里的位置**，最后一格是「其他」。
-# 顺序的唯一出处是板子 `libs/frame/type_id.h` 的 `FRAME_TID_DOWN_LIST`，自测会逐项比对。
-# 板子自己发的 0x80 不在表里 —— 上位机不该发它，真收到了就落「其他」，正好是异常信号。
+# 0x81 分类计数顺序对应固件 FRAME_TID_DOWN_LIST，末项统计其他类型。
+# 上行反馈 0x80 不属于下行命令，误发时计入其他类型。
 LINK_TID_ORDER = (TID_VERSION, TID_ARM_INIT,
                   TID_MOTOR_SET_ZERO, TID_MOTOR_SET_ZERO_ACK,
                   TID_ARM_START, TID_ARM_GRAVITY, TID_ARM_STOP, TID_ARM_DAMPING,
@@ -144,7 +134,7 @@ MAX_FRAME = OVERHEAD + MAX_DATA  # 263
 ARM_ID_OFFSET = 4
 
 
-# ==================== 组帧 ====================
+# 组帧
 
 def encode(tid, payload=b"", arm_id=DEFAULT_ARM_ID):
     """组帧并校验载荷长度和 arm_id 字节范围；实际臂编号范围由链路检查。"""
@@ -211,7 +201,7 @@ def encode_feedback(mode, robot_state, motor_lost_mask, motor_inited_mask,
                           motor_lost_mask & 0xFF, motor_inited_mask & 0xFF,
                           *joint_deg, *jvel_deg, gripper_deg,
                           *[int(t) & 0xFF for t in temps])
-    if len(payload) != FB_LEN:      # 结构体格式写错了就在这里当场炸，别等板子
+    if len(payload) != FB_LEN:      # 检查编码长度是否符合协议。
         raise AssertionError("0x80 payload 组出 %d 字节，应为 %d" % (len(payload), FB_LEN))
     return payload
 
@@ -233,7 +223,7 @@ def encode_link_status(rx_total, rx_by_tid, crc8_err, crc16_err, drop_bytes,
     return payload
 
 
-# ==================== payload 解包 ====================
+# payload 解包
 
 @dataclass(frozen=True)
 class Feedback:
@@ -248,8 +238,8 @@ class Feedback:
     motor_inited_mask: int
     joint_angle: tuple        # deg，6 个
     joint_vel: tuple          # deg/s，6 个
-    gripper_angle: float      # deg —— **电机原始角**，双向都不做 pos_to_angle 换算
-    motor_temp: tuple         # ℃，7 个（uint8；板子那边 NAN 会写成 0，两者区分不了）
+    gripper_angle: float      # 夹爪原始电机角，deg
+    motor_temp: tuple         # 七项温度，℃；0 也可能表示未读到温度
 
 
 @dataclass(frozen=True)
@@ -259,17 +249,17 @@ class LinkStatus:
     rx_total 包含解析后被拒绝的帧；rx_by_tid 顺序见 LINK_TID_ORDER，末项为其他类型。
     """
 
-    rx_total: int             # 这段窗口里解出来的整帧数
+    rx_total: int             # 本窗口解析的完整帧数
     rx_by_tid: tuple          # 11 个，顺序同 LINK_TID_ORDER
-    crc8_err: int             # crc8 错被丢的帧数
-    crc16_err: int            # crc16 错被丢的帧数
-    drop_bytes: int           # 喂进解析器但没能组成任何有效帧的字节数
+    crc8_err: int             # CRC8 校验失败帧数
+    crc16_err: int            # CRC16 校验失败帧数
+    drop_bytes: int           # 未能组成有效帧的字节数
     bad_arm: int              # arm_id >= ARM_NUM 被丢的帧数（正常恒 0）
-    over_len: int             # payload 超长被丢的帧数（正常恒 0）
-    ring_drop: int            # 收包环满被丢的帧数
-    gated: int                # 被握手闸门挡下的帧数
-    tx_fail: int              # 板子**发**帧失败的次数
-    dt_ms: int                # 距上一帧 0x81 的实际毫秒数（标称 100）
+    over_len: int             # 载荷超长帧数
+    ring_drop: int            # 接收环形缓冲区溢出帧数
+    gated: int                # 握手前被拒绝的帧数
+    tx_fail: int              # 固件发送失败次数
+    dt_ms: int                # 报告间隔，单位 ms，标称 100
 
 
 @dataclass(frozen=True)
@@ -299,8 +289,7 @@ def decode_feedback(payload):
 def decode_link_status(payload):
     if len(payload) != LINK_STATUS_LEN:
         raise ValueError("0x81 长度 %d != %d" % (len(payload), LINK_STATUS_LEN))
-    # 和 encode 一样分两段读：前段 = rx_total + rx_by_tid，后段 = 剩下 9 个。
-    # 用 LINK_TID_SLOT_NUM 算偏移，别再手写 13/14/… —— 槽位数一改就该自动跟着走。
+    # 前段为总数和分类计数，后段为九项统计；偏移由槽位数计算。
     head = struct.unpack_from("<%dI" % (1 + LINK_TID_SLOT_NUM), payload, 0)
     tail = struct.unpack_from("<9I", payload, 4 * (1 + LINK_TID_SLOT_NUM))
     return LinkStatus(
@@ -334,7 +323,7 @@ def decode_version(payload):
     return struct.unpack("<I", payload)[0]
 
 
-# ==================== 切帧 ====================
+# 切帧
 
 class FrameParser:
     """将字节流解析为 (type_id, arm_id, payload)。
@@ -359,7 +348,7 @@ class FrameParser:
         while True:
             i = self.buf.find(SYNC)
             if i < 0:
-                # 一个同步头都没有。最后 1 个字节可能是 AA 的前半，留着等下一片。
+                # 无同步头时保留末字节，以便匹配跨分片的 AA 55。
                 if len(self.buf) > 1:
                     self.n_drop += len(self.buf) - 1
                     del self.buf[:-1]

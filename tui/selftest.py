@@ -1,12 +1,6 @@
-"""Console-side offline self-test: **no hardware, no curses, no pyserial needed**.
+"""TUI 离线自测，不需要硬件、curses 或 pyserial。
 
-It runs the backend's own set — the two-arm wiring (one link, two `Arm`s, one state machine
-each), the units and soft limits, the step presets, whether the gates stop what they should,
-and whether commands really went out. `sdk.sim.SimLink` stands in for the board, and the
-**real** parsing, routing and gating are exercised. The panel itself (curses layout) is not
-tested here.
-
-入口：`python3 -m sdk.tui --selftest`，依次执行 SDK 和控制台后端自测。
+使用 SimLink 检查双臂会话、单位、限位和命令发送，不检查界面布局。
 """
 
 import argparse
@@ -21,7 +15,7 @@ from .session import DEFAULT_STEP_RAD, GRIPPER
 
 
 def _fake_opts(**kw):
-    """The opts used by the self-test (same names, same meanings as the argparse one)."""
+    """构造与命令行参数结构一致的测试配置。"""
     d = dict(fake=True, port=None, baud=921600, arm_id=0, fake_lost=0, ctrl_hz=100.0,
              fb_hz=5.0, log=None, stop_on_exit=False, step=DEFAULT_STEP_RAD,
              init_tol=board_defs.ROBOT_INIT_POSE_TOL_RAD, handshake_timeout=3.0,
@@ -31,12 +25,7 @@ def _fake_opts(**kw):
 
 
 def selftest():
-    """Offline self-test. No hardware, no curses, no pyserial needed.
-
-    Two parts: **sdk's own set** (protocol / gates / fake board, `sdk/selftest.py`), then
-    **the console backend's set** (the two-arm wiring, the units, the step presets, whether
-    commands really went out).
-    """
+    """依次执行 SDK 和 TUI 会话自测。"""
     import math
 
     print("=" * 68)
@@ -48,11 +37,7 @@ def selftest():
     print("=" * 68)
     print(i18n.tr("selftest.hdr_tui"))
     print("=" * 68)
-    # Language-table self-check: key sets equal / every value a str / the % conversion
-    # specifiers of zh and en agree / no Han characters in en.
-    # **Deliberately not a c.check** — it is not a runtime criterion of the "run it once
-    # and you know" kind, and putting it in would change the "48 items" count that is
-    # referenced all over the place.
+    # 检查语言表的键、值、占位符及英文字符范围。
     probs = i18n.check_tables()
     if probs:
         print(i18n.tr("selftest.table_bad", len(probs)))
@@ -61,7 +46,7 @@ def selftest():
         return 1
     c = Checker()
 
-    # ---- units and limits (rad is the panel's convention) ----
+    # 单位与软限位
     c.section(i18n.tr("selftest.sec_units"))
     c.check(i18n.tr("selftest.j1_hi"), abs(cb.axis_hi_rad(0) - math.radians(90.0)) < 1e-12)
     c.check(i18n.tr("selftest.j1_lo"), abs(cb.axis_lo_rad(0) - math.radians(-115.0)) < 1e-12)
@@ -75,7 +60,7 @@ def selftest():
     v, cl = cb.clamp_axis_rad(3, 0.0)
     c.check(i18n.tr("selftest.clamp_in"), (not cl) and v == 0.0)
 
-    # ---- step presets / --arm-id parsing ----
+    # 步长与臂编号解析
     c.section(i18n.tr("selftest.sec_step"))
     c.check(i18n.tr("selftest.step_rad"),
             cb.STEP_CHOICES_RAD == [0.005, 0.01, 0.02, 0.05, 0.1, 0.2])
@@ -94,20 +79,14 @@ def selftest():
     for s in ("2", "-1", "x", "", "1.0"):
         try:
             cb.parse_arm_id(s)
-            ok = False          # something that should have been rejected was not
+            ok = False          # 预期拒绝的输入被接受
         except argparse.ArgumentTypeError:
             pass
     c.check(i18n.tr("selftest.arm_id"), ok)
 
-    # ---- two-arm wiring (through the real SimLink: parsing, routing and gates are real) ----
+    # 使用 SimLink 检查双臂连接与分流
     class _RecLink(SimLink):
-        """Records the tid of every frame sent out — to assert "what should have been sent
-        was sent, and nothing that should not have been sent went out at all".
-
-        It also plays the two states the real `Link` reaches on its own (they are plain
-        attribute moves over there too — the RX thread is the one doing the retrying, and
-        the panel only reads the result).
-        """
+        """记录已发帧，并模拟重连成功或耗尽重试次数。"""
 
         def __init__(self, *a, **kw):
             super().__init__(*a, **kw)
@@ -118,8 +97,7 @@ def selftest():
             return super().send(tid, payload, arm_id)
 
         def simulate_reconnect(self):
-            """The RX thread reopened the port by itself after a drop (where a successful
-            `Link._reconnect` lands)."""
+            """模拟接收线程成功重连。"""
             self.link_up = False
             self.link_err = "读串口失败: 假"
             self.open_gen += 1
@@ -131,8 +109,7 @@ def selftest():
             self.link_err = None
 
         def simulate_give_up(self, tries, err):
-            """One round of drops used up the tries and the RX thread stopped (where
-            `Link._reconnect` giving up lands)."""
+            """模拟接收线程达到重试上限。"""
             self.link_up = False
             self.link_err = "读串口失败: 假"
             self.reconnect_tries = tries
@@ -141,12 +118,7 @@ def selftest():
 
     c.section(i18n.tr("selftest.sec_two"))
     opts = _fake_opts()
-    # Fake-board clock ×2: the self-test would wait the 3 s for 0x02, which is too long in
-    # real time. The panel's keepalive is one frame every **real** 150 ms (tick's last_tx
-    # uses time.monotonic), while the fake board's 3 s watchdog runs on its own clock: at
-    # ×2, 150 ms of real time = 300 ms simulated, a tenth of the window, so the speed-up
-    # does not starve the board into comm_lost. For a real-hardware rehearsal use the
-    # default ×1 (the panel then looks exactly the way it should).
+    # 模拟时钟加速两倍，150 ms 的保活间隔仍小于模拟看门狗窗口。
     link = _RecLink(speed=2.0)
     sess = cb.ConsoleSession(link, opts)
     link.open()
@@ -196,7 +168,7 @@ def selftest():
         c.check(i18n.tr("selftest.arms_sorted"),
                 [a["arm_id"] for a in snap["arms"]] == [0, 1])
 
-        # switching arms + jogging only affects the current arm
+        # 切臂和点动仅修改当前臂目标。
         before0 = list(sess.views[0].target)
         sess.switch_arm(1)
         c.check(i18n.tr("selftest.sw_to_b"), sess.cur_arm_id == 1 and sess.arm_id == 1)
@@ -211,7 +183,7 @@ def selftest():
         c.check(i18n.tr("selftest.hold_cur"),
                 (sess.hold is False) and all(v.hold is False for v in sess.views.values()))
 
-        # ---- commands: what should go out does, what should not goes out not at all ----
+        # 检查命令发送及预检拒绝
         c.section(i18n.tr("selftest.sec_cmd"))
         c.check(i18n.tr("selftest.a_wait_init"),
                 pump(4.0, lambda: sp(0).robot_state == board_defs.STATE_WAIT_INIT))
@@ -237,9 +209,7 @@ def selftest():
                 i18n.tr("selftest.sent", link.tids))
         c.check(i18n.tr("selftest.i_one_warn"),
                 sum(1 for _, lv, _ in sess.events if lv == "warn") == n_warn + 1)
-        # Pressing it once more still sends not one frame: the force path is given to the
-        # "pose" gate only. The check is on the warn count, not on the message text — the
-        # text depends on the language, the count does not.
+        # 再次初始化仍须通过状态预检；按警告数量断言，避免依赖语言。
         link.tids.clear()
         sess.send_arm_init()
         c.check(i18n.tr("selftest.i_again"),
@@ -275,7 +245,7 @@ def selftest():
                 and (protocol.TID_ARM_CTRL_POS, 1) in link.tids)
         sess.switch_arm(0)
 
-        # ---- reopen: both arms have to be re-seeded ----
+        # 重开链路后重新对齐双臂目标
         c.section(i18n.tr("selftest.sec_reopen"))
         c.check(i18n.tr("selftest.reopen_ok"), sess.reopen())
         c.check(i18n.tr("selftest.reopen_cleared"),
@@ -283,8 +253,7 @@ def selftest():
         c.check(i18n.tr("selftest.reopen_seeded"),
                 pump(6.0, lambda: all(v.seeded for v in sess.views.values())))
 
-        # ---- automatic reconnect: the panel only reads the link's state, so the two ends
-        # ---- of it are played by hand here (the retrying itself is tested in sdk's set)
+        # 手动模拟链路状态变化；实际重连线程由 SDK 自测覆盖。
         c.section(i18n.tr("selftest.sec_relink"))
         link.simulate_give_up(tries=10, err="打不开假口子")
         c.check(i18n.tr("selftest.relink_snap"),
@@ -306,7 +275,7 @@ def selftest():
                 any(t == want for _, _, t in sess.events),
                 i18n.tr("selftest.sent", [t for _, _, t in list(sess.events)[-3:]]))
 
-        # ---- stop_all (--stop-on-exit) ----
+        # 双臂退出 STOP
         link.tids.clear()
         done = sess.stop_all()
         c.check(i18n.tr("selftest.stop_two"),

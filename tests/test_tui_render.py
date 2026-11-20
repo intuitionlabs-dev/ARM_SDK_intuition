@@ -1,4 +1,4 @@
-"""Exercise TUI rendering with real decoded feedback and a terminal stub."""
+"""使用实际解码反馈和模拟终端检查 TUI 渲染。"""
 import struct
 import unittest
 from unittest.mock import Mock, patch

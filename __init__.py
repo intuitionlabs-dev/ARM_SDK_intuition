@@ -24,7 +24,7 @@ __all__ = [
     # 异常
     "ArError", "LinkError", "NotConnected", "ProtocolError", "GateRejected",
     "FeedbackStale", "GripperNotCalibrated", "CalibrationError",
-    # 口子
+    # 串口工具
     "pick_default_port", "list_links", "describe_port", "usb_identity",
     "same_usb_ident", "match_ident",
     # 子模块

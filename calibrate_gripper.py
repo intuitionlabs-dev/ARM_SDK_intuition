@@ -1,34 +1,10 @@
-"""夹爪标定小工具：把"开口距离（m）"和"电机原始角（deg）"这两把尺子对起来。
+"""ARX H7 夹爪两点标定工具：记录闭合和完全张开时的原始角。
 
-    python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085
-
-为什么需要人肉标定，见 `sdk/gripper.py` 的模块注释：板子线上的夹爪角是**电机原始角**，
-仓库里没有任何"多少度对应多少毫米"的规格，所以只能实测 —— 把夹爪摆到 `FULL_OPEN` 和
-`0 m` 两处，各记一次原始角，之后按这两点线性映射。
-
-## 前提：标定必须在**一次成功的初始化之后**做
-
-ARX-X5 原始角负向闭合、正向张开；初始化找零向正向机械限位搜索，再向负向回退 142° 后设零。
-这个零点不按软限位上下限的平均值计算。
-在那之前 `raw_deg` 的零点没有含义，标出来的两点是废的。工具会去查
-`motor_inited` 里夹爪那一位，为 0 就警告。之后再次给夹爪设零或找零，需复核并重新标定；
-仅给其他关节设零不改变夹爪零点。
-
-## 怎么把夹爪挪到那两处
-
-两条路，按 `r` / `d` / `x` 在三个档位之间切：
-
-- **手掰**（推荐，`d`=阻尼档 / `x`=失能档）：夹爪松劲或只剩粘滞，直接上手掰到位置。
-  夹爪不受重力，所以不存在"一松手就掉下来"的问题。
-- **点动**（`r`=run 档）：`←` `→` 每次挪一个步长，工具以 50 Hz 发控制帧让位置环跟过去。
-  run 档下**整条臂都是使能的**，关节会试图保持当前姿态 —— 只在手不好够的时候用。
-
-`[` `]` 改步长。到了位置按 `0` 记"这里是 0 m"、按 `f` 记"这里是 FULL_OPEN"。两点都记齐了
-按**回车**存盘（写到 `sdk/config/gripper_calib.json`，可用 `--calib` 或环境变量
-`ARX_GRIPPER_CALIB` 改）。`q` 不存盘退出。
-
-⚠ 这个工具的**按键会真的让电机使能/失能**（`r`/`d`/`x` 发 0x12/0x15/0x14），并且 run 档下
-的 `←`/`→` 会真的驱动夹爪。所以它是个"要看着机器"的工具，别在无人看管的时候挂后台。
+运行：python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085。
+须先完成初始化；夹爪零点变化后须重新标定。
+按 d/x 切阻尼/STOP 后手动调整，或按 r 进入 RUN 后用方向键点动。
+RUN 会使能整条臂，点动会实际驱动夹爪。按 0/f 记录两点，回车保存，q 放弃。
+配置路径可由 --calib 或 ARX_GRIPPER_CALIB 指定。
 """
 
 import argparse
@@ -44,25 +20,23 @@ from .errors import ArError, CalibrationError
 from .gripper import GripperCalibStore, GripperCalibration
 from .link import Link
 
-# 点动时控制帧的发帧率。板子上夹爪的位置环很软，50 Hz 足够跟得平顺；
-# 再快只是白占链路。
+# 点动目标发送频率。
 JOG_HZ = 50.0
 
-# 不点动时也要喂链路：板子 3 s 收不到有效帧就把臂切回阻尼。
+# 空闲时仍保活，避免 3 s 通信超时。
 ALIVE_HZ = 5.0
 
-# 画面刷新率（别每圈都重画，闪）。
+# 界面刷新频率。
 DRAW_HZ = 5.0
 
 STEP_MIN_DEG = 0.1
 STEP_MAX_DEG = 45.0
 STEP_DEFAULT_DEG = 2.0
 
-# 点动时对"反馈有多新"的要求。比 SDK 闸门（100 ms）稍紧一点，否则会卡在边界上：
-# 闸门是 `age > 100 ms 就抛 FeedbackStale`，正好等于 100 ms 的那一拍还是会抛。
+# 点动反馈时限略小于 SDK 的 100 ms，留出处理余量。
 JOG_FRESH_S = FEEDBACK_STALE_S * 0.8
 
-# 单字节按键。方向键是 Vt100 的 ESC 序列，单列出来。
+# 单字节按键与方向键 ESC 序列。
 SINGLES = {
     b"0": "zero",
     b"f": "full",
@@ -77,7 +51,7 @@ SINGLES = {
     b"\r": "save",
     b"\n": "save",
     b"q": "quit",
-    b"\x03": "quit",      # Ctrl-C：cbreak 下它是普通字节，自己处理才收得到
+    b"\x03": "quit",      # Ctrl-C 输入字节
     b"\x04": "quit",      # Ctrl-D
 }
 ESCAPES = {
@@ -107,23 +81,23 @@ class Calibrator:
         self.note = note
 
         self.step_deg = STEP_DEFAULT_DEG
-        self.target_deg = None      # 点动目标（只认原始 deg）
+        self.target_deg = None      # 夹爪点动目标，单位 deg
         self.deg_at_zero = None
         self.deg_at_full_open = None
 
         self._last_tx = 0.0
         self._last_draw = 0.0
         self._stale_warned = False
-        self._link_gen = None        # 上一个看到的 open_gen（链路自己重连回来时提一句）
+        self._link_gen = None        # 上次连接代数，用于检测重连
         self._buf = b""
         self._line_shown = False
-        self._note_line = ""        # 显示在画面下方的一次性提示（错误、保存结果……）
+        self._note_line = ""        # 底部单次提示
         self.quitting = False
 
-    # ==================== 输入 ====================
+    # 输入
 
     def _read_keys(self):
-        """把 stdin 上现在能读到的字节全读出来，切成按键记号。"""
+        """读取当前可用的输入字节并解析按键。"""
         while True:
             try:
                 r, _, _ = select.select([sys.stdin], [], [], 0)
@@ -135,7 +109,7 @@ class Calibrator:
                 chunk = os.read(sys.stdin.fileno(), 64)
             except OSError:
                 chunk = b""
-            if not chunk:           # EOF：管道的另一头关了
+            if not chunk:           # 输入流已结束
                 self.quitting = True
                 return []
             self._buf += chunk
@@ -149,12 +123,12 @@ class Calibrator:
                     break
             else:
                 if self._buf[:1] == b"\x1b" and len(self._buf) < 4:
-                    break           # 序列还没收全，留着下圈再拼
+                    break           # 保留未完整接收的按键序列
                 one, self._buf = self._buf[:1], self._buf[1:]
                 keys.append(SINGLES.get(one, "other"))
         return keys
 
-    # ==================== 动作 ====================
+    # 动作
 
     def _say(self, text):
         self._note_line = text
@@ -181,7 +155,7 @@ class Calibrator:
             return
         self._say("已发 %s（板子接受与否看下一帧的 mode）。" % tid_name)
         if tid_name == "start":
-            self.target_deg = self._raw_deg()      # 进 run 档：目标对齐当前，别突然跳
+            self.target_deg = self._raw_deg()      # 进入 RUN 时对齐当前反馈，避免目标跳变。
 
     def _record(self, which):
         raw = self._raw_deg()
@@ -239,7 +213,7 @@ class Calibrator:
                  _fmt_pt(self.deg_at_full_open)))
         print("-" * 68)
 
-    # ==================== 周期 ====================
+    # 周期
 
     def _tick(self):
         now = time.monotonic()
@@ -254,7 +228,7 @@ class Calibrator:
             self._say("%s" % _first_line(e))
 
     def _watch_link(self):
-        """链路自己重连回来时提一句 —— 这个界面没有事件流，只有画面下方那一行提示。"""
+        """检测重连并在状态行显示结果。"""
         gen = getattr(self.arm.link, "open_gen", 0)
         if self._link_gen is None:
             self._link_gen = gen
@@ -264,12 +238,7 @@ class Calibrator:
             self._say("链路已自动重连，接着点动就行（位置从下一帧反馈重新对齐）。")
 
     def _jogging(self):
-        """这一拍该发**控制帧**了吗（否则只喂保活）。
-
-        反馈新不新也要查：夹爪目标是拿**当前关节角**当基准发的，反馈断了就不知道该把关节
-        定在哪、而且 `send_ctrl_pos` 自己也会抛 `FeedbackStale`。与其每拍去撞那个异常，
-        不如自己先停手 —— 停手时降回保活的节奏，别拿 50 Hz 白占链路。
-        """
+        """判断是否可发送点动目标；反馈过期时仅发送保活。"""
         if self.target_deg is None:
             return False
         if self.arm.mode != bd.MODE_RUN or not self.arm.link_up:
@@ -283,7 +252,7 @@ class Calibrator:
                                    gripper_torque_limit_nm=self.arm.board_defs.DEFAULT_GRIPPER_TORQUE_LIMIT_NM)
             self._stale_warned = False
             return
-        # 不点动也要喂：0x01 是板子认的有效帧，纯保活用（3 s 收不到就切阻尼）。
+        # 空闲时发送 0x01 保活。
         self.arm.keepalive()
         age = self.arm.feedback_age
         if (self.target_deg is not None and age is not None
@@ -293,7 +262,7 @@ class Calibrator:
                       "（link_up=%s），别拿着旧姿态继续发位置。"
                       % (age * 1000.0, self.arm.link_up))
 
-    # ==================== 画面 ====================
+    # 画面
 
     def _draw(self, force=False):
         now = time.monotonic()
@@ -338,7 +307,7 @@ class Calibrator:
         print("  · %s" % self._note_line)
         self._note_line = ""
 
-    # ==================== 主循环 ====================
+    # 主循环
 
     def run(self):
         print(HELP)
@@ -354,7 +323,7 @@ class Calibrator:
                 self._flush_note()
                 self._draw()
             time.sleep(0.005)
-        self._flush_note()      # 最后一条提示（"已存到 <路径>"）别被退出吞掉
+        self._flush_note()      # 退出前显示最终操作结果。
         self._clear_line()
         return 0
 
@@ -482,16 +451,14 @@ def main(argv=None):
         return Calibrator(arm, store, full_open_m, note=args.note).run()
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attr)
-        # **不替用户切档**。切阻尼听着"安全"，但它会把电机使能起来 —— 本来在 stop 档（失能）
-        # 的臂会突然被通上电，这是没人要求过的动作。退出就退出：不再发帧之后板子 3 s
-        # 收不到有效帧，自己会切回阻尼 —— 板子上已经验证过的那条兜底路径。
+        # 退出不主动切换模式；关闭串口后由固件处理通信超时。
         print("退出。最后看到的档位是「%s」—— 不再发帧之后板子 3 s 就会自己切回"
               "阻尼，不用再做什么。" % (arm.mode_name or "未知"))
         link.close()
 
 
 def tty_cbreak(fd):
-    """cbreak：按键立刻到手，但 Ctrl-C 之类的信号不被吞掉、回显也不乱。"""
+    """启用即时按键输入，保留终端信号处理，退出时恢复设置。"""
     import tty
     tty.setcbreak(fd)
 

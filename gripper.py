@@ -20,7 +20,7 @@ from .errors import CalibrationError, GripperNotCalibrated
 
 CALIB_VERSION = 1
 
-# 两个记录点离得太近时映射会放大噪声 —— 不禁止，但要吵一句。
+# 标定点过近会放大噪声，保留数据并发出警告。
 MIN_POINT_SEPARATION_DEG = 10.0
 
 ENV_CALIB_PATH = "ARX_GRIPPER_CALIB"
@@ -47,7 +47,7 @@ class GripperCalibration:
     recorded_at: str = ""
     note: str = ""
 
-    # ---- 校验 ----
+    # 校验
 
     def validate(self):
         """无效数据抛 CalibrationError；端点过近时发出警告。"""
@@ -76,7 +76,7 @@ class GripperCalibration:
         """原始角增大时的开口方向：+1 张开，-1 闭合。"""
         return 1 if self.deg_at_full_open > self.deg_at_zero else -1
 
-    # ---- 换算 ----
+    # 换算
 
     def opening_from_raw_deg(self, raw_deg):
         """原始角 deg 转开口 m；范围外线性外推。"""
@@ -88,7 +88,7 @@ class GripperCalibration:
         return (self.deg_at_zero + (opening_m / self.full_open_m)
                 * (self.deg_at_full_open - self.deg_at_zero))
 
-    # ---- 存取 ----
+    # 存取
 
     def to_dict(self):
         return {
@@ -136,7 +136,7 @@ class GripperCalibStore:
     def __init__(self, path=None):
         self.path = Path(path) if path is not None else calib_path()
 
-    # ---- 原始 JSON ----
+    # 原始 JSON
 
     def load_raw(self):
         """读取完整标定文件；文件不存在时返回空结构。"""
@@ -164,7 +164,7 @@ class GripperCalibStore:
             raise CalibrationError("标定文件 %s 的 arms 不是一个 JSON 对象" % self.path)
         return data
 
-    # ---- 读一台 ----
+    # 读一台
 
     def get(self, arm_id):
         """返回指定臂的标定；缺失返回 None，无效数据抛 CalibrationError。"""
@@ -179,7 +179,7 @@ class GripperCalibStore:
     def has(self, arm_id):
         return str(int(arm_id)) in self.load_raw()["arms"]
 
-    # ---- 写一台 ----
+    # 写一台
 
     def put(self, arm_id, calib):
         """更新指定臂并原子替换文件；不支持多个进程并发写入。"""
@@ -199,7 +199,7 @@ class GripperCalibStore:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
                 f.write("\n")
-            os.replace(tmp, self.path)   # 原子：要么旧内容、要么新内容，不会是半份
+            os.replace(tmp, self.path)   # 原子替换，避免留下不完整文件。
         except BaseException:
             try:
                 os.unlink(tmp)
@@ -207,7 +207,7 @@ class GripperCalibStore:
                 pass
             raise
 
-    # ---- 给外部用的合成入口 ----
+    # 对外接口
 
     def require(self, arm_id, hint=""):
         """返回指定臂的标定；缺失抛 GripperNotCalibrated。"""

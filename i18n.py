@@ -1,23 +1,8 @@
-"""Language tables for everything a human reads: panel text, event log, exceptions.
+"""面板、日志和异常的中英文文案，默认中文。
 
-`set_lang("en")` switches the *same* code path to English; the default is `zh` and the
-Chinese output is byte-for-byte what it was before this module existed (every `zh` entry
-below is a literal lifted verbatim out of the call site it replaced).
-
-Two tables, identical key sets, keyed `<module>.<name>`:
-
-    _ZH / _EN      messages, `%`-templates (never tuples or lambdas -- see `check_tables`)
-
-Name tables (state / mode / axis / arm labels) live here too, because `sdk/arm.py` and
-`sdk/link.py` put them inside exception messages. The `zh` branches delegate straight to
-`board_defs`, so there is exactly one Chinese source of truth; only the English side is a
-second table here. `board_defs` itself is deliberately untouched -- `Snapshot.mode_name`
-and friends are public API and must keep returning Chinese.
-
-A missing key never raises at runtime: `tr()` falls back to the Chinese entry (and to a
-visible `[missing:...]` marker if the key is nowhere). A console driving a robot arm must not
-die because one translation is missing. Strictness lives in `check_tables()`, which the
-self-test calls.
+_ZH 和 _EN 使用相同键及兼容的百分号占位符。
+缺少翻译时回退到中文，键不存在时显示 [missing:...]；check_tables() 检查文案表。
+公共状态名称仍由 board_defs 提供，消息内的名称按当前语言显示。
 """
 import re
 
@@ -30,11 +15,7 @@ _LANG = DEFAULT_LANG
 
 
 def set_lang(code):
-    """Switch language. **Never raises**: anything but `zh`/`en` (including None) -> `zh`.
-
-    The value comes from a pre-parse of argv, and a console that refuses to start because
-    of an ambiguous argument would be worse than one showing the wrong language.
-    """
+    """切换为 zh 或 en；其他值回退到 zh。"""
     global _LANG
     _LANG = code if code in LANGS else DEFAULT_LANG
     return _LANG
@@ -44,14 +25,12 @@ def get_lang():
     return _LANG
 
 
-# ============================================================================
-# Messages
-# ============================================================================
+# 中英文文案
 
 _ZH = {}
 _EN = {}
 
-# ---- sdk/tui/session.py: event stream / dialog text ----
+# TUI 会话事件与对话框
 _ZH.update({
     "session.tid.start": "0x12 启动",
     "session.tid.gravity": "0x13 重力补偿",
@@ -223,9 +202,9 @@ _EN.update({
     "session.pose_dev_sep": ", ",
 })
 
-# ---- sdk/tui/app.py: panel / help page / dialogs ----
+# TUI 面板、帮助与对话框
 _ZH.update({
-    # help page (one entry per line, "" is a blank line and never enters the table)
+    # 每项对应一行帮助，空行不进入文案表。
     "app.help.select": "1-6 / 0 / Tab      选中 j1..j6 / 夹爪 / 下一个",
     "app.help.jog": "← ↓ / → ↑ / + -    选中轴 ∓ 一个步长（只改目标角，实际下发按 --ctrl-hz）",
     "app.help.step":
@@ -260,7 +239,7 @@ _ZH.update({
         "**两台臂各自跑各的状态机**：i/o/s/d/v/x 只作用于「当前臂」（底下那行 > 标着的那台）。",
     "app.help.two2": "一条链路上开两个进程会互相抢字节，所以一次只开这一个。",
     "app.help.exit": "退出不发 0x14：目标冻结、臂保持，约 3 s 后板子自己因无帧进 damping。",
-    # panel
+    # 面板
     "app.log_head": "# sdk.tui 启动 %s port=%s fake=%s 当前臂=%d\n",
     "app.log_warn": "警告：日志文件打不开(%s)，只在屏幕上显示",
     "app.too_small": "窗口太小（%dx%d），至少要 12 行 60 列",
@@ -307,7 +286,7 @@ _ZH.update({
         "a 切臂  1-6/0/Tab 选轴  ←↓→↑/+- 步进  [/] 步长  c 对齐  s run  "
         "d 阻尼  x 停  v 重力  i 初始化  o 复位  z 设零  Space 暂停  "
         "h 帮助  q 退出",
-    # keys / dialogs
+    # 按键与对话框
     "app.events_cleared": "事件已清",
     "app.quit_confirm": "有臂正发/曾发控制帧，确定退出？(y/n) ",
     "app.no_fb_align": "还没反馈帧，没法对齐",
@@ -334,7 +313,7 @@ _ZH.update({
     "app.setzero_cancel2": "设零已取消（第 2 步没通过）",
 })
 
-# ---- sdk/tui/__main__.py: command line ----
+# 命令行提示
 _ZH.update({
     "main.cli_description": "机械臂上位机控制台（curses 全屏面板）。UART / USB 两条链路、两台臂都能跑。",
     "main.epilog": "按 h 看按键表；--selftest / --fake 都不需要硬件。",
@@ -375,7 +354,7 @@ _ZH.update({
                       "臂切回 damping（总模式不变）；要立刻松劲按 x，或用 --stop-on-exit。",
 })
 
-# ---- sdk/tui/selftest.py: self-test item names / section names / summary ----
+# 自测项目与结果
 _ZH.update({
     "selftest.hdr_sdk": "1) sdk 离线自测（协议 / 闸门 / 假板子）",
     "selftest.hdr_tui": "2) 控制台后端自测（sdk.tui.session，用假板子跑）",
@@ -441,13 +420,8 @@ _ZH.update({
     "selftest.sent": "发出的：%r",
 })
 
-# ---- sdk/arm.py: gate rejections / send_* errors / handshake diagnostics (printed
-# ---- straight into the panel's event area) ----
-#
-# Note: the **public fields** `Snapshot.robot_state_name` / `mode_name` / `lost_names`
-# / `inited_names` still go through board_defs and are still Chinese (see the class
-# docstring), so arm.py's `Arm.*_name` properties are unchanged too; only the rendering
-# **inside messages** goes through i18n, computed on the spot from the numeric codes.
+# Arm 预检和连接诊断。
+# 公共状态名称保留中文；消息中的名称按当前语言显示。
 _ZH.update({
     "arm.snapshot_line": "臂%s state=%s mode=%s 关节(rad) %s 夹爪 %s 温度 %s 丢 %s",
     "arm.grip_uncal": "未标定(raw %.2f°)",
@@ -510,8 +484,7 @@ _ZH.update({
     "arm.no_port_open": "(未开口子)",
 })
 
-# ---- sdk/link.py: serial port cannot be opened / port-picking hints (printed into the
-# ---- panel's event area) ----
+# 串口选择与连接错误
 _ZH.update({
     "link.kind_usb": "板子 USB CDC",
     "link.kind_rs485": "USB 转 RS485 适配器",
@@ -543,7 +516,7 @@ _ZH.update({
 })
 
 _EN.update({
-    # help page
+    # 帮助页
     "app.help.select": "1-6 / 0 / Tab      select j1..j6 / gripper / next",
     "app.help.jog":
         "← ↓ / → ↑ / + -    nudge the selected axis ∓ one step "
@@ -603,7 +576,7 @@ _EN.update({
     "app.help.exit":
         "quitting sends no 0x14: the target freezes, the arm holds, and about "
         "3 s later the board drops to damping on its own.",
-    # panel
+    # 面板
     "app.log_head": "# sdk.tui started %s port=%s fake=%s arm=%d\n",
     "app.log_warn": "warning: cannot open the log file (%s), showing on screen only",
     "app.too_small": "window too small (%dx%d), need at least 12 rows x 60 cols",
@@ -658,7 +631,7 @@ _EN.update({
         "a switch arm  1-6/0/Tab pick axis  ←↓→↑/+- step  [/] step size  c align  "
         "s run  d damping  x stop  v gravity  i init  o reset  z set-zero  "
         "Space hold  h help  q quit",
-    # keys / dialogs
+    # 按键与对话框
     "app.events_cleared": "events cleared",
     "app.quit_confirm":
         "an arm is streaming (or has streamed) control frames -- quit anyway? (y/n) ",
@@ -691,7 +664,7 @@ _EN.update({
     "app.setzero_cancel2": "set zero cancelled (step 2 not passed)",
 })
 
-# ---- sdk/tui/__main__.py ----
+# 命令行提示
 _EN.update({
     "main.cli_description":
         "Arm console for the board (curses full-screen panel). "
@@ -740,7 +713,7 @@ _EN.update({
                       "slack right away, or use --stop-on-exit.",
 })
 
-# ---- sdk/tui/selftest.py ----
+# 自测提示
 _EN.update({
     "selftest.hdr_sdk": "1) sdk offline self-test (protocol / gates / fake board)",
     "selftest.hdr_tui": "2) console backend self-test (sdk.tui.session, on the fake board)",
@@ -815,7 +788,7 @@ _EN.update({
     "selftest.sent": "sent: %r",
 })
 
-# ---- sdk/arm.py ----
+# Arm 提示
 _EN.update({
     "arm.snapshot_line": "arm%s state=%s mode=%s joints(rad) %s gripper %s temp %s lost %s",
     "arm.grip_uncal": "uncalibrated (raw %.2f deg)",
@@ -895,7 +868,7 @@ _EN.update({
     "arm.no_port_open": "(port not open)",
 })
 
-# ---- sdk/link.py ----
+# 链路提示
 _EN.update({
     "link.kind_usb": "board USB CDC",
     "link.kind_rs485": "USB-to-RS485 adapter",
@@ -932,28 +905,21 @@ _EN.update({
 
 
 def message_table(lang=None):
-    """The raw `<key> -> template` dict for one language (used by the table checker)."""
+    """返回指定语言的文案表，供校验使用。"""
     return _ZH if (lang or _LANG) == "zh" else _EN
 
 
 def tr(key, *args):
-    """Look up `key` and `%`-format it with `args` (no args -> returned as is)."""
+    """查找文案并按 args 格式化；无参数时返回原文。"""
     s = _ZH.get(key) if _LANG == "zh" else _EN.get(key)
-    if s is None:                       # missing translation: fall back, never raise
+    if s is None:                       # 缺少翻译时回退到中文。
         s = _ZH.get(key)
         if s is None:
             return "[missing:%s]" % key
     return s % args if args else s
 
 
-# ============================================================================
-# Name tables
-# ============================================================================
-#
-# English names are kept short on purpose: they go into the panel's two-arm overview line
-# and into `robot_state %s(%d)   arm_mode %s`, which already run past 80 columns in Chinese.
-# Axis names must fit the panel's `%-4s` column, so j1..j6 stay as-is and the gripper is
-# "grip" (4 columns), not "gripper".
+# 状态与轴名。英文轴名须适配四字符列宽，夹爪使用 grip。
 
 _MODE_EN = {
     board_defs.MODE_STOP: "stop(relax)",
@@ -986,7 +952,7 @@ _AXIS_EN = board_defs.JOINT_NAMES + ("grip",)
 
 
 def state_name(v):
-    """`Robot_state` -> readable name. Chinese delegates to `board_defs` (one source)."""
+    """返回状态名称；中文使用 board_defs 中的名称。"""
     if _LANG == DEFAULT_LANG:
         return board_defs.state_name(v)
     return _STATE_EN.get(v, "UNKNOWN(%d)" % v)
@@ -999,7 +965,7 @@ def mode_name(v):
 
 
 def zero_state_name(v):
-    """`Arm_zero_state`. The fallback is the raw value itself, same as `board_defs`."""
+    """返回设零状态名称，未知状态显示原始值。"""
     if _LANG == DEFAULT_LANG:
         return board_defs.ZERO_STATE_NAME.get(v, v)
     return _ZERO_STATE_EN.get(v, v)
@@ -1025,7 +991,7 @@ def arm_label(arm_id):
 
 
 def expand_mask(mask):
-    """`motor_lost_mask` / `motor_inited_mask` -> space-separated names."""
+    """将电机掩码转换为空格分隔的轴名。"""
     if _LANG == DEFAULT_LANG:
         return board_defs.expand_mask(mask)
     if not mask:
@@ -1033,18 +999,14 @@ def expand_mask(mask):
     return " ".join(_AXIS_EN[i] for i in range(board_defs.ARM_MOTOR_NUM) if mask >> i & 1)
 
 
-# ============================================================================
-# Table checker (development only -- not one of the self-test's counted items)
-# ============================================================================
+# 文案表校验
 
-# `%`-conversion specifier, minus `%%`. Deliberately permissive: a wrong regex here would
-# report a false "all good", so the real safety net is the frozen-Chinese comparison plus a
-# human read of the English table, not this.
+# 匹配百分号格式占位符，转义的 %% 单独处理。
 _SPEC = re.compile(r"%(?:\([^)]*\))?[-+ #0]*[0-9]*(?:\.[0-9]+)?[diouxXeEfFgGcrsa%]")
 
-_FORBIDDEN = (("　", "〿"),      # CJK punctuation
-              ("一", "鿿"),      # CJK ideographs
-              ("＀", "￯"))      # fullwidth forms
+_FORBIDDEN = (("　", "〿"),      # 中日韩标点
+              ("一", "鿿"),      # 中日韩表意文字
+              ("＀", "￯"))      # 全角字符
 
 
 def _bad_chars(s):
@@ -1053,14 +1015,14 @@ def _bad_chars(s):
 
 
 def _specs(s):
-    """(conversion chars, leftover `%`) of one template, `%%` excluded."""
+    """提取格式占位符和未匹配的百分号，忽略转义的 %%。"""
     chars = [m.group(0)[-1] for m in _SPEC.finditer(s) if m.group(0) != "%%"]
     rest = _SPEC.sub("", s)
     return chars, rest.count("%")
 
 
 def check_tables():
-    """Return a list of problems (empty == fine). Called by the console self-test."""
+    """检查文案键、占位符和语言；无问题时返回空列表。"""
     bad = []
     for key in sorted(set(_ZH) | set(_EN)):
         zh, en = _ZH.get(key), _EN.get(key)

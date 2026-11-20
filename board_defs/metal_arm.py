@@ -8,7 +8,7 @@ from bisect import bisect_left
 
 from ..errors import CalibrationError
 from ..protocol import fnv1a32
-from .common import *  # Shared protocol names are also part of each robot profile.
+from .common import *  # 各型号同时导出公共协议常量。
 
 # 版本串与固件 App/profiles/metal.c 一致；版本码为 FNV-1a 32 位哈希。
 VERSION_STRING = "Intuition-Metal-Arm-v0.7"
@@ -24,8 +24,7 @@ GRIPPER_STROKE_DEG = GRIPPER_ANGLE_MAX - GRIPPER_ANGLE_MIN
 AXIS_MIN = JOINT_ANGLE_MIN + (GRIPPER_ANGLE_MIN,)
 AXIS_MAX = JOINT_ANGLE_MAX + (GRIPPER_ANGLE_MAX,)
 
-# User confirmed the J1-J6 reset reference as all zero on 2026-10-27.
-# These are joint target angles; resetting does not rewrite motor zero points.
+# 六轴复位目标为零；复位不修改电机零点。
 RESET_POSE_DEG = (0.0,) * 6
 
 
@@ -59,11 +58,9 @@ GRIPPER_ANGLE_MAX_RAD = math.radians(GRIPPER_ANGLE_MAX)
 RESET_POSE_RAD = tuple(math.radians(v) for v in RESET_POSE_DEG)
 
 
-# ==================== 夹爪换算：厂家查表 ====================
-#
-# 出厂零点下"电机角 ↔ 开口距离"的查表，取自厂家 C++ 的 distanceToAngle / angleToDistance。
-# 开口范围 0..0.1 m，电机角范围 0..2.4 rad（GRIPPER_ANGLE_*）；表外按最近邻取端点。
-# 该表对应未改动的出厂零点；找零/设零改了夹爪零点后不适用，此时显式传 calib_store。
+# 厂家夹爪查表，来源为 distanceToAngle / angleToDistance。
+# 开口 0..0.1 m，原始角 0..2.4 rad，采用最近邻换算。
+# 仅适用于出厂零点；零点改变后须通过 calib_store 提供实测标定。
 
 GRIPPER_DISTANCES_MM = (
     0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0,

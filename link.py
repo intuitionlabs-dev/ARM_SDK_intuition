@@ -15,35 +15,26 @@ from . import i18n, protocol
 from .board_defs import arx_x5 as board_defs, get_profile
 from .errors import LinkError, NotConnected
 
-# ==================== 口子挑选 ====================
-#
-# **按 USB 身份找，不按名字找。** 名字靠不住：适配器的 by-id 名字随型号变
-# （本机就换过一次：`usb-1a86_USB_Single_Serial_*` → 换 RS485 适配器之后是
-# `usb-1a86_USB_Serial-if00-port0`），写死一个必然过一阵就失效。
+# 端口选择：按 USB 身份匹配，避免依赖设备路径。
 
 BY_ID_DIR = "/dev/serial/by-id"
 DEFAULT_PORT = BY_ID_DIR + "/usb-1a86_USB_Serial-if00-port0"
 
-SEGGER_VID = "1366"     # J-Link 探针，**永远不碰**（占着它就连不上、烧不了）
-ADAPTER_VID = "1a86"    # CH340/CH343 那类 USB 转串口/转 RS485 适配器（沁恒）
-BOARD_VID = "0483"      # 板子自己的 USB CDC（STM32 虚拟串口的标准 VID:PID）
+SEGGER_VID = "1366"     # SEGGER 调试探针，不用于控制链路
+ADAPTER_VID = "1a86"    # 沁恒 USB 转串口 / RS485 适配器
+BOARD_VID = "0483"      # STM32 板载 USB CDC
 BOARD_PID = "5740"
 
 FORBIDDEN_HINTS = ("segger", "j-link", "jlink")
 
-# ==================== 掉线自动重连 ====================
-#
-# 拔线、适配器重枚举、串口自己崩 —— 这些都会让 `read` 抛异常。一次掉线就是一轮重试，
-# 退避着来，**试满上限就停手**（不无限打），停在断开状态等人工处理。
+# 断开后按配置退避重试，达到上限后等待人工重开。
 
-RECONNECT_WAIT_S = 0.5        # 每次重试前等多久（第一轮）
-RECONNECT_MAX_WAIT_S = 2.0    # 退避的封顶
+RECONNECT_WAIT_S = 0.5        # 首次重试等待时间
+RECONNECT_MAX_WAIT_S = 2.0    # 最大退避时间
 RECONNECT_MAX_TRIES = 10      # 一轮掉线最多试几次（<=0 = 不限）
 
-# 链路类型 → 人话。板子那侧对应 `App/inc/robot_state.h` 的 ROBOT_LINK。
-# 两边选反了的现象是"一切都对但一个字节都没有"，所以选中了哪种要写出来。
-# 存的是 i18n 的 key（不是文案）：模块级常量在 import 期就求值，那时候 `set_lang`
-# 还没跑，存中文会锁死语言。
+# 链路类型对应固件 ROBOT_LINK。
+# 保存翻译键，在显示时取文案，以支持运行时切换语言。
 KIND_NAMES = {"USB": "link.kind_usb", "RS485": "link.kind_rs485",
               "FAKE": "link.kind_fake"}
 
@@ -173,7 +164,7 @@ def link_hint():
     if cands:
         lines.append(i18n.tr("link.hint_cands"))
         for path, kind, _ in cands:
-            # 缩进和箭头是排版不是文案，两边一样，所以不进表
+            # 固定排版，不参与翻译。
             lines.append("    %s%s" % (path, ("  ← %s" % kind_name(kind)) if kind else ""))
     else:
         lines.append(i18n.tr("link.hint_no_tty"))
@@ -191,8 +182,7 @@ def assert_port_allowed(path):
         if ident["idVendor"].lower() == SEGGER_VID or any(h in blob for h in FORBIDDEN_HINTS):
             raise LinkError(i18n.tr("link.reject_probe_ident", path, describe_port(path)))
         return
-    # 查不到身份（没有 /sys、设备还没枚举出来）：名字像 SEGGER 的直接拒；
-    # 名字是裸 ttyACM* 的也拒（宁可不连，也不赌它是探针）
+    # 身份未知时拒绝 SEGGER 路径及裸 ttyACM 路径，避免占用探针。
     real = os.path.realpath(path)
     blob = (path + " " + real).lower()
     if any(h in blob for h in FORBIDDEN_HINTS) or \
@@ -200,7 +190,7 @@ def assert_port_allowed(path):
         raise LinkError(i18n.tr("link.reject_probe_name", path, link_hint()))
 
 
-# ==================== 每台臂的收包槽 ====================
+# 每台臂的收包槽
 
 class ArmChannel:
     """单臂收包状态，写入受锁保护；反馈和 ACK 使用不可变对象。"""
@@ -213,7 +203,7 @@ class ArmChannel:
         self.lock = threading.Lock()
         self.feedback = None       # protocol.Feedback
         self.feedback_t = 0.0      # time.monotonic()，0 = 还没收到过
-        self.feedback_seq = 0      # 每收到一帧 +1，用来做无竞态的"等下一帧"
+        self.feedback_seq = 0      # 反馈序号，用于等待新帧
         self.n_feedback = 0
         self.ack = None            # protocol.SetZeroAck
         self.ack_t = 0.0
@@ -221,7 +211,7 @@ class ArmChannel:
         self.ack_event = threading.Event()
         self.unknown_tids = {}     # tid -> 计数
 
-    # ---- 写侧（只有 RX 线程调） ----
+    # 写侧（只有 RX 线程调）
 
     def put_feedback(self, fb, ts):
         with self.lock:
@@ -241,7 +231,7 @@ class ArmChannel:
         with self.lock:
             self.unknown_tids[tid] = self.unknown_tids.get(tid, 0) + 1
 
-    # ---- 读侧 ----
+    # 读侧
 
     def snapshot_feedback(self):
         """返回 (反馈, 接收时刻, 序号)；尚无反馈时第一项为 None。"""
@@ -259,7 +249,7 @@ class ArmChannel:
             return self.ack, self.ack_t, self.ack_seq
 
 
-# ==================== 链路 ====================
+# 链路
 
 class Link:
     """串口链路，后台接收，发送时加锁。
@@ -279,7 +269,7 @@ class Link:
         self.gripper_calib_store = self.board_defs.default_gripper_store()
         self.port = port                  # None = open() 时自动挑
         self.baud = baud
-        self.ser_timeout = timeout        # 读超时，决定收包线程多久醒一次
+        self.ser_timeout = timeout        # 串口读取超时
         self.verify_on_open = verify_on_open
         self.auto_reconnect = auto_reconnect
         self.reconnect_wait = reconnect_wait
@@ -290,32 +280,32 @@ class Link:
         self.kind = None
         self.link_up = False
         self.link_err = None
-        self.board_version = None         # 板子回过来的 0x01 里的版本码
+        self.board_version = None         # 最近收到的固件版本码
         self.version_seen = False
-        self.link_status = None           # 板子报的 0x81（链路级，不挂到某台臂上）
-        self.link_status_t = None         # 收到它的时刻（time.monotonic）
+        self.link_status = None           # 最近的链路级 0x81 状态
+        self.link_status_t = None         # 接收时刻，使用单调时钟
 
-        self.open_gen = 0                 # 每成功 open 一次 +1（上层靠它发现"链路换了一条"）
-        self.n_reconnect = 0              # 自动重连成功过的次数（累计）
-        self.reconnect_tries = 0          # 这一轮掉线已经试到第几次
-        self.reconnect_err = None         # 最近一次重连开串口失败的原因（一行）
-        self.reconnect_gave_up = False    # 这一轮试满上限、停手了
+        self.open_gen = 0                 # 每次连接成功递增
+        self.n_reconnect = 0              # 累计重连成功次数
+        self.reconnect_tries = 0          # 本轮重试次数
+        self.reconnect_err = None         # 最近的重连错误
+        self.reconnect_gave_up = False    # 是否已达到重试上限
 
         self.parser = protocol.FrameParser()
         self._channels = {}
-        self._chan_lock = threading.Lock()   # 管 _channels/_arms 和 link_up/link_err 这一组
+        self._chan_lock = threading.Lock()   # 保护收包槽、臂对象及链路状态
         self._arms = {}
         self._write_lock = threading.Lock()
         self._alive = False
         self._thr = None
-        self._port_ident = None           # 打开时记下的 USB 身份，重连认口用
-        self._stop_ev = threading.Event() # close() 用它把正在退避的重连立刻叫醒
+        self._port_ident = None           # 重连时用于匹配设备
+        self._stop_ev = threading.Event() # 关闭时中断重连等待
 
         self.n_tx = 0
         self.n_rx = 0
         self.n_bad_arm = 0
 
-    # ---- 生命周期 ----
+    # 生命周期
 
     def open(self, port=None):
         """打开串口并启动接收线程；已打开或正在重连时直接返回。首次打开失败抛 LinkError。"""
@@ -350,17 +340,15 @@ class Link:
             self._restart_reader()
             raise
 
-    # ---- 串口句柄（自动重连要用，单独拆出来）----
+    # 串口句柄管理
 
     def _open_serial(self, path):
         """替换串口句柄，不改变线程或 link_up；失败抛 LinkError。"""
         assert_port_allowed(path)
-        import serial  # 只有真要连的时候才需要 pyserial
+        import serial  # 打开串口时才加载 pyserial。
 
         try:
-            # 板子 USB(CDC) 那条上波特率是**没有意义的** —— CDC 是包传输，tcsetattr 会把
-            # SET_LINE_CODING 交给设备，STM32 那边 CDC_Control_HS 对它是 no-op 直接返回 OK。
-            # 所以照设不误，只是别据此以为它有用。串口那条(RS485)上它才是真的。
+            # USB CDC 不使用波特率控制传输速度；RS485 使用该设置。
             ser = serial.Serial(path, self.baud, timeout=self.ser_timeout)
         except Exception as e:
             raise LinkError(i18n.tr("link.open_failed", path, e,
@@ -408,7 +396,7 @@ class Link:
     def _restart_reader(self):
         """在原接收线程已退出时启动重连线程。"""
         if self._thr is not None and self._thr.is_alive():
-            return          # 上一个还活着（别让两个线程读同一个口，那会把字节流撕碎）
+            return          # 接收线程已运行，避免重复启动。
         self._stop_ev.clear()
         with self._chan_lock:
             self._alive = True
@@ -417,7 +405,7 @@ class Link:
         self._thr = threading.Thread(target=self._reader, name="sdk-rx", daemon=True)
         self._thr.start()
 
-    # ---- 自动重连 ----
+    # 自动重连
 
     def _reconnect_port(self):
         """优先复用原路径；路径失效时按 USB 身份查找，未找到则重试原路径。"""
@@ -438,10 +426,10 @@ class Link:
         with self._chan_lock:
             self.reconnect_tries = 0
             self.reconnect_gave_up = False
-        self._drop_serial()          # 死句柄先摘掉：断开期间 send() 要立刻抛，别往里写
+        self._drop_serial()          # 清除失效句柄，使后续发送报告未连接。
         delay = self.reconnect_wait
         while self._alive:
-            if self._stop_ev.wait(delay):    # close() 一置就醒，不用等满这一轮
+            if self._stop_ev.wait(delay):    # 关闭时立即结束等待。
                 return False
             if not self._alive:
                 return False
@@ -458,7 +446,7 @@ class Link:
                     return False
                 delay = min(delay * 2.0, self.reconnect_max_wait)
                 continue
-            if not self._alive:              # 刚开上就有人 close() 了
+            if not self._alive:              # 连接成功后再次检查是否已请求关闭。
                 self._drop_serial()
                 return False
             self._on_serial_open()
@@ -479,7 +467,7 @@ class Link:
     def is_open(self):
         return self.ser is not None
 
-    # ---- 发送 ----
+    # 发送
 
     def send(self, tid, payload=b"", arm_id=protocol.DEFAULT_ARM_ID):
         """加锁发送完整帧，返回写入字节数。
@@ -490,7 +478,7 @@ class Link:
         with self._write_lock:
             ser = self.ser
             if ser is None:
-                # 断开期间要能分清"忘了 open"和"掉了、正在自己重连"：后者是等一会儿的事
+                # 区分未打开与重连中的链路。
                 if not self.link_up and self.auto_reconnect \
                         and self._thr is not None and self._thr.is_alive():
                     raise NotConnected(i18n.tr("link.down_reconnecting",
@@ -507,7 +495,7 @@ class Link:
         self.n_tx += 1
         return len(frame)
 
-    # ---- 每台臂的收包槽 ----
+    # 每台臂的收包槽
 
     def channel(self, arm_id):
         """获取或创建指定臂的收包槽；编号越界抛 ValueError。"""
@@ -522,13 +510,13 @@ class Link:
 
     def arm(self, arm_id):
         """获取或创建指定臂，按 arm_id 缓存。构造在锁外进行，避免 channel() 重入死锁。"""
-        from .arm import Arm   # 延迟 import：arm.py 要用 Link，模块级 import 会成环
+        from .arm import Arm   # 延迟导入，避免 arm 与 link 循环依赖。
         with self._chan_lock:
             a = self._arms.get(arm_id)
         if a is None:
             a = Arm(arm_id, self)
             with self._chan_lock:
-                a = self._arms.setdefault(arm_id, a)   # 万一有两个线程同时建，留先来的那个
+                a = self._arms.setdefault(arm_id, a)   # 并发创建时保留先缓存的对象。
         return a
 
     def arms(self):
@@ -536,7 +524,7 @@ class Link:
         with self._chan_lock:
             return list(self._arms.values())
 
-    # ---- 收包线程 ----
+    # 收包线程
 
     def _reader(self):
         """读取串口并解析；断开后按配置重连，关闭或重试结束时退出。"""
@@ -575,7 +563,7 @@ class Link:
         for tid, arm_id, payload in frames:
             self.n_rx += 1
             if arm_id >= self.board_defs.ARM_NUM:
-                # 越界 arm_id：和板子同一个口径 —— 丢弃、计数、不报错
+                # 丢弃并统计越界臂编号。
                 self.n_bad_arm += 1
                 continue
             if tid == protocol.TID_ARM_FEEDBACK and len(payload) == protocol.FB_LEN:
@@ -595,15 +583,14 @@ class Link:
                 self.board_version = protocol.decode_version(payload)
                 self.version_seen = True
             elif tid == protocol.TID_LINK_STATUS and len(payload) == protocol.LINK_STATUS_LEN:
-                # 链路级：**不上 channel**。板子每 100 ms 只发一帧，不带"是哪台臂"的语义
-                # （帧头那个 arm_id 只是"哪台先握的手"），所以存 Link 上，和板子版本码同款。
+                # 0x81 属于整条链路，存入 Link，不按臂分流。
                 self.link_status = protocol.decode_link_status(payload)
                 self.link_status_t = now
             else:
-                # 认不出来的 tid：计数，不报错、不丢弃连接 —— 板子以后加包不该让老上位机炸
+                # 未知帧仅计数，保持连接以兼容协议扩展。
                 self.channel(arm_id).note_unknown(tid)
 
-    # ---- 等待 ----
+    # 等待
 
     def wait_feedback(self, arm_id, after_seq=0, timeout=3.0, poll=0.005):
         """等待序号大于 after_seq 的反馈；超时返回 None。"""
@@ -617,7 +604,7 @@ class Link:
                 return None
             time.sleep(poll)
 
-    # ---- 诊断 ----
+    # 诊断
 
     @property
     def stats(self):

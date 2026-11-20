@@ -39,7 +39,7 @@ class ProfileTests(unittest.TestCase):
             arm._check_pose(arm._chan.snapshot_feedback()[0], why)
             self.assertEqual(why, [])
             arx.arm(arm_id)._check_pose(arx.channel(arm_id).snapshot_feedback()[0], why)
-            self.assertTrue(why)  # Same feedback exceeds the ARX reset-pose tolerance.
+            self.assertTrue(why)  # 同一反馈超出 ARX 的复位容差。
             self.assertAlmostEqual(arm.snapshot().joint_angles_deg[1], -19.75)
         self.assertIs(Link().board_defs, board_defs)
 
@@ -99,7 +99,7 @@ class ProfileTests(unittest.TestCase):
                         hi = definitions.JOINT_ANGLE_MAX_RAD[1]
                         session.cur.target[1] = hi
                         session.jog(1, 1)
-                        self.assertEqual(session.cur.target[1], hi)  # Clamped at J2 upper limit.
+                        self.assertEqual(session.cur.target[1], hi)  # 限制在 J2 上限。
 
     def test_tui_options_use_selected_tolerance_and_validate_type(self):
         self.assertEqual(parse_options([]).robot_type, "arx_x5")
@@ -115,7 +115,7 @@ class ProfileTests(unittest.TestCase):
         for name, definitions in (("arx_x5", board_defs), ("metal_arm", metal_arm)):
             with self.subTest(robot_type=name):
                 link = SimLink(robot_type=name)
-                # Drive virtual time directly, without a background thread or serial port.
+                # 直接推进虚拟时间，不启动线程或串口。
                 link._alive = True
                 try:
                     board = link.boards[0]

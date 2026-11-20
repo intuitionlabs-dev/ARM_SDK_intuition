@@ -17,7 +17,7 @@ from .errors import (FeedbackStale, GateRejected, GripperNotCalibrated,
                      LinkError)
 from .gripper import GripperCalibStore
 
-# 反馈帧超过这个年龄就不拿它做闸门判断了（板子 250 Hz 常流，100 ms = 丢 25 帧）。
+# 反馈超过 100 ms 时不再用于命令预检。
 FEEDBACK_STALE_S = 0.1
 
 
@@ -33,7 +33,7 @@ class Snapshot:
     age: float               # 秒
     joint_angles: tuple      # rad
     joint_velocities: tuple  # rad/s
-    joint_angles_deg: tuple  # 原始线上值，留着对照
+    joint_angles_deg: tuple  # 协议角度，便于对照
     joint_velocities_deg_s: tuple
     gripper_opening: float   # m，未标定时 None
     gripper_raw_deg: float
@@ -84,7 +84,7 @@ class Arm:
         self._calib_loaded = False
         self._ack_after = None      # set_zero() 发送前的 0x11 序号
 
-    # ==================== 生命周期 ====================
+    # 生命周期
 
     def connect(self, timeout=3.0, port=None):
         """打开链路、发送版本帧并等待本臂反馈；超时抛 LinkError。
@@ -134,7 +134,7 @@ class Arm:
             lines.append(i18n.tr("arm.bytes_no_version"))
         return "\n".join(lines)
 
-    # ==================== 读：反馈 ====================
+    # 读：反馈
 
     @property
     def feedback(self):
@@ -162,7 +162,7 @@ class Arm:
         """累计反馈帧数。"""
         return self._chan.snapshot_feedback()[2]
 
-    # ---- 单属性（方便，但**可能跨帧**；要一致用 snapshot()） ----
+    # 单属性读取可能跨帧；一致视图使用 snapshot()。
 
     @property
     def joint_angles(self):
@@ -266,7 +266,7 @@ class Arm:
             inited_names=self.board_defs.expand_mask(fb.motor_inited_mask),
         )
 
-    # ==================== 读：夹爪标定 ====================
+    # 读：夹爪标定
 
     @property
     def calibration(self):
@@ -298,19 +298,17 @@ class Arm:
             return i18n.tr("arm.grip_not_homed")
         return i18n.tr("arm.grip_inited_hint")
 
-    # ==================== 发：不用看状态的 ====================
+    # 无需状态预检的命令
 
     def send_version(self):
         """发送 0x01 版本帧，也用于保活。"""
         return self._send(protocol.TID_VERSION,
                           protocol.encode_version(self.board_defs.VERSION_CODE))
 
-    # 保活就是"3 s 内发任意有效帧"，版本包最小最无害 —— 板子对已经握过手的手
-    # **幂等地再回一个版本包，状态不动**（见 robot_state.c 的 HandleVersion），所以拿它
-    # 当心跳不会打扰状态机。
+    # 版本帧可重复发送且不改变状态，用作每臂保活。
     keepalive = send_version
 
-    # ==================== 发：命令 ====================
+    # 发：命令
 
     def init_arm(self, *, force=False):
         """发送 0x02 初始化，完成后进入正常运行 / 阻尼。
@@ -434,7 +432,7 @@ class Arm:
             raise TypeError(i18n.tr("arm.payload_type", type(payload).__name__))
         return self._send(tid, bytes(payload))
 
-    # ==================== 等 ====================
+    # 等
 
     @property
     def last_setzero_ack(self):
@@ -458,7 +456,7 @@ class Arm:
                 return ack
             if time.monotonic() >= deadline:
                 st = self.robot_state
-                # 没有反馈帧时和以前一样打印 "None"（别为一个边角路径改动字面输出）
+                # 尚无反馈时显示 None。
                 raise TimeoutError(i18n.tr("arm.setzero_timeout", timeout,
                                            i18n.state_name(st) if st is not None else None))
             time.sleep(0.02)
@@ -478,7 +476,7 @@ class Arm:
         before = self._chan.snapshot_feedback()[2]
         return self.link.wait_feedback(self.arm_id, before, timeout)
 
-    # ==================== 内部 ====================
+    # 内部
 
     def _send(self, tid, payload=b""):
         return self.link.send(tid, payload, self.arm_id)
@@ -530,7 +528,7 @@ class Arm:
             raise FeedbackStale(i18n.tr("arm.grip_no_target"))
         return fb.gripper_angle
 
-    # ==================== 杂项 ====================
+    # 杂项
 
     def describe(self):
         """返回单行机械臂状态，支持尚无反馈的情况。"""

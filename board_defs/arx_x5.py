@@ -3,7 +3,7 @@
 import math
 
 from ..protocol import fnv1a32
-from .common import *  # Shared protocol names are also part of each robot profile.
+from .common import *  # 各型号同时导出公共协议常量。
 
 # 版本串与固件 App/profiles/arx_x5.c 一致；版本码为 FNV-1a 32 位哈希。
 VERSION_STRING = "Intuition-ARX-X5-2023-v0.6"
