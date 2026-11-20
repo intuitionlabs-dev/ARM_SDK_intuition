@@ -140,11 +140,11 @@ def make_arm(link=None, arm_id=0, tmp_calib=None):
 
 def test_crc(c):
     c.section("1. CRC 与版本码")
-    c.check("crc8 表 vs 位运算参考实现（256 个单字节 + 参考串）",
+    c.check("CRC8 查表与位运算一致（全部单字节及参考串）",
             all(protocol.crc8(bytes([i])) == protocol.crc8_ref(bytes([i]))
                 for i in range(256))
             and protocol.crc8(b"123456789") == protocol.crc8_ref(b"123456789"))
-    c.check("crc16 表 vs 位运算参考实现（256 个单字节 + 参考串）",
+    c.check("CRC16 查表与位运算一致（全部单字节及参考串）",
             all(protocol.crc16(bytes([i])) == protocol.crc16_ref(bytes([i]))
                 for i in range(256))
             and protocol.crc16(b"123456789") == protocol.crc16_ref(b"123456789"))
@@ -161,7 +161,7 @@ def test_crc(c):
 # 2. 整帧锚点
 
 def test_anchors(c):
-    c.section("2. 整帧逐字节锚点（板上 FrameEncode 的真实输出）")
+    c.section("2. 与固件 FrameEncode 输出逐字节对照")
     cases = [
         ("版本帧 arm_id=0", protocol.encode(
             TID_VERSION, protocol.encode_version(metal_arm.VERSION_CODE), 0),
@@ -179,7 +179,7 @@ def test_anchors(c):
 # 3. 编解码往返
 
 def test_roundtrip(c):
-    c.section("3. 各帧型 编码 → 切帧 → 解字段")
+    c.section("3. 编码、切帧与字段解码")
 
     for tid, name in [(TID_VERSION, "0x01"), (TID_ARM_INIT, "0x02"),
                       (TID_MOTOR_SET_ZERO, "0x10"), (TID_ARM_START, "0x12"),
@@ -209,11 +209,11 @@ def test_roundtrip(c):
                 jvel_deg=[1.0, -2.0, 3.0, 0.0, 0.0, -0.5],
                 gripper_deg=-141.75, temps=[36, 37, 38, 39, 40, 41, 42])
     pay = feedback_payload(**want)
-    c.check("0x80 payload 恰好 63 字节", len(pay) == FB_LEN, "实际 %d" % len(pay))
+    c.check("0x80 载荷为 63 字节", len(pay) == FB_LEN, "实际 %d" % len(pay))
     ps = protocol.FrameParser()
     got = ps.feed(protocol.encode(TID_ARM_FEEDBACK, pay, 1))
     fb = protocol.decode_feedback(got[0][2]) if got else None
-    c.check("0x80 往返（字段逐个对上）",
+    c.check("0x80 编解码后字段一致",
             fb is not None and fb.mode == 1 and fb.robot_state == 4
             and fb.motor_lost_mask == 0x01 and fb.motor_inited_mask == 0x7F
             and all(abs(a - b) < 1e-5 for a, b in zip(fb.joint_angle, want["joint_deg"]))
@@ -224,27 +224,27 @@ def test_roundtrip(c):
 
     # 0x11：u8 + u8[7] + u32
     ack_pay = bytes([5]) + bytes([2, 2, 1, 4, 2, 2, 5]) + struct.pack("<I", 5527)
-    c.check("0x11 payload 恰好 12 字节", len(ack_pay) == SET_ZERO_ACK_LEN)
+    c.check("0x11 载荷为 12 字节", len(ack_pay) == SET_ZERO_ACK_LEN)
     ack = protocol.decode_setzero_ack(ack_pay)
-    c.check("0x11 解出来的 state/result/elapsed_ms 对",
+    c.check("0x11 状态、结果及耗时解码正确",
             ack.state == 5 and ack.result == (2, 2, 1, 4, 2, 2, 5) and ack.elapsed_ms == 5527,
             "%r" % (ack,))
 
     # 0x81：21 个 u32，字段间无填充。
     ls_by = tuple(i * 10 for i in range(protocol.LINK_TID_SLOT_NUM))
     ls_pay = protocol.encode_link_status(1234, ls_by, 1, 2, 3, 4, 5, 6, 7, 8, 100)
-    c.check("0x81 payload 恰好 84 字节", len(ls_pay) == LINK_STATUS_LEN,
+    c.check("0x81 载荷为 84 字节", len(ls_pay) == LINK_STATUS_LEN,
             "实际 %d" % len(ls_pay))
     ps = protocol.FrameParser()
     got = ps.feed(protocol.encode(TID_LINK_STATUS, ls_pay, 1))
     ls = protocol.decode_link_status(got[0][2]) if got else None
-    c.check("0x81 往返（字段逐个对上）",
+    c.check("0x81 编解码后字段一致",
             ls is not None and (ls.rx_total, ls.rx_by_tid, ls.crc8_err, ls.crc16_err,
                                 ls.drop_bytes, ls.bad_arm, ls.over_len, ls.ring_drop,
                                 ls.gated, ls.tx_fail, ls.dt_ms)
             == (1234, ls_by, 1, 2, 3, 4, 5, 6, 7, 8, 100), "%r" % (ls,))
     # 其他类型占末槽；总载荷为十项标量和十一项分类计数。
-    c.check("LINK_TID_OTHER 指向最后一格、槽位数装得下",
+    c.check("LINK_TID_OTHER 为末项且不超出槽位数",
             protocol.LINK_TID_OTHER == protocol.LINK_TID_SLOT_NUM - 1
             and len(protocol.LINK_TID_ORDER) + 1 == protocol.LINK_TID_SLOT_NUM
             and LINK_STATUS_LEN == 4 * (10 + protocol.LINK_TID_SLOT_NUM),
@@ -255,16 +255,16 @@ def test_roundtrip(c):
     for bad_len in (0, LINK_STATUS_LEN - 1, LINK_STATUS_LEN + 1):
         try:
             protocol.decode_link_status(b"\x00" * bad_len)
-            c.check("0x81 长度 %d 要抛 ValueError" % bad_len, False, "没抛")
+            c.check("0x81 无效长度 %d 抛 ValueError" % bad_len, False, "未抛异常")
         except ValueError:
-            c.check("0x81 长度 %d 要抛 ValueError" % bad_len, True)
+            c.check("0x81 无效长度 %d 抛 ValueError" % bad_len, True)
 
     for bad_len in (0, 62, 64):
         try:
             protocol.decode_feedback(b"\x00" * bad_len)
-            c.check("0x80 长度 %d 要抛 ValueError" % bad_len, False, "没抛")
+            c.check("0x80 无效长度 %d 抛 ValueError" % bad_len, False, "未抛异常")
         except ValueError:
-            c.check("0x80 长度 %d 要抛 ValueError" % bad_len, True)
+            c.check("0x80 无效长度 %d 抛 ValueError" % bad_len, True)
 
 
 # 4. 解析器重同步
@@ -277,19 +277,19 @@ def test_resync(c):
     # 前导噪声
     ps = protocol.FrameParser()
     got = ps.feed(b"\x00\x11\x22\x33" + good)
-    c.check("前导噪声：跳掉噪声、解出真帧",
+    c.check("忽略前导噪声并解码有效帧",
             got == [(TID_ARM_INIT, 1, b"")] and ps.n_drop >= 4, "%r n_drop=%d" % (got, ps.n_drop))
 
     # AA55 拆在两次 feed 之间
     ps = protocol.FrameParser()
     got = ps.feed(b"\x01\x02\xAA") + ps.feed(b"\x55" + good[2:5]) + ps.feed(good[5:])
-    c.check("AA 55 拆在两次 feed 之间",
+    c.check("跨两次输入识别 AA 55 帧头",
             got == [(TID_ARM_INIT, 1, b"")], "%r" % (got,))
 
     # 尾部半帧
     ps = protocol.FrameParser()
     got = ps.feed(good + good[:4])
-    c.check("尾部半帧先不解（凑齐了再解）",
+    c.check("缓存尾部半帧，补齐后解码",
             got == [(TID_ARM_INIT, 1, b"")], "%r" % (got,))
 
     # 坏 CRC 后紧跟好帧
@@ -297,7 +297,7 @@ def test_resync(c):
     broken[5] ^= 0xFF          # 破坏 CRC8
     ps = protocol.FrameParser()
     got = ps.feed(bytes(broken) + good)
-    c.check("坏 crc8 后紧跟好帧：重同步成功、坏帧计数",
+    c.check("CRC8 错误后恢复同步并计数",
             got == [(TID_ARM_INIT, 1, b"")] and ps.n_err_crc8 == 1,
             "%r crc8 错 %d" % (got, ps.n_err_crc8))
 
@@ -305,7 +305,7 @@ def test_resync(c):
     broken16[-1] ^= 0xFF       # 破坏 CRC16
     ps = protocol.FrameParser()
     got = ps.feed(bytes(broken16) + good)
-    c.check("坏 crc16 后紧跟好帧：重同步成功、坏帧计数",
+    c.check("CRC16 错误后恢复同步并计数",
             got == [(TID_ARM_INIT, 1, b"")] and ps.n_err_crc16 == 1,
             "%r crc16 错 %d" % (got, ps.n_err_crc16))
 
@@ -314,7 +314,7 @@ def test_resync(c):
                              bytes(4) + b"\xAA\x55" + bytes(protocol.CTRL_POS_LEN - 6))
     ps = protocol.FrameParser()
     got = ps.feed(tricky + good)
-    c.check("payload 里含 AA 55：两个帧都解出来",
+    c.check("载荷含 AA 55 时仍正确分帧",
             len(got) == 2 and got[0][0] == TID_ARM_CTRL_POS and got[1] == (TID_ARM_INIT, 1, b""),
             "%r" % (got,))
 
@@ -334,13 +334,13 @@ def test_resync(c):
     got = []
     for i in range(len(blob)):
         got += ps.feed(blob[i:i + 1])
-    c.check("按 1 字节一片喂也能全解出来", len(got) == 3, "解出 %d 帧" % len(got))
+    c.check("逐字节输入仍能解出全部帧", len(got) == 3, "解出 %d 帧" % len(got))
 
 
 # 5. 按 arm_id 分流
 
 def test_dispatch(c):
-    c.section("5. 分流：一条链路、两台 Arm、互不串台")
+    c.section("5. 双臂共享链路，反馈独立分流")
     lb = LoopbackLink()
     a = make_arm(lb, 0)
     b = make_arm(lb, 1)
@@ -352,17 +352,17 @@ def test_dispatch(c):
                                     feedback_payload(robot_state=board_defs.STATE_NORMAL,
                                                      mode=board_defs.MODE_DAMPING,
                                                      gripper_deg=-20.0), 1))
-    c.check("A 只看到自己那帧的 state",
+    c.check("臂 A 只接收本臂状态",
             a.robot_state == board_defs.STATE_WAIT_INIT and b.robot_state == board_defs.STATE_NORMAL,
             "a=%s b=%s" % (a.robot_state, b.robot_state))
-    c.check("A 只看到自己那帧的夹爪角",
+    c.check("臂 A 只接收本臂夹爪角",
             a.raw_gripper_angle_deg == 10.0 and b.raw_gripper_angle_deg == -20.0,
             "a=%s b=%s" % (a.raw_gripper_angle_deg, b.raw_gripper_angle_deg))
-    c.check("两台各自数自己的帧数", a.n_feedback == 1 and b.n_feedback == 1)
+    c.check("双臂独立统计反馈帧", a.n_feedback == 1 and b.n_feedback == 1)
 
     # 0x11 只分发到指定臂。
     lb.inject_ack(1, state=5, result=(2,) * 7)
-    c.check("0x11 只投给 arm_id=1 那台",
+    c.check("0x11 仅分发给 arm_id=1",
             a.last_setzero_ack is None and b.last_setzero_ack is not None)
 
     # 越界臂编号被丢弃并计数。
@@ -374,14 +374,14 @@ def test_dispatch(c):
 
     # 未知帧类型只计数。
     lb.inject_bytes(protocol.encode(0x7A, b"\x01\x02", 1))
-    c.check("未知 tid 只计数、不抛",
+    c.check("未知 tid 仅计数，不抛异常",
             lb.channel(1).unknown_tids.get(0x7A) == 1 and a.n_feedback == 1,
             "unknown=%r" % (lb.channel(1).unknown_tids,))
 
     # 版本帧存入链路。
     lb.inject_bytes(protocol.encode(
         TID_VERSION, protocol.encode_version(lb.board_defs.VERSION_CODE), 0))
-    c.check("0x01 版本包记在链路上",
+    c.check("0x01 版本记录在链路层",
             lb.board_version == lb.board_defs.VERSION_CODE and lb.version_seen)
 
     # 0x81 存入链路，不进入单臂收包槽或未知类型计数。
@@ -389,23 +389,23 @@ def test_dispatch(c):
     lb.inject_bytes(protocol.encode(TID_LINK_STATUS,
                                     protocol.encode_link_status(9, ls_by, 0, 0, 0, 0, 0, 0, 0, 0, 100),
                                     1))
-    c.check("0x81 记在链路上、不投给某台臂",
+    c.check("0x81 记录在链路层",
             lb.link_status is not None and lb.link_status.rx_total == 9
             and lb.link_status.rx_by_tid == ls_by and lb.link_status_t is not None
             and lb.channel(1).unknown_tids.get(TID_LINK_STATUS) is None,
             "ls=%r unknown=%r" % (lb.link_status, lb.channel(1).unknown_tids))
-    c.check("stats 里有 link_status",
+    c.check("stats 包含 link_status",
             lb.stats.get("link_status") is lb.link_status, "%r" % (lb.stats.get("link_status"),))
 
     # Link.arm() 缓存
-    c.check("Link.arm(0) 同一个 arm_id 只建一个对象", lb.arm(0) is lb.arm(0))
+    c.check("Link.arm(0) 复用同一对象", lb.arm(0) is lb.arm(0))
 
     # 端口校验
     try:
         Link().channel(9)
-        c.check("arm_id 越界（>= ARM_NUM）在本地就报错", False, "没抛")
+        c.check("arm_id 越界时本地报错", False, "未抛异常")
     except ValueError:
-        c.check("arm_id 越界（>= ARM_NUM）在本地就报错", True)
+        c.check("arm_id 越界时本地报错", True)
 
 
 # 6. 单位换算
@@ -424,19 +424,19 @@ def test_units(c):
     for bad in ([1, 2, 3], [1] * 7, 5, "123456"):
         try:
             units.check_joint_seq(bad)
-            c.check("check_joint_seq 拒掉 %r" % (bad,), False, "没抛")
+            c.check("check_joint_seq 拒绝 %r" % (bad,), False, "未抛异常")
         except (TypeError, ValueError):
-            c.check("check_joint_seq 拒掉 %r" % (bad,), True)
+            c.check("check_joint_seq 拒绝 %r" % (bad,), True)
 
     # 度和弧度限位须对应。
-    c.check("限位的 rad 镜像和 deg 版一致",
+    c.check("rad 与 deg 限位一致",
             all(abs(math.degrees(r) - d) < 1e-9
                 for r, d in zip(board_defs.JOINT_ANGLE_MIN_RAD, board_defs.JOINT_ANGLE_MIN)))
     lo, clipped = board_defs.clamp_axis(0, -1000.0)
-    c.check("clamp_axis 夹住并报告夹了",
+    c.check("clamp_axis 限幅并返回限幅标志",
             clipped and lo == board_defs.JOINT_ANGLE_MIN[0])
     v, clipped = board_defs.clamp_axis(0, 0.0)
-    c.check("clamp_axis 在范围内原样返回且不报夹", (not clipped) and v == 0.0)
+    c.check("clamp_axis 保留限位内值，限幅标志为假", (not clipped) and v == 0.0)
 
 
 # 7. 夹爪标定
@@ -447,21 +447,21 @@ def test_gripper(c, tmpdir):
     # 测试标定点：负角闭合、正角张开，不作为设备默认值。
     calib = gripper.GripperCalibration.from_points(
         full_open_m=0.085, deg_at_zero=-142.0, deg_at_full_open=142.0)
-    c.check("记录点 A 处 = 0 m", abs(calib.opening_from_raw_deg(-142.0)) < 1e-12)
-    c.check("记录点 B 处 = FULL_OPEN", abs(calib.opening_from_raw_deg(142.0) - 0.085) < 1e-12)
+    c.check("闭合点映射为 0 m", abs(calib.opening_from_raw_deg(-142.0)) < 1e-12)
+    c.check("全开点映射为 FULL_OPEN", abs(calib.opening_from_raw_deg(142.0) - 0.085) < 1e-12)
     c.check("中点 = 一半行程",
             abs(calib.opening_from_raw_deg(0.0) - 0.085 / 2) < 1e-9)
     c.check("反算 raw deg 往返",
             all(abs(calib.opening_from_raw_deg(calib.raw_deg_from_opening(m)) - m) < 1e-12
                 for m in (0.0, 0.01, 0.0425, 0.085)))
-    c.check("方向识别：越正越张开 → direction=+1", calib.direction == 1)
-    c.check("两点之外是线性外推（不夹住）",
+    c.check("正向张开时 direction=+1", calib.direction == 1)
+    c.check("两点范围外线性外推",
             calib.opening_from_raw_deg(143.0) > 0.085)
 
     # 反向映射由实测两点确定。
     flipped = gripper.GripperCalibration.from_points(
         full_open_m=0.06, deg_at_zero=142.0, deg_at_full_open=-142.0)
-    c.check("装反的夹爪也能标（direction=-1）",
+    c.check("反向装配标定时 direction=-1",
             flipped.direction == -1 and abs(flipped.opening_from_raw_deg(-142.0) - 0.06) < 1e-12)
 
     # 拒绝无效标定。
@@ -472,24 +472,24 @@ def test_gripper(c, tmpdir):
     ]:
         try:
             gripper.GripperCalibration.from_points(**bad_kw)
-            c.check("拒掉退化标定（%s）" % why, False, "没抛")
+            c.check("拒绝无效标定（%s）" % why, False, "未抛异常")
         except CalibrationError:
-            c.check("拒掉退化标定（%s）" % why, True)
+            c.check("拒绝无效标定（%s）" % why, True)
 
     # 存盘 / 读回 / 原子写
     path = os.path.join(str(tmpdir), "sub", "gripper_calib.json")
     store = gripper.GripperCalibStore(path)
-    c.check("文件还不存在时 get() 返回 None（不是错误）", store.get(0) is None)
+    c.check("标定文件不存在时 get() 返回 None", store.get(0) is None)
     store.put(0, calib)
     store.put(1, flipped)
-    c.check("落盘后两台都读得回来",
+    c.check("双臂标定保存后均可读取",
             store.get(0) == calib and store.get(1) == flipped,
             "%r / %r" % (store.get(0), store.get(1)))
-    c.check("写一台不会覆盖另一台", store.get(1).full_open_m == 0.06)
-    c.check("覆盖写同一台也正常",
+    c.check("保存本臂不覆盖另一臂标定", store.get(1).full_open_m == 0.06)
+    c.check("同一臂标定可更新",
             (store.put(0, gripper.GripperCalibration.from_points(0.1, -142.0, 142.0)),
              abs(store.get(0).full_open_m - 0.1) < 1e-12)[1])
-    c.check("临时文件没留下", not any(n.endswith(".tmp") for n in os.listdir(os.path.dirname(path))))
+    c.check("保存后无残留临时文件", not any(n.endswith(".tmp") for n in os.listdir(os.path.dirname(path))))
 
     # 损坏文件应报错，不视为缺少标定。
     bad = os.path.join(str(tmpdir), "bad.json")
@@ -497,9 +497,9 @@ def test_gripper(c, tmpdir):
         f.write("{ 这不是 json")
     try:
         gripper.GripperCalibStore(bad).get(0)
-        c.check("坏 JSON 抛 CalibrationError", False, "没抛")
+        c.check("无效 JSON 抛 CalibrationError", False, "未抛异常")
     except CalibrationError:
-        c.check("坏 JSON 抛 CalibrationError", True)
+        c.check("无效 JSON 抛 CalibrationError", True)
 
     # 使用独立文件检查 Arm 的未标定行为。
     arm_path = os.path.join(str(tmpdir), "arm_calib.json")
@@ -507,24 +507,24 @@ def test_gripper(c, tmpdir):
     lb = LoopbackLink()
     arm = make_arm(lb, 0, tmp_calib=arm_path)
     lb.inject_feedback(0, gripper_deg=0.0, inited=0x7F)
-    c.check("未标定的臂：snapshot 里 opening=None 且 calibrated=False",
+    c.check("未标定快照：opening=None，calibrated=False",
             arm.snapshot().gripper_opening is None
             and arm.snapshot().gripper_calibrated is False)
-    c.check("未标定的臂：raw 原始角照常可读", arm.raw_gripper_angle_deg == 0.0)
+    c.check("未标定时仍可读取原始角", arm.raw_gripper_angle_deg == 0.0)
     try:
         arm.gripper_opening
-        c.check("未标定时 gripper_opening 抛 GripperNotCalibrated", False, "没抛")
+        c.check("未标定时 gripper_opening 抛 GripperNotCalibrated", False, "未抛异常")
     except GripperNotCalibrated as e:
         c.check("未标定时 gripper_opening 抛 GripperNotCalibrated",
                 "calibrate_gripper" in str(e))
 
     arm_store.put(0, calib)
-    c.check("reload 之前还是未标定状态（有缓存）", arm.calibration is None)
+    c.check("重载前保留原标定缓存", arm.calibration is None)
     arm.reload_calibration()
-    c.check("reload 之后 arm 0 有标定了", arm.calibration == calib)
+    c.check("重载后臂 0 读取新标定", arm.calibration == calib)
     lb.inject_feedback(0, robot_state=board_defs.STATE_NORMAL, mode=board_defs.MODE_RUN,
                        gripper_deg=0.0, inited=0x7F)
-    c.check("标定后 gripper_opening 出数（raw 0° → 半个行程）",
+    c.check("标定后原始角 0° 对应半行程开口",
             abs(arm.gripper_opening - 0.085 / 2) < 1e-9, "实际 %r" % arm.gripper_opening)
 
     # 检查米制换算、原始角和保持当前三种目标。
@@ -533,7 +533,7 @@ def test_gripper(c, tmpdir):
                        gripper_deg=0.0)
     play.send_ctrl_pos([0.0] * 6, gripper_m=0.085, gripper_torque_limit_nm=0.5)
     tid, aid, pay = lb.last_write()
-    c.check("gripper_m= 走标定换算成 raw deg",
+    c.check("gripper_m 按标定换算为原始角",
             tid == TID_ARM_CTRL_POS and aid == 0 and len(pay) == 80
             and abs(protocol.decode_ctrl_pos(pay)[0][6] - 142.0) < 1e-4,
             "写出的载荷 %r" % (pay,))
@@ -544,19 +544,19 @@ def test_gripper(c, tmpdir):
 
     lb.clear()
     play.send_ctrl_pos([0.0] * 6, gripper_raw_deg=-100.0, gripper_torque_limit_nm=0.5)
-    c.check("gripper_raw_deg= 直给、不过标定",
+    c.check("gripper_raw_deg 直接发送原始角",
             abs(protocol.decode_ctrl_pos(lb.last_write()[2])[0][6] - (-100.0)) < 1e-5)
 
     lb.clear()
     play.send_ctrl_pos([0.0] * 6, gripper_torque_limit_nm=0.5)
-    c.check("夹爪两个都不给 → 保持当前（取反馈里的原始角）",
+    c.check("未指定夹爪目标时采用反馈原始角",
             abs(protocol.decode_ctrl_pos(lb.last_write()[2])[0][6] - 0.0) < 1e-6)
 
     try:
         play.send_ctrl_pos([0.0] * 6, gripper_m=0.05, gripper_raw_deg=-10.0, gripper_torque_limit_nm=0.5)
-        c.check("夹爪 m 和 raw_deg 同时给 → ValueError", False, "没抛")
+        c.check("同时指定夹爪开口和原始角时抛 ValueError", False, "未抛异常")
     except ValueError:
-        c.check("夹爪 m 和 raw_deg 同时给 → ValueError", True)
+        c.check("同时指定夹爪开口和原始角时抛 ValueError", True)
 
 
 # 8. 命令预检矩阵
@@ -568,27 +568,27 @@ def gate_case(name, lb, call, tid=None, payload_len=None, exc=None):
         call()
     except Exception as e:      # noqa: BLE001 — 检查所有异常类型。
         if exc is None:
-            return ("%s：不该抛，抛了 %s: %s" % (name, type(e).__name__, e))
+            return ("%s：意外异常 %s: %s" % (name, type(e).__name__, e))
         if not isinstance(e, exc):
-            return ("%s：抛的是 %s（期望 %s）：%s" % (name, type(e).__name__, exc.__name__, e))
+            return ("%s：异常为 %s，期望 %s：%s" % (name, type(e).__name__, exc.__name__, e))
         if lb.writes:
-            return "%s：被挡下了但**竟然写出去了** %r" % (name, lb.writes)
+            return "%s：预检拒绝后仍写入 %r" % (name, lb.writes)
         return None
     if exc is not None:
-        return "%s：该抛 %s，结果发出去了（%r）" % (name, exc.__name__, lb.writes)
+        return "%s：未抛预期异常 %s，已写入 %r" % (name, exc.__name__, lb.writes)
     if not lb.writes:
-        return "%s：该发帧，结果一个字节都没写" % name
+        return "%s：应发送帧，但未写入" % name
     got_tid, _, got_pay = lb.last_write()
     if tid is not None and got_tid != tid:
-        return "%s：tid 写成了 0x%02X（期望 0x%02X）" % (name, got_tid, tid)
+        return "%s：tid 为 0x%02X，期望 0x%02X" % (name, got_tid, tid)
     if payload_len is not None and len(got_pay) != payload_len:
-        return "%s：payload 长 %d（期望 %d）" % (name, len(got_pay), payload_len)
+        return "%s：载荷长 %d，期望 %d" % (name, len(got_pay), payload_len)
     return None
 
 
 def test_gates(c, tmpdir):
     """检查命令预检矩阵；每个用例须先注入对应反馈。"""
-    c.section("8. 闸门矩阵（客户端预检）")
+    c.section("8. 命令预检矩阵")
     lb = LoopbackLink()
     arm = make_arm(lb, 0, tmp_calib=os.path.join(str(tmpdir), "no_calib.json"))
 
@@ -603,31 +603,31 @@ def test_gates(c, tmpdir):
     ST = board_defs
     # 0x02 init_arm
     fb(ST.STATE_WAIT_INIT, ST.MODE_STOP)
-    case("init_arm 在待初始化：放行", arm.init_arm, TID_ARM_INIT, 0)
+    case("待初始化：允许 init_arm", arm.init_arm, TID_ARM_INIT, 0)
     fb(ST.STATE_NORMAL, ST.MODE_STOP)
-    case("init_arm 在正常运行+stop：放行（第二入口）", arm.init_arm, TID_ARM_INIT, 0)
+    case("正常运行 + STOP：允许 init_arm", arm.init_arm, TID_ARM_INIT, 0)
     fb(ST.STATE_NORMAL, ST.MODE_DAMPING)
-    case("init_arm 在正常运行+damping：放行", arm.init_arm, TID_ARM_INIT, 0)
+    case("正常运行 + 阻尼：允许 init_arm", arm.init_arm, TID_ARM_INIT, 0)
     fb(ST.STATE_NORMAL, ST.MODE_RUN)
-    case("init_arm 在正常运行+run：挡（位置环在跑）", arm.init_arm, exc=GateRejected)
+    case("正常运行 + RUN：拒绝 init_arm", arm.init_arm, exc=GateRejected)
     fb(ST.STATE_NORMAL, ST.MODE_GRAVITY)
-    case("init_arm 在正常运行+gravity：挡", arm.init_arm, exc=GateRejected)
+    case("正常运行 + 重力补偿：拒绝 init_arm", arm.init_arm, exc=GateRejected)
     fb(ST.STATE_WAIT_HANDSHAKE)
-    case("init_arm 在等待握手：挡", arm.init_arm, exc=GateRejected)
+    case("等待握手：拒绝 init_arm", arm.init_arm, exc=GateRejected)
     fb(ST.STATE_WAIT_INIT, ST.MODE_STOP, lost=0x01)
-    case("init_arm 有电机掉线：挡", arm.init_arm, exc=GateRejected)
+    case("电机掉线：拒绝 init_arm", arm.init_arm, exc=GateRejected)
     fb(ST.STATE_WAIT_INIT, ST.MODE_STOP, joint=[30.0, 0.5, 0.5, 0, 0, 0])
-    case("init_arm 姿态偏 30°：挡", arm.init_arm, exc=GateRejected)
+    case("姿态偏差 30°：拒绝 init_arm", arm.init_arm, exc=GateRejected)
     fb(ST.STATE_WAIT_INIT, ST.MODE_STOP, joint=[19.0, 0.5, 0.5, 0, 0, 0])
-    case("init_arm 姿态偏 19°（容差 20°）：放行", arm.init_arm, TID_ARM_INIT, 0)
+    case("姿态偏差 19°（容差 20°）：允许 init_arm", arm.init_arm, TID_ARM_INIT, 0)
     fb(ST.STATE_WAIT_HANDSHAKE, ST.MODE_RUN)
     case("init_arm force=True：绕过预检", lambda: arm.init_arm(force=True), TID_ARM_INIT, 0)
 
     # 0x10 set_zero
     fb(ST.STATE_WAIT_INIT, ST.MODE_STOP)
-    case("set_zero 在待初始化：放行", arm.set_zero, TID_MOTOR_SET_ZERO, 0)
+    case("待初始化：允许 set_zero", arm.set_zero, TID_MOTOR_SET_ZERO, 0)
     fb(ST.STATE_NORMAL)
-    case("set_zero 在正常运行：挡（只能从待初始化）", arm.set_zero, exc=GateRejected)
+    case("正常运行：拒绝 set_zero", arm.set_zero, exc=GateRejected)
 
     # 0x12/13/14/15 模式切换
     for state, blocked in [(ST.STATE_NORMAL, False), (ST.STATE_WAIT_INIT, True)]:
@@ -636,7 +636,7 @@ def test_gates(c, tmpdir):
                               ("gravity", TID_ARM_GRAVITY, "gravity"),
                               ("stop", TID_ARM_STOP, "stop"),
                               ("damping", TID_ARM_DAMPING, "damping")]:
-            case("%s 在%s：%s" % (nm, ST.state_name(state), "挡" if blocked else "放行"),
+            case("%s 在%s：%s" % (nm, ST.state_name(state), "拒绝" if blocked else "允许"),
                  getattr(arm, meth),
                  exc=GateRejected if blocked else None,
                  tid=None if blocked else tid, plen=None if blocked else 0)
@@ -648,56 +648,56 @@ def test_gates(c, tmpdir):
     case("send_ctrl_pos 要求夹爪力矩上限",
          lambda: arm.send_ctrl_pos([0.1] * 6), exc=TypeError)
     fb(ST.STATE_NORMAL, ST.MODE_STOP)
-    case("send_ctrl_pos 在 mode=stop：挡（板子只要 run 档的控制帧）",
+    case("STOP 模式：拒绝 send_ctrl_pos",
          lambda: arm.send_ctrl_pos([0.1] * 6, gripper_torque_limit_nm=0.5), exc=GateRejected)
     fb(ST.STATE_WAIT_INIT, ST.MODE_RUN)
-    case("send_ctrl_pos 在待初始化：挡",
+    case("待初始化：拒绝 send_ctrl_pos",
          lambda: arm.send_ctrl_pos([0.1] * 6, gripper_torque_limit_nm=0.5), exc=GateRejected)
     case("send_ctrl_pos force=True：绕过预检",
          lambda: arm.send_ctrl_pos([0.1] * 6, gripper_torque_limit_nm=0.5, force=True), TID_ARM_CTRL_POS, 80)
-    case("send_ctrl_pos 关节数不对：本地就报错（参数错误，不是闸门）",
+    case("send_ctrl_pos 关节数错误：抛 ValueError",
          lambda: arm.send_ctrl_pos([0.1] * 5, gripper_torque_limit_nm=0.5, force=True), exc=ValueError)
 
     # 0x18 reset
     fb(ST.STATE_NORMAL, ST.MODE_RUN)
-    case("reset 在正常运行且全在线：放行", arm.reset, TID_ARM_RESET, 0)
+    case("正常运行且电机全在线：允许 reset", arm.reset, TID_ARM_RESET, 0)
     fb(ST.STATE_NORMAL, ST.MODE_RUN, lost=0x40)
-    case("reset 有电机掉线：挡", arm.reset, exc=GateRejected)
+    case("电机掉线：拒绝 reset", arm.reset, exc=GateRejected)
     fb(ST.STATE_WAIT_INIT)
-    case("reset 在待初始化：挡", arm.reset, exc=GateRejected)
+    case("待初始化：拒绝 reset", arm.reset, exc=GateRejected)
     fb(ST.STATE_NORMAL, ST.MODE_RUN, joint=[60.0] * 6)
-    case("reset 姿态很歪：**放行**（0x18 故意不查姿态）", arm.reset, TID_ARM_RESET, 0)
+    case("reset 不检查姿态偏差", arm.reset, TID_ARM_RESET, 0)
 
-    # 反馈陈旧 / 完全没有反馈
+    # 反馈过期或缺失
     lb2 = LoopbackLink()
     arm2 = make_arm(lb2, 0, tmp_calib=os.path.join(str(tmpdir), "no_calib.json"))
-    bad = gate_case("一帧反馈都没有时命令要抛 FeedbackStale", lb2, arm2.start,
+    bad = gate_case("无反馈时抛 FeedbackStale", lb2, arm2.start,
                     exc=FeedbackStale)
-    c.check("一帧反馈都没有时命令要抛 FeedbackStale", bad is None, bad or "")
+    c.check("无反馈时抛 FeedbackStale", bad is None, bad or "")
 
     lb2.inject_feedback(0, ts=time.monotonic() - 1.0, robot_state=ST.STATE_NORMAL)
-    bad = gate_case("反馈帧 1 s 旧（阈值 0.1 s）要抛 FeedbackStale", lb2, arm2.start,
+    bad = gate_case("反馈超过 0.1 s 时抛 FeedbackStale", lb2, arm2.start,
                     exc=FeedbackStale)
-    c.check("反馈帧 1 s 旧（阈值 0.1 s）要抛 FeedbackStale", bad is None, bad or "")
+    c.check("反馈超过 0.1 s 时抛 FeedbackStale", bad is None, bad or "")
     lb2.clear()
     arm2.start(force=True)
-    c.check("陈旧反馈下 force=True 照样能发", lb2.tids() == [TID_ARM_START])
+    c.check("force=True 可跳过反馈时效预检", lb2.tids() == [TID_ARM_START])
 
     # 不自动保活
     lb3 = LoopbackLink()
     arm3 = make_arm(lb3, 0, tmp_calib=os.path.join(str(tmpdir), "no_calib.json"))
-    c.check("构造 Arm 本身不写任何帧", lb3.writes == [])
+    c.check("构造 Arm 不发送帧", lb3.writes == [])
     lb3.inject_feedback(0, robot_state=ST.STATE_NORMAL)
     time.sleep(0.15)             # 等待时间小于 3 s 看门狗窗口。
-    c.check("**空闲 150 ms 零写入**（证明 SDK 不自动发心跳）", lb3.writes == [],
-            "写出了 %r" % (lb3.writes,))
+    c.check("空闲 150 ms 不自动保活", lb3.writes == [],
+            "已写入 %r" % (lb3.writes,))
     arm3.keepalive()
-    c.check("keepalive() 发的是 0x01 且 payload 是版本码",
+    c.check("keepalive() 发送含版本码的 0x01",
             lb3.last_write()[:2] == (TID_VERSION, 0)
             and protocol.decode_version(lb3.last_write()[2]) == lb3.board_defs.VERSION_CODE)
 
     # 等待新反馈：先记录序号，再由后台线程注入下一帧。
-    c.check("手上这帧之后没有新帧 → wait_feedback 超时返回 None",
+    c.check("无新帧时 wait_feedback 超时返回 None",
             arm3.wait_feedback(timeout=0.05) is None)
 
     seq_before = lb3.channel(0).snapshot_feedback()[2]
@@ -705,34 +705,34 @@ def test_gates(c, tmpdir):
                                      lb3.inject_feedback(0, robot_state=ST.STATE_WAIT_INIT)),
                      daemon=True).start()
     fb_new = arm3.wait_feedback(timeout=1.0)
-    c.check("等待期间来了新帧 → wait_feedback 拿到它（轮询真的在等）",
+    c.check("wait_feedback 返回等待期间收到的新帧",
             fb_new is not None and fb_new.robot_state == ST.STATE_WAIT_INIT,
-            "拿到 %r" % (fb_new,))
-    c.check("...而且确实是**序号更大**的那一帧（不是手上那帧重放）",
+            "返回 %r" % (fb_new,))
+    c.check("新反馈帧序号递增",
             lb3.channel(0).snapshot_feedback()[2] > seq_before)
     c.check("wait_for 谓词为真时返回 True",
             arm3.wait_for(lambda a: a.robot_state == ST.STATE_WAIT_INIT, timeout=0.5))
-    c.check("wait_for 超时返回 False（不抛）",
+    c.check("wait_for 超时返回 False",
             arm3.wait_for(lambda a: a.robot_state == 99, timeout=0.05) is False)
 
     lb3.clear()
     arm3.set_zero(force=True)
     try:
         arm3.wait_setzero_ack(timeout=0.1)
-        c.check("没有 0x11 时 wait_setzero_ack 抛 TimeoutError", False, "没抛")
+        c.check("未收到 0x11 时 wait_setzero_ack 超时报错", False, "未抛异常")
     except TimeoutError:
-        c.check("没有 0x11 时 wait_setzero_ack 抛 TimeoutError", True)
+        c.check("未收到 0x11 时 wait_setzero_ack 超时报错", True)
     lb3.inject_ack(0, state=5, result=(2, 2, 1, 4, 2, 2, 5), elapsed_ms=5527)
-    c.check("0x11 来了 wait_setzero_ack 拿到结果",
+    c.check("wait_setzero_ack 返回 0x11 结果",
             arm3.wait_setzero_ack(timeout=0.5).elapsed_ms == 5527)
 
     # 按序号排除上一轮设零回复。
     arm3.set_zero(force=True)
     try:
         arm3.wait_setzero_ack(timeout=0.15)
-        c.check("set_zero 后的 wait 不会拿**上一轮的** 0x11 顶数", False, "拿到了旧的")
+        c.check("set_zero 后等待结果不复用旧 0x11", False, "返回了旧反馈")
     except TimeoutError:
-        c.check("set_zero 后的 wait 不会拿**上一轮的** 0x11 顶数", True)
+        c.check("set_zero 后等待结果不复用旧 0x11", True)
 
     # send_raw / 未连接
     lb3.clear()
@@ -741,16 +741,16 @@ def test_gates(c, tmpdir):
             lb3.last_write() == (0x7A, 0, b"\x01\x02\x03"))
     try:
         arm3.send_raw(0x7A, "not bytes")
-        c.check("send_raw 的 payload 不是 bytes 要报 TypeError", False, "没抛")
+        c.check("send_raw 载荷非 bytes 时抛 TypeError", False, "未抛异常")
     except TypeError:
-        c.check("send_raw 的 payload 不是 bytes 要报 TypeError", True)
+        c.check("send_raw 载荷非 bytes 时抛 TypeError", True)
 
     naive = Arm(0)     # 链路未打开
     try:
         naive.send_version()
-        c.check("链路没 open 时发送抛 NotConnected", False, "没抛")
+        c.check("链路未打开时发送抛 NotConnected", False, "未抛异常")
     except NotConnected:
-        c.check("链路没 open 时发送抛 NotConnected", True)
+        c.check("链路未打开时发送抛 NotConnected", True)
 
 
 # 9. 协议模拟器
@@ -782,7 +782,7 @@ def _sim_wait(arms, pred, timeout=2.0, extra=None):
 
 def test_sim(c, tmpdir):
     """检查握手、状态时序、双臂隔离、看门狗和掉线模拟。"""
-    c.section("9. 假板子（sdk.sim，不接硬件）")
+    c.section("9. H7 协议模拟器")
     from .sim import SimLink
 
     BD = board_defs
@@ -793,32 +793,32 @@ def test_sim(c, tmpdir):
 
         # 握手前不发送保活，因为保活帧本身会触发握手。
         time.sleep(0.3)
-        c.check("没收到版本包之前一帧反馈都不发（板子握手前不发）",
+        c.check("握手前不发送反馈",
                 a.n_feedback == 0 and b.n_feedback == 0,
                 "实际 A=%d B=%d" % (a.n_feedback, b.n_feedback))
         link.send(TID_VERSION, struct.pack("<I", 0xDEADBEEF), 0)
         time.sleep(0.3)
-        c.check("版本码不符 → 不回这一帧、也不发反馈（下一项发对版本码就握手）",
+        c.check("版本不匹配时不回复、不发反馈",
                 a.n_feedback == 0 and link.board_version is None,
-                "实际 A=%d 板子版本 %r" % (a.n_feedback, link.board_version))
+                "A 反馈数=%d，固件版本=%r" % (a.n_feedback, link.board_version))
 
         a.send_version()
         b.send_version()
         ok = _sim_wait([a, b], lambda: a.robot_state == BD.STATE_WAIT_INIT
                        and b.robot_state == BD.STATE_WAIT_INIT, 2.0)
-        c.check("版本码对上 → 等待握手→离线等待→待初始化，两台都到",
+        c.check("版本匹配后双臂进入待初始化",
                 ok and a.n_feedback > 0 and b.n_feedback > 0,
                 "A=%s B=%s" % (a.robot_state_name, b.robot_state_name))
 
         # 0x81：握手后才发，10 Hz，链路级只一帧
         ok = _sim_wait([a, b], lambda: link.link_status is not None, 2.0)
         ls = link.link_status
-        c.check("握手过 → 0x81 到（链路级，不挂到某台臂上）",
+        c.check("握手后链路收到 0x81",
                 ok and ls is not None and ls.rx_by_tid[protocol.LINK_TID_OTHER] == 0
                 and a.link.channel(0).unknown_tids.get(protocol.TID_LINK_STATUS) is None,
                 "ls=%r unknown=%r" % (ls, a.link.channel(0).unknown_tids))
         # 链路统计为窗口增量，包含保活帧。
-        c.check("0x81 报的是这一段窗口里收到的帧",
+        c.check("0x81 统计当前窗口收到的帧",
                 ok and ls.rx_total == sum(ls.rx_by_tid)
                 and ls.rx_by_tid[protocol.LINK_TID_ORDER.index(protocol.TID_VERSION)] > 0,
                 "%r" % (ls,))
@@ -826,11 +826,11 @@ def test_sim(c, tmpdir):
         # 0x02 初始化
         a.init_arm()
         ok = _sim_wait([a, b], lambda: a.robot_state == BD.STATE_NORMAL, 2.0)
-        c.check("0x02 → 初始化中 → 正常运行，收尾停在 damping、inited 回 0x7F",
+        c.check("初始化完成后进入正常运行/阻尼，inited=0x7F",
                 ok and a.mode == BD.MODE_DAMPING and a.motor_inited_mask == 0x7F,
                 "state=%s mode=%s inited=0x%02X" % (a.robot_state_name, a.mode_name,
                                                     a.motor_inited_mask))
-        c.check("另一台不受影响（还在待初始化/stop）",
+        c.check("另一臂仍为待初始化/STOP",
                 b.robot_state == BD.STATE_WAIT_INIT and b.mode == BD.MODE_STOP,
                 "B=%s/%s" % (b.robot_state_name, b.mode_name))
 
@@ -840,15 +840,15 @@ def test_sim(c, tmpdir):
             rejected = False
         except GateRejected:
             rejected = True
-        c.check("0x10 在正常运行态被预检挡下（板子也只认待初始化）", rejected)
+        c.check("正常运行时预检拒绝 0x10", rejected)
         b.set_zero()
         ok = _sim_wait([a, b], lambda: b.last_setzero_ack is not None, 2.0)
         ack = b.last_setzero_ack
-        c.check("0x10 → 校准零点 → 回待初始化，并收到 0x11 反馈帧",
+        c.check("设零后返回待初始化，并收到 0x11 结果",
                 ok and b.robot_state == BD.STATE_WAIT_INIT and ack is not None
                 and ack.state == BD.ZERO_STATE_DONE,
                 "ack=%r state=%s" % (ack, b.robot_state_name))
-        c.check("0x11 的 result 逐台给出（夹爪 1=未确认、其它 2/5）",
+        c.check("0x11 分别报告电机结果：夹爪为 1，关节为 2/5",
                 ack is not None and ack.result == (5, 5, 5, 2, 2, 2, 1),
                 "result=%r" % ((ack.result if ack else None),))
 
@@ -858,7 +858,7 @@ def test_sim(c, tmpdir):
         want = [0.2, 0.5, 0.5, 0.0, 0.0, 0.0]
         _sim_wait([a, b], lambda: False, 0.1,
                   extra=lambda: a.send_ctrl_pos(want, gripper_raw_deg=0.0, gripper_torque_limit_nm=0.5))
-        c.check("0x16 在 run 档被受理、关节按一阶追到目标角",
+        c.check("RUN 时接收 0x16，关节趋近目标角",
                 ok and abs(a.joint_angles[0] - want[0]) < 0.01
                 and abs(a.joint_angles[1] - want[1]) < 0.01,
                 "实际 %s" % ([round(v, 4) for v in a.joint_angles],))
@@ -867,7 +867,7 @@ def test_sim(c, tmpdir):
         a.reset()
         ok = _sim_wait([a, b], lambda: a.robot_state == BD.STATE_RESETTING, 1.0)
         ok = ok and _sim_wait([a, b], lambda: a.robot_state == BD.STATE_NORMAL, 2.0)
-        c.check("0x18 → 复位中 → 正常运行(damping)，关节落到复位位姿",
+        c.check("复位完成后进入正常运行/阻尼，关节到达复位角",
                 ok and a.mode == BD.MODE_DAMPING
                 and max(abs(x - y) for x, y in zip(a.joint_angles,
                                                    BD.RESET_POSE_RAD)) < 1e-6,
@@ -878,19 +878,19 @@ def test_sim(c, tmpdir):
         # 虚拟时间随循环推进，负载高时需等待状态反馈；等待期间不发送帧。
         ok = _sim_wait([], lambda: b.robot_state == BD.STATE_COMM_LOST
                        and b.mode == BD.MODE_DAMPING, 2.0)
-        c.check("不发帧超 3 s → 两台一起切 damping，总模式按初始化跑完没有各落各的",
+        c.check("双臂超时后切阻尼：已初始化臂保持正常状态，另一臂通信离线",
                 ok and a.robot_state == BD.STATE_NORMAL and a.mode == BD.MODE_DAMPING
                 and b.robot_state == BD.STATE_COMM_LOST and b.mode == BD.MODE_DAMPING,
                 "A=%s/%s B=%s/%s" % (a.robot_state_name, a.mode_name,
                                      b.robot_state_name, b.mode_name))
         ok = _sim_wait([a, b], lambda: b.robot_state == BD.STATE_WAIT_INIT, 2.0)
-        c.check("链路回来：初始化跑完过的留在正常运行(damping)，没跑完的走 离线等待→待初始化",
+        c.check("通信恢复后：已初始化臂保持正常/阻尼，另一臂回待初始化",
                 ok and a.robot_state == BD.STATE_NORMAL and a.mode == BD.MODE_DAMPING,
                 "A=%s/%s B=%s" % (a.robot_state_name, a.mode_name, b.robot_state_name))
 
         # 仅保活 A，检查 B 独立超时。
         ok = _sim_wait([a], lambda: b.robot_state == BD.STATE_COMM_LOST, 2.0)
-        c.check("只喂一台 → 没喂的那台自己超时进通信离线，被喂的那台不受影响",
+        c.check("仅保活 A 时，B 独立超时离线",
                 ok and a.robot_state == BD.STATE_NORMAL
                 and b.robot_state == BD.STATE_COMM_LOST,
                 "A=%s B=%s" % (a.robot_state_name, b.robot_state_name))
@@ -908,36 +908,36 @@ def test_sim(c, tmpdir):
         b.init_arm()
         _sim_wait([a, b], lambda: b.robot_state == BD.STATE_NORMAL, 2.0)
         ok = _sim_wait([a, b], lambda: b.motor_lost_mask != 0, 3.0)
-        c.check("--fake-lost → 指定那台报掉线、mode 被打回 stop",
+        c.check("--fake-lost 使指定臂报告电机掉线并切 STOP",
                 ok and b.mode == BD.MODE_STOP
                 and b.lost_names and a.motor_lost_mask == 0,
                 "B lost=0x%02X %s / A lost=0x%02X"
                 % (b.motor_lost_mask, b.lost_names, a.motor_lost_mask))
         ok = _sim_wait([a, b], lambda: b.motor_lost_mask == 0, 3.0)
-        c.check("掉线自己恢复（掩码回 0）", ok, "B lost=0x%02X" % b.motor_lost_mask)
+        c.check("模拟掉线结束后掩码恢复为 0", ok, "B lost=0x%02X" % b.motor_lost_mask)
     finally:
         link.close()
 
 
 def test_reconnect(c, tmpdir):
     """用模拟串口检查实际接收线程和重连流程。"""
-    c.section("10. 掉线自动重连（假串口，不碰硬件、不需要 pyserial）")
+    c.section("10. 模拟串口自动重连")
 
     # 按 USB 身份匹配设备。
     board = {"idVendor": "0483", "idProduct": "5740", "serial": "ABC"}
     other = {"idVendor": "0483", "idProduct": "5740", "serial": "XYZ"}
-    c.check("同 VID:PID 同序列号 = 同一台设备", same_usb_ident(board, dict(board)))
-    c.check("同 VID:PID 不同序列号 = 不是同一台", not same_usb_ident(board, other))
-    c.check("设备没烧序列号时只认 VID:PID",
+    c.check("VID:PID 和序列号相同：识别为同一设备", same_usb_ident(board, dict(board)))
+    c.check("VID:PID 相同但序列号不同：识别为不同设备", not same_usb_ident(board, other))
+    c.check("无序列号时按 VID:PID 匹配",
             same_usb_ident(dict(board, serial=""), dict(board)))
-    c.check("VID:PID 不同就不是同一台",
+    c.check("VID:PID 不同：识别为不同设备",
             not same_usb_ident(board, {"idVendor": "1a86", "idProduct": "5740"}))
-    c.check("match_ident 在候选里认回同一台（按路径序，可复现）",
+    c.check("match_ident 按路径排序匹配设备",
             match_ident(board, [("/dev/ttyACM9", other),
                                 ("/dev/ttyACM1", dict(board))]) == "/dev/ttyACM1")
-    c.check("match_ident 认不到就返回 None",
+    c.check("match_ident 无匹配时返回 None",
             match_ident(board, [("/dev/ttyACM9", other)]) is None)
-    c.check("默认：自动重连开着、上限 %d 次" % RECONNECT_MAX_TRIES,
+    c.check("默认启用自动重连，上限 %d 次" % RECONNECT_MAX_TRIES,
             Link().auto_reconnect and Link().reconnect_max_tries == RECONNECT_MAX_TRIES)
 
     port = os.path.join(tmpdir, "ttyFAKE0")
@@ -949,7 +949,7 @@ def test_reconnect(c, tmpdir):
         lk = Link(port, reconnect_wait=0.3, reconnect_max_wait=0.3)
         lk.open()
         n_open0 = len(ser.opened)
-        c.check("open 之后 link_up 为真、open_gen=1",
+        c.check("打开后 link_up=True，open_gen=1",
                 lk.link_up and lk.is_open and lk.open_gen == 1)
         ser.fail_reads = 1                     # 模拟下一次读取失败
         down = _wait(lambda: not lk.link_up, 1.0)
@@ -958,19 +958,19 @@ def test_reconnect(c, tmpdir):
             sent_ok = True
         except NotConnected:
             sent_ok = False
-        c.check("断开期间：is_open 为假、send() 抛 NotConnected（脚本侧照旧）",
+        c.check("断开时 is_open=False，send() 抛 NotConnected",
                 down and not sent_ok and not lk.is_open and lk.open_gen == 1)
-        c.check("重连成功：link_up 回来、open_gen+1、句柄换了一条",
+        c.check("重连后链路可用，open_gen 递增并更新句柄",
                 _wait(lambda: lk.link_up and lk.open_gen == 2, 2.0)
                 and len(ser.opened) == n_open0 + 1 and ser.closed >= 1)
-        c.check("成功次数计上了、放弃标志是假", lk.n_reconnect == 1
+        c.check("重连成功后更新次数并清除放弃标志", lk.n_reconnect == 1
                 and not lk.reconnect_gave_up and lk.stats["reconnect_err"] is None)
         ser.chunks.append(protocol.encode(TID_ARM_FEEDBACK, feedback_payload(), 0))
-        c.check("重连之后的字节照常切帧、进收包槽",
+        c.check("重连后恢复切帧和分发",
                 _wait(lambda: lk.channel(0).n_feedback >= 1, 1.0))
         thr = lk._thr
         lk.close()
-        c.check("close() 停线程、放掉句柄", (not thr.is_alive()) and lk.ser is None)
+        c.check("close() 停止线程并释放句柄", (not thr.is_alive()) and lk.ser is None)
 
         # auto_reconnect=False：退回"断了就断着"
         lk2 = Link(port, auto_reconnect=False)
@@ -979,7 +979,7 @@ def test_reconnect(c, tmpdir):
         ser.fail_reads = 1
         ok = _wait(lambda: not lk2.link_up, 2.0)
         time.sleep(0.05)
-        c.check("自动重连关掉时：停在断开上、一次都不再开",
+        c.check("关闭自动重连后不再尝试连接",
                 ok and lk2.n_reconnect == 0 and lk2.open_gen == 1
                 and len(ser.opened) == n_open1, "opened=%d" % len(ser.opened))
         lk2.close()
@@ -990,13 +990,13 @@ def test_reconnect(c, tmpdir):
         lk3.open()
         ser.fail_reads = 1
         ser.fail_opens = 99                    # 持续模拟打开失败
-        c.check("试满 3 次都没开上 → 放弃、停在断开上",
+        c.check("连续 3 次失败后停止重连",
                 _wait(lambda: lk3.reconnect_gave_up, 2.0)
                 and lk3.reconnect_tries == 3 and not lk3.link_up)
-        c.check("放弃时记下了最后一次开不上的原因", bool(lk3.reconnect_err))
+        c.check("停止重连时保留最后一次错误", bool(lk3.reconnect_err))
         n_try = len(ser.opened)
         time.sleep(0.15)
-        c.check("放弃之后不再偷偷重试", len(ser.opened) == n_try)
+        c.check("达到重试上限后不再尝试", len(ser.opened) == n_try)
 
         # reopen() 失败仍报告错误，并重启后台重试。
         try:
@@ -1004,11 +1004,11 @@ def test_reconnect(c, tmpdir):
             raised = False
         except LinkError:
             raised = True
-        c.check("放弃之后 reopen 仍照旧抛 LinkError", raised)
+        c.check("停止重连后 reopen 失败仍抛 LinkError", raised)
         ser.fail_opens = 0                     # 恢复打开能力
-        c.check("reopen 失败之后收包线程会接着试，直到连上",
+        c.check("reopen 失败后接收线程继续重连",
                 _wait(lambda: lk3.link_up and lk3.open_gen == 2, 2.0))
-        c.check("这一轮成功后计数/标志对上",
+        c.check("本轮重连成功后更新计数和状态",
                 lk3.n_reconnect == 1 and not lk3.reconnect_gave_up
                 and lk3.reconnect_err is None)
         lk3.close()
@@ -1018,16 +1018,16 @@ def test_reconnect(c, tmpdir):
         lk4.open()
         ser.chunks.append(protocol.encode(TID_VERSION,
                                           struct.pack("<I", lk4.board_defs.VERSION_CODE), 0))
-        c.check("重连前先收到过版本帧", _wait(lambda: lk4.board_version is not None, 1.0))
+        c.check("重连前已收到版本帧", _wait(lambda: lk4.board_version is not None, 1.0))
         n_drop0 = lk4.parser.n_drop
         ser.chunks.append(protocol.encode(TID_ARM_FEEDBACK, feedback_payload(), 0)[:5])
-        c.check("半帧先停在解析器里",
+        c.check("解析器保留未完整接收的帧",
                 _wait(lambda: len(lk4.parser.buf) == 5, 1.0))
         ser.fail_reads = 1
-        c.check("重连把残留半帧清掉、并计进 n_drop（字节去哪了要对得上）",
+        c.check("重连清除残留半帧，并计入 n_drop",
                 _wait(lambda: lk4.link_up and lk4.open_gen == 2, 2.0)
                 and lk4.parser.buf == b"" and lk4.parser.n_drop == n_drop0 + 5)
-        c.check("上一段流报的版本码/链路状态也作废",
+        c.check("重连清除旧版本码和链路状态",
                 lk4.board_version is None and lk4.link_status is None)
         lk4.close()
 
@@ -1041,7 +1041,7 @@ def test_reconnect(c, tmpdir):
         s2.fail_opens = 99
         gave_up5 = _wait(lambda: lk5.reconnect_gave_up, 3.0)
         g = _gaps(s2.opened, n5)
-        c.check("退避翻倍：两次尝试之间是 0.1 → 0.2",
+        c.check("重试间隔从 0.1 s 翻倍至 0.2 s",
                 gave_up5 and len(g) == 2 and g[0] >= 0.07 and g[1] >= g[0] * 1.4,
                 "间隔 %s" % ["%.3f" % v for v in g])
         lk5.close()
@@ -1055,7 +1055,7 @@ def test_reconnect(c, tmpdir):
         t0 = time.monotonic()
         gave_up = _wait(lambda: lk6.reconnect_gave_up, 3.0)
         elapsed = time.monotonic() - t0
-        c.check("退避有封顶（三次共等 0.34 s，不是翻倍到底的 0.7 s）",
+        c.check("重试间隔受上限约束，三次共等待 0.34 s",
                 gave_up and 0.28 <= elapsed <= 0.6, "%.3f s" % elapsed)
         lk6.close()
 
@@ -1144,10 +1144,10 @@ def main(argv=None):
     import tempfile
 
     argv = sys.argv[1:] if argv is None else argv
-    print("sdk 离线自测 —— 协议版本码：%s"
+    print("SDK 离线自测，协议版本码：%s"
           % "，".join("%s %s（0x%08X）" % (name, defs.VERSION_STRING, defs.VERSION_CODE)
                      for name, defs in (("arx_x5", board_defs), ("metal_arm", metal_arm))))
-    print("不需要硬件、不需要 pyserial。")
+    print("离线运行，无需硬件或 pyserial。")
 
     c = Checker()
     tests = [

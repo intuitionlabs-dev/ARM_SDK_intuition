@@ -53,18 +53,16 @@ class GripperCalibration:
         """无效数据抛 CalibrationError；端点过近时发出警告。"""
         if not self.full_open_m > 0:
             raise CalibrationError(
-                "FULL_OPEN 必须 > 0（收到 %r）—— 它是「完全张开时的开口距离」，"
-                "单位米。" % (self.full_open_m,))
+                "最大开口 FULL_OPEN（m）须 >0，收到 %r" % (self.full_open_m,))
         sep = self.separation_deg
         if sep < 1e-9:
             raise CalibrationError(
-                "两个记录点重合（deg_at_zero=%.6f，deg_at_full_open=%.6f）—— 这样映射不出"
-                "任何尺度，标定无效。请把夹爪分别摆到 0 m 和 FULL_OPEN 两处重新记录。"
+                "标定点重合（闭合 %.6f°，全开 %.6f°）；请重新记录闭合点和全开点"
                 % (self.deg_at_zero, self.deg_at_full_open))
         if sep < MIN_POINT_SEPARATION_DEG:
             warnings.warn(
-                "夹爪两个记录点只差 %.2f°（< %.0f°）—— 尺度和方向都会被噪声放大，"
-                "建议重新标定。" % (sep, MIN_POINT_SEPARATION_DEG))
+                "标定点角差 %.2f°，小于建议值 %.0f°，易受噪声影响；建议重新标定"
+                % (sep, MIN_POINT_SEPARATION_DEG))
         return self
 
     @property
@@ -102,7 +100,7 @@ class GripperCalibration:
     @classmethod
     def from_dict(cls, d):
         if not isinstance(d, dict):
-            raise CalibrationError("标定项不是一个 JSON 对象：%r" % (d,))
+            raise CalibrationError("标定项须为 JSON 对象，收到 %r" % (d,))
         try:
             calib = cls(
                 full_open_m=float(d["full_open_m"]),
@@ -112,9 +110,9 @@ class GripperCalibration:
                 note=str(d.get("note", "")),
             )
         except KeyError as e:
-            raise CalibrationError("标定项缺字段 %s：%r" % (e, d)) from None
+            raise CalibrationError("标定项缺少字段 %s：%r" % (e, d)) from None
         except (TypeError, ValueError) as e:
-            raise CalibrationError("标定项字段不是数：%s（%r）" % (e, d)) from None
+            raise CalibrationError("标定字段须为数值：%s（%r）" % (e, d)) from None
         return calib
 
     @classmethod
@@ -147,21 +145,21 @@ class GripperCalibStore:
         try:
             text = self.path.read_text(encoding="utf-8")
         except OSError as e:
-            raise CalibrationError("读不了标定文件 %s：%s" % (self.path, e)) from None
+            raise CalibrationError("读取标定文件 %s 失败：%s" % (self.path, e)) from None
         try:
             data = json.loads(text)
         except ValueError as e:
             raise CalibrationError(
-                "标定文件 %s 不是合法 JSON：%s\n（它坏了的话直接删掉重标一次最省事）"
+                "标定文件 %s 的 JSON 格式无效：%s"
                 % (self.path, e)) from None
         if not isinstance(data, dict):
-            raise CalibrationError("标定文件 %s 的顶层不是一个 JSON 对象" % self.path)
+            raise CalibrationError("标定文件 %s 的顶层须为 JSON 对象" % self.path)
 
         data.setdefault("version", CALIB_VERSION)
         data.setdefault("units", {"opening": "m", "raw_angle": "deg"})
         arms = data.setdefault("arms", {})
         if not isinstance(arms, dict):
-            raise CalibrationError("标定文件 %s 的 arms 不是一个 JSON 对象" % self.path)
+            raise CalibrationError("标定文件 %s 的 arms 须为 JSON 对象" % self.path)
         return data
 
     # 读一台
@@ -218,10 +216,7 @@ class GripperCalibStore:
 
     def missing_message(self, arm_id, hint=""):
         tail = ("\n" + hint + "\n") if hint else "\n"
-        return ("夹爪还没标定（期望的标定文件是 %s，里面没有 arm_id=%d 那一项）。%s"
-                "标定一次：\n"
-                "    python3 -m sdk.calibrate_gripper --arm-id %d --full-open-m <完全张开时的"
-                "开口距离，米>\n"
-                "标定要在**一次成功的初始化之后**做（夹爪的零点由找零给出，"
-                "见 sdk/README.md 的「夹爪标定」一节）。"
+        return ("标定文件 %s 缺少 arm_id=%d。%s请先完成初始化，再运行 ARX H7 夹爪标定：\n"
+                "    python3 -m sdk.calibrate_gripper --arm-id %d --full-open-m <最大开口米数>\n"
+                "详见 docs/H7.md 的夹爪标定说明。"
                 % (self.path, arm_id, tail, arm_id))

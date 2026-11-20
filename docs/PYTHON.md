@@ -64,7 +64,7 @@ def operate(link, arm_ids=(0,)):
                 arm.send_ctrl_pos(target, gripper_torque_limit_nm=0.5)
             time.sleep(0.01)
     finally:
-        # 在链路仍可用时提交退出模式；所有权归外层 with 管理。
+        # 关闭链路前请求阻尼模式；外层 with 负责关闭。
         pending = []
         for arm in arms:
             try:
@@ -77,7 +77,7 @@ def operate(link, arm_ids=(0,)):
             wait_all(pending, lambda a: a.mode == a.board_defs.MODE_DAMPING, timeout=2.0)
 
 
-# 离线完整运行；实机时使用 sdk.Link("/dev/ttyACM0", robot_type="arx_x5")。
+# 实机连接请改用 sdk.Link("/dev/ttyACM0", robot_type="arx_x5")。
 from sdk.sim import SimLink
 
 with SimLink(robot_type="arx_x5") as link:

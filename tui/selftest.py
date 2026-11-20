@@ -255,14 +255,14 @@ def selftest():
 
         # 手动模拟链路状态变化；实际重连线程由 SDK 自测覆盖。
         c.section(i18n.tr("selftest.sec_relink"))
-        link.simulate_give_up(tries=10, err="打不开假口子")
+        link.simulate_give_up(tries=10, err="模拟串口打开失败")
         c.check(i18n.tr("selftest.relink_snap"),
                 pump(1.0, lambda: sess.snapshot()["link_give_up"]
                      and not sess.snapshot()["link_up"]
                      and sess.snapshot()["link_retry"] == 10
                      and sess.snapshot()["link_retry_max"] == 10
                      and sess.snapshot()["link_auto"]))
-        want = i18n.tr("session.relink_giveup", 10, "打不开假口子")
+        want = i18n.tr("session.relink_giveup", 10, "模拟串口打开失败")
         c.check(i18n.tr("selftest.relink_giveup"),
                 pump(1.0, lambda: any(t == want for _, _, t in sess.events)),
                 i18n.tr("selftest.sent", [t for _, _, t in list(sess.events)[-3:]]))

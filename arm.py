@@ -482,7 +482,7 @@ class Arm:
         return self.link.send(tid, payload, self.arm_id)
 
     def _fresh_feedback(self, what):
-        """拿闸门判断用的反馈帧，太旧就抛 `FeedbackStale`。"""
+        """返回用于预检的反馈；缺失或过期时抛 FeedbackStale。"""
         fb = self.feedback
         if fb is None:
             raise FeedbackStale(

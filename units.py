@@ -46,13 +46,13 @@ def rad_s_seq_to_deg_s(seq):
 def check_joint_seq(values, what="关节角"):
     """检查六项数值并转为 tuple，不检查关节限位。"""
     if isinstance(values, (str, bytes)) or not isinstance(values, Iterable):
-        raise TypeError("%s 要给 6 个数的序列，收到 %r" % (what, type(values).__name__))
+        raise TypeError("%s 须为六项数值序列，收到 %r" % (what, type(values).__name__))
     out = tuple(values)
     if len(out) != 6:
-        raise ValueError("%s 要 6 个，收到 %d 个" % (what, len(out)))
+        raise ValueError("%s 须有 6 项，收到 %d 项" % (what, len(out)))
     for v in out:
         if not isinstance(v, (int, float)):
-            raise TypeError("%s 里混进了非数值：%r" % (what, v))
+            raise TypeError("%s 包含非数值项：%r" % (what, v))
     return out
 
 

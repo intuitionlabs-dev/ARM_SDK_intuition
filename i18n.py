@@ -121,7 +121,8 @@ _EN.update({
     "session.init_no_fb":
         "[%s] No feedback; initialization not sent",
     "session.init_pose_bad":
-        "[%s] Reset-pose error exceeds %.0f° (%s). Move to %s in STOP/damping; press i again to skip the host pose check. Firmware checks still apply",
+        "[%s] Reset-pose error exceeds %.0f° (%s). Move to %s in STOP/damping; "
+        "press i again to skip the host pose check. Firmware checks still apply",
     "session.init_force":
         "[%s] Skipping pose pre-check; other checks remain active",
     "session.what.init": "0x02 init",
@@ -586,7 +587,8 @@ _EN.update({
     "main.help.fb_hz": "panel refresh rate (default 5; key handling is unaffected)",
     "main.help.step": "initial step in rad (%s; default %g)",
     "main.help.handshake": "Handshake warning timeout without feedback, in s",
-    "main.help.init_tol": "Reset confirmation and completion tolerance in rad; defaults to profile, does not change initialization checks",
+    "main.help.init_tol": "Reset confirmation and completion tolerance in rad; "
+                          "defaults to profile, does not change initialization checks",
     "main.help.fake": "Use the H7 protocol simulator without hardware",
     "main.help.fake_lost": "Periodically simulate this lost-motor mask on the selected arm, e.g. 0x41",
     "main.help.selftest": "offline self-test; no hardware, no curses",
@@ -704,7 +706,8 @@ _EN.update({
     "arm.gate_not_run": "Current mode %s; call start() and wait for RUN feedback",
     "arm.gate_reset_state": "Current %s; reset requires %s",
     "arm.payload_type": "payload must be bytes, got %r",
-    "arm.setzero_timeout": "Set-zero timeout: no 0x11 within %.1f s, current state %s. Check command acceptance and calibration progress",
+    "arm.setzero_timeout": "Set-zero timeout: no 0x11 within %.1f s, current state %s. "
+                           "Check command acceptance and calibration progress",
     "arm.stale_no_fb": "%s not sent: %s has no feedback; call connect() first",
     "arm.stale_old": "%s not sent: feedback age %.0f ms exceeds %.0f ms; link_up=%s, check link",
     "arm.gate_rejected": "%s not sent; pre-check failed:\n  - %s\n  state=%s(%s), mode=%s(%s), offline=%s",
@@ -766,7 +769,7 @@ def tr(key, *args):
 # 状态与轴名。英文轴名须适配四字符列宽，夹爪使用 grip。
 
 _MODE_EN = {
-    board_defs.MODE_STOP: "stop(relax)",
+    board_defs.MODE_STOP: "stop(soft)",
     board_defs.MODE_RUN: "run(pos)",
     board_defs.MODE_DAMPING: "damping",
     board_defs.MODE_GRAVITY: "gravity(comp)",
@@ -871,14 +874,14 @@ def check_tables():
     for key in sorted(set(_ZH) | set(_EN)):
         zh, en = _ZH.get(key), _EN.get(key)
         if zh is None:
-            bad.append("%s: 只有英文，缺中文" % key)
+            bad.append("%s: 缺少中文消息" % key)
             continue
         if en is None:
-            bad.append("%s: 只有中文，缺英文" % key)
+            bad.append("%s: 缺少英文消息" % key)
             continue
         for tag, s in (("zh", zh), ("en", en)):
             if not isinstance(s, str):
-                bad.append("%s[%s]: 不是 str（表里只许放 str）" % (key, tag))
+                bad.append("%s[%s]: 消息须为 str" % (key, tag))
         if not isinstance(zh, str) or not isinstance(en, str):
             continue
         zc, zl = _specs(zh)
@@ -886,12 +889,12 @@ def check_tables():
         if sorted(zc) != sorted(ec):
             bad.append("%s: %% 转换符不一致 zh=%r en=%r" % (key, "".join(zc), "".join(ec)))
         if zl:
-            bad.append("%s[zh]: 有认不出的 %%（要写 %%%%）" % key)
+            bad.append("%s[zh]: 无效的 %% 占位符；字面百分号请写 %%%%" % key)
         if el:
-            bad.append("%s[en]: 有认不出的 %%（要写 %%%%）" % key)
+            bad.append("%s[en]: 无效的 %% 占位符；字面百分号请写 %%%%" % key)
         chars = _bad_chars(en)
         if chars:
-            bad.append("%s[en]: 混进中文/全角 %r" % (key, "".join(chars)))
+            bad.append("%s[en]: 包含中文或全角字符 %r" % (key, "".join(chars)))
 
     for what, zh_map, en_map in (("STATE_NAME", board_defs.STATE_NAME, _STATE_EN),
                                  ("MODE_NAME", board_defs.MODE_NAME, _MODE_EN),
@@ -903,11 +906,11 @@ def check_tables():
         for k, v in en_map.items():
             chars = _bad_chars(v)
             if chars:
-                bad.append("%s[%r][en]: 混进中文/全角 %r" % (what, k, "".join(chars)))
+                bad.append("%s[%r][en]: 包含中文或全角字符 %r" % (what, k, "".join(chars)))
     if len(_AXIS_EN) != len(board_defs.AXIS_NAMES):
         bad.append("AXIS 名表个数和 board_defs 不一致")
     for v in _AXIS_EN:
         chars = _bad_chars(v)
         if chars:
-            bad.append("AXIS 名表[en]: 混进中文/全角 %r" % "".join(chars))
+            bad.append("AXIS 名表[en]: 包含中文或全角字符 %r" % "".join(chars))
     return bad

@@ -48,7 +48,7 @@ class _Board:
         self.init_end = None
         self.calib_end = None
         self.reset_end = None
-        self.last_rx_t = 0.0           # 上一帧收到的时刻（每台一份）；0 = 还没收到过
+        self.last_rx_t = 0.0           # 本臂上一帧接收时间；0 表示尚未接收。
 
     def feedback_payload(self):
         return protocol.encode_feedback(self.mode, self.state, self.lost, self.inited,
@@ -68,10 +68,10 @@ class SimLink(Link):
         super().__init__(port=port or "<fake>", baud=baud, robot_type=robot_type)
         arm_ids = tuple(arm_ids)
         if not arm_ids:
-            raise ValueError("假板子至少要有一台臂")
+            raise ValueError("模拟器至少需要一台臂")
         for a in arm_ids:
             if not 0 <= a < self.board_defs.ARM_NUM:
-                raise ValueError("arm_id 只能是 0..%d，收到 %r"
+                raise ValueError("arm_id 应为 0..%d，收到 %r"
                                  % (self.board_defs.ARM_NUM - 1, a))
         self.kind = "FAKE"
         self.dt = self.DT if dt is None else dt
@@ -86,7 +86,7 @@ class SimLink(Link):
         self._alive = False
         self._thr = None
         self._t = 0.0                  # 单调递增的模拟时钟
-        self._last_ls_t = -1.0         # 上一帧 0x81 的时刻；< 0 = 还没起窗口
+        self._last_ls_t = -1.0         # 上次 0x81 时间；负值表示统计窗口未开始。
         self._rx_by_tid = {}           # 本窗口按帧类型计数
 
     # 生命周期
@@ -120,7 +120,7 @@ class SimLink(Link):
     def send(self, tid, payload=b"", arm_id=protocol.DEFAULT_ARM_ID):
         """处理模拟命令，不满足执行条件时丢弃。"""
         if not self._alive:
-            raise NotConnected("假板子还没 open（先 link.open()）")
+            raise NotConnected("模拟链路未打开，请先调用 link.open()")
         board = self.boards.get(arm_id)
         if board is None:
             # 丢弃并统计越界臂编号。

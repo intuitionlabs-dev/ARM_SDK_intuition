@@ -61,15 +61,15 @@ ESCAPES = {
 }
 
 HELP = """按键：
-  ←  →      点动夹爪：← 让原始角**变大**一个步长，→ 变小（只在 run 档有效）
-  [  ]      步长 减半 / 加倍          p  打印完整状态一屏
-  0         **记下当前位置 = 0 m**     f   **记下当前位置 = FULL_OPEN**
-  回车      存盘（两点都记齐了才行）  q   不存盘退出
-  r / d / x 切到 run / damping / stop 档（r 之前请确认臂周围是安全的）
-  ?  h      显示这段帮助
+  ← / →     夹爪原始角增加 / 减少一个步长，仅 RUN 模式有效
+  [ / ]     步长减半 / 加倍          p   显示完整状态
+  0         记录闭合点（0 m）        f   记录全开点（FULL_OPEN）
+  回车      保存两点标定             q   不保存退出
+  r / d / x 切换 RUN / 阻尼 / STOP
+  ? / h     显示帮助
 
-哪边是"张开"由板子上的实际装配决定，工具不预设 —— 所以点动按的是**原始角**的方向，
-不是"张开/闭合"的方向。记完两点按 p 看一眼方向对不对（角差和方向都会打出来）。
+RUN 会使能整条臂，切换前请确认运动范围内无人和障碍。
+开合方向由装配决定。记录两点后按 p 核对原始角，保存时会显示开合方向。
 """
 
 
@@ -138,54 +138,54 @@ class Calibrator:
 
     def _jog(self, direction):
         if self.target_deg is None:
-            self._say("先按 r 进 run 档，点动才有位置环跟着。")
+            self._say("请先按 r 进入 RUN，再点动夹爪。")
             return
         before = self.target_deg
         self.target_deg = _clip(self.target_deg + direction * self.step_deg,
                                 bd.GRIPPER_ANGLE_MIN, bd.GRIPPER_ANGLE_MAX)
         if self.target_deg == before:
-            self._say("到头了（软限位 %+.1f..%+.1f°）。"
+            self._say("已到软限位（%+.1f..%+.1f°）。"
                       % (bd.GRIPPER_ANGLE_MIN, bd.GRIPPER_ANGLE_MAX))
 
     def _set_mode(self, tid_name):
         try:
             getattr(self.arm, tid_name)()
         except ArError as e:
-            self._say("%s 没发出去：%s" % (tid_name, _first_line(e)))
+            self._say("%s 未发送：%s" % (tid_name, _first_line(e)))
             return
-        self._say("已发 %s（板子接受与否看下一帧的 mode）。" % tid_name)
+        self._say("已发送 %s；请查看后续模式反馈。" % tid_name)
         if tid_name == "start":
             self.target_deg = self._raw_deg()      # 进入 RUN 时对齐当前反馈，避免目标跳变。
 
     def _record(self, which):
         raw = self._raw_deg()
         if raw is None:
-            self._say("还没收到反馈帧，读不到夹爪原始角。")
+            self._say("尚无反馈，无法读取夹爪原始角。")
             return
         if which == "zero":
             self.deg_at_zero = raw
         else:
             self.deg_at_full_open = raw
-        self._say("记下 %s = %+.3f°（原始电机角）"
+        self._say("已记录 %s = %+.3f°（原始角）"
                   % ("0 m" if which == "zero" else "FULL_OPEN", raw))
 
     def _save(self):
         if self.deg_at_zero is None or self.deg_at_full_open is None:
-            self._say("两点还没记齐（0 m=%s，FULL_OPEN=%s）—— 都记了才能存。"
+            self._say("标定点不完整：0 m=%s，FULL_OPEN=%s；请补齐后保存。"
                       % (_fmt_pt(self.deg_at_zero), _fmt_pt(self.deg_at_full_open)))
             return False
         if self.full_open_m is None:
-            self._say("不知道 FULL_OPEN 是多少米：加 --full-open-m，或让文件里先有一份标定。")
+            self._say("缺少最大开口，请用 --full-open-m 指定米数。")
             return False
         try:
             calib = self.store_put()
         except CalibrationError as e:
-            self._say("存不下：%s" % _first_line(e))
+            self._say("标定无效：%s" % _first_line(e))
             return False
         except OSError as e:
-            self._say("写文件失败：%s" % e)
+            self._say("写入失败：%s" % e)
             return False
-        self._say("已存到 %s：两点的原始角差 %.2f°（方向 %s）。" %
+        self._say("已保存到 %s：端点角差 %.2f°，%s。" %
                   (self.store.path, calib.separation_deg,
                    "角大→张开" if calib.direction > 0 else "角小→张开"))
         return True
@@ -199,17 +199,17 @@ class Calibrator:
     def _status(self):
         s = self.arm.snapshot()
         if s is None:
-            print("\n（还没收到任何反馈帧 —— 板子在发吗？口子选对了吗？）")
+            print("\n尚无反馈，请检查串口、接线和固件。")
             return
         print("\n" + "-" * 68)
         print("  %s" % s)
         print("  夹爪原始角   %+.3f°（= %+.4f rad）"
               % (s.gripper_raw_deg, self.arm.raw_gripper_angle_rad or 0.0))
         print("  夹爪电机     motor_inited=%s   lost=%s"
-              % ("是" if s.motor_inited_mask >> bd.GRIPPER & 1 else "**否**", s.lost_names))
+              % ("是" if s.motor_inited_mask >> bd.GRIPPER & 1 else "否", s.lost_names))
         print("  记录点       0 m = %s   FULL_OPEN(%s) = %s"
               % (_fmt_pt(self.deg_at_zero),
-                 ("%.4f m" % self.full_open_m) if self.full_open_m else "**没给**",
+                 ("%.4f m" % self.full_open_m) if self.full_open_m else "未设置",
                  _fmt_pt(self.deg_at_full_open)))
         print("-" * 68)
 
@@ -235,7 +235,7 @@ class Calibrator:
             return
         if gen != self._link_gen:
             self._link_gen = gen
-            self._say("链路已自动重连，接着点动就行（位置从下一帧反馈重新对齐）。")
+            self._say("链路已自动重连，请检查反馈后继续操作。")
 
     def _jogging(self):
         """判断是否可发送点动目标；反馈过期时仅发送保活。"""
@@ -258,8 +258,7 @@ class Calibrator:
         if (self.target_deg is not None and age is not None
                 and age > JOG_FRESH_S and not self._stale_warned):
             self._stale_warned = True
-            self._say("反馈已经 %.0f ms 没更新了 —— 暂停点动、只喂保活。先看链路"
-                      "（link_up=%s），别拿着旧姿态继续发位置。"
+            self._say("反馈已过期 %.0f ms，暂停点动并保活；请检查链路（link_up=%s）。"
                       % (age * 1000.0, self.arm.link_up))
 
     # 画面
@@ -271,7 +270,7 @@ class Calibrator:
         self._last_draw = now
         s = self.arm.snapshot()
         if s is None:
-            left = "[%s] 等反馈…" % bd.arm_label(self.arm.arm_id)
+            left = "[%s] 等待反馈…" % bd.arm_label(self.arm.arm_id)
             right = ""
         else:
             raw = s.gripper_raw_deg
@@ -285,7 +284,7 @@ class Calibrator:
             if self.target_deg is not None:
                 tgt = "  目标 %+.3f°%s" % (self.target_deg,
                                            "" if self._jogging() else " ⏸")
-            left = ("[%s] %s / %s  raw %+8.3f°  ≈%s  step %.2f°%s"
+            left = ("[%s] %s / %s  原始角 %+8.3f°  ≈%s  步长 %.2f°%s"
                     % (bd.arm_label(self.arm.arm_id), s.robot_state_name, s.mode_name,
                        raw, opening, self.step_deg, tgt))
             right = "  0m:%s  F:%s" % (_fmt_pt(self.deg_at_zero),
@@ -361,22 +360,21 @@ class Calibrator:
             self._draw(force=True)
         elif key == "quit":
             self._clear_line()
-            print("退出（没存盘）。")
+            print("已退出，未保存。")
             self.quitting = True
 
     def _warn_preconditions(self):
         s = self.arm.snapshot()
         if s is None:
-            self._say("还没收到反馈帧 —— 板子在发吗？口子选对了吗？")
+            self._say("尚无反馈，请检查串口、接线和固件。")
             return
         if not (s.motor_inited_mask >> bd.GRIPPER) & 1:
-            self._say("⚠ 夹爪还没找零（motor_inited 里夹爪那位是 0）—— 现在记录的原始角"
-                      "**零点是没有含义的**。先做一次成功的 0x02 初始化再回来标定。")
+            self._say("夹爪尚未找零（夹爪初始化标志为 0），请先完成 0x02 初始化再标定。")
         if s.robot_state != bd.STATE_NORMAL:
-            self._say("⚠ 板子现在在「%s」，不是正常运行 —— 标定应在一次成功的初始化之后做。"
+            self._say("当前状态为 %s，请完成初始化并进入正常运行后标定。"
                       % s.robot_state_name)
         if self.full_open_m is None:
-            self._say("⚠ 没给 --full-open-m，文件里也没有旧值 —— 最后存不下。")
+            self._say("缺少最大开口，无法保存；请用 --full-open-m 指定。")
 
 
 def _clip(v, lo, hi):
@@ -384,7 +382,7 @@ def _clip(v, lo, hi):
 
 
 def _fmt_pt(v):
-    return "未记" if v is None else "%+.3f°" % v
+    return "未记录" if v is None else "%+.3f°" % v
 
 
 def _first_line(e):
@@ -394,18 +392,18 @@ def _first_line(e):
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
         prog="python3 -m sdk.calibrate_gripper",
-        description="交互式标定夹爪：把开口距离（m）和夹爪的原始电机角（deg）对起来。",
-        epilog="标定必须在一次成功的 0x02 初始化之后做（夹爪零点由找零给出）。",
+        description="夹爪两点标定：建立开口距离（m）与原始角（deg）的对应关系。",
+        epilog="请先完成 0x02 初始化，确定夹爪零点后再标定。",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--arm-id", type=int, default=0,
-                   help="标哪一台臂：0=CAN1，1=CAN2（默认 0）")
+                   help="机械臂编号：0=CAN1，1=CAN2（默认 0）")
     p.add_argument("--full-open-m", type=float, default=None, metavar="M",
-                   help="完全张开时的开口距离，米（>0）。不传就用文件里已有的值。")
-    p.add_argument("--port", default=None, help="串口设备；不传就自动挑（板子 USB 优先）")
+                   help="最大开口距离，单位 m，须 >0；默认读取已有标定")
+    p.add_argument("--port", default=None, help="串口路径；默认自动选择，板载 USB 优先")
     p.add_argument("--baud", type=int, default=921600, help="波特率（默认 921600）")
     p.add_argument("--calib", default=None, help="标定文件路径（默认 sdk/config/gripper_calib.json）")
-    p.add_argument("--note", default="", help="记一句备注进标定文件")
-    p.add_argument("--timeout", type=float, default=3.0, help="等第一帧反馈的超时，秒")
+    p.add_argument("--note", default="", help="标定备注")
+    p.add_argument("--timeout", type=float, default=3.0, help="首帧反馈超时，单位 s")
     return p.parse_args(argv)
 
 
@@ -413,11 +411,11 @@ def main(argv=None):
     args = parse_args(argv)
 
     if not sys.stdin.isatty():
-        print("这个工具要交互按键，stdin 得是终端。", file=sys.stderr)
+        print("标定需要键盘交互，请在终端运行。", file=sys.stderr)
         return 2
 
     if args.arm_id < 0 or args.arm_id >= bd.ARM_NUM:
-        print("--arm-id 只能是 0..%d（板子就 %d 台臂）。" % (bd.ARM_NUM - 1, bd.ARM_NUM),
+        print("--arm-id 应为 0..%d（臂数 %d）。" % (bd.ARM_NUM - 1, bd.ARM_NUM),
               file=sys.stderr)
         return 2
 
@@ -428,7 +426,7 @@ def main(argv=None):
         if old is not None:
             full_open_m = old.full_open_m
     if full_open_m is not None and not full_open_m > 0:
-        print("--full-open-m 必须 > 0（它是「完全张开时的开口距离」，单位米）。", file=sys.stderr)
+        print("--full-open-m 为最大开口距离（m），须 >0。", file=sys.stderr)
         return 2
 
     link = Link(port=args.port, baud=args.baud)
@@ -440,9 +438,9 @@ def main(argv=None):
         link.close()
         return 1
 
-    print("已连上 %s。" % link.describe())
+    print("已连接 %s。" % link.describe())
     print("标定文件：%s%s" % (store.path,
-                             "" if store.path.exists() else "（还没有，存盘时创建）"))
+                             "" if store.path.exists() else "（将在保存时创建）"))
 
     fd = sys.stdin.fileno()
     old_attr = termios.tcgetattr(fd)
@@ -452,8 +450,7 @@ def main(argv=None):
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attr)
         # 退出不主动切换模式；关闭串口后由固件处理通信超时。
-        print("退出。最后看到的档位是「%s」—— 不再发帧之后板子 3 s 就会自己切回"
-              "阻尼，不用再做什么。" % (arm.mode_name or "未知"))
+        print("已退出，最后反馈模式为 %s；停止发帧约 3 s 后，固件触发通信超时并切换阻尼。" % (arm.mode_name or "未知"))
         link.close()
 
 

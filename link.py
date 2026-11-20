@@ -202,7 +202,7 @@ class ArmChannel:
         self.arm_id = arm_id
         self.lock = threading.Lock()
         self.feedback = None       # protocol.Feedback
-        self.feedback_t = 0.0      # time.monotonic()，0 = 还没收到过
+        self.feedback_t = 0.0      # 单调时钟；0 表示尚无反馈。
         self.feedback_seq = 0      # 反馈序号，用于等待新帧
         self.n_feedback = 0
         self.ack = None            # protocol.SetZeroAck

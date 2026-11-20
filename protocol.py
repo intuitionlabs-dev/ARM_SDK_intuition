@@ -139,9 +139,9 @@ ARM_ID_OFFSET = 4
 def encode(tid, payload=b"", arm_id=DEFAULT_ARM_ID):
     """组帧并校验载荷长度和 arm_id 字节范围；实际臂编号范围由链路检查。"""
     if len(payload) > MAX_DATA:
-        raise ValueError("payload 太长：%d > %d" % (len(payload), MAX_DATA))
+        raise ValueError("载荷过长：%d 字节，上限 %d" % (len(payload), MAX_DATA))
     if not 0 <= arm_id <= 0xFF:
-        raise ValueError("arm_id 要是一个字节，收到 %r" % (arm_id,))
+        raise ValueError("arm_id 须为 0..255，收到 %r" % (arm_id,))
 
     head = bytes((0xAA, 0x55, tid & 0xFF, len(payload), arm_id))
     body = head + bytes((crc8(head),)) + bytes(payload)
@@ -154,7 +154,7 @@ def encode_ctrl_pos(angles_deg7, gripper_torque_limit_nm, *,
     """编码 0x16：关节角、夹爪角、夹爪力矩上限、关节速度和加速度。"""
     angles = tuple(angles_deg7)
     if len(angles) != PKT_JOINT_NUM + 1:
-        raise ValueError("0x16 要 %d 个角度，收到 %d" % (PKT_JOINT_NUM + 1, len(angles)))
+        raise ValueError("0x16 需要 %d 个角度，收到 %d" % (PKT_JOINT_NUM + 1, len(angles)))
 
     def derivatives(values, name):
         result = (0.0,) * PKT_JOINT_NUM if values is None else tuple(values)
@@ -193,16 +193,16 @@ def encode_feedback(mode, robot_state, motor_lost_mask, motor_inited_mask,
                     joint_deg, jvel_deg, gripper_deg, temps):
     """编码 0x80 反馈载荷，共 63 字节，温度须含七项；供模拟器和测试使用。"""
     if len(joint_deg) != PKT_JOINT_NUM or len(jvel_deg) != PKT_JOINT_NUM:
-        raise ValueError("0x80 的关节角和角速度都要 %d 个" % PKT_JOINT_NUM)
+        raise ValueError("0x80 关节角和角速度均须有 %d 项" % PKT_JOINT_NUM)
     if len(temps) != PKT_MOTOR_NUM:
-        raise ValueError("0x80 的温度要 %d 个" % PKT_MOTOR_NUM)
+        raise ValueError("0x80 温度须有 %d 项" % PKT_MOTOR_NUM)
     payload = struct.pack("<4B6f6ff7B",
                           mode & 0xFF, robot_state & 0xFF,
                           motor_lost_mask & 0xFF, motor_inited_mask & 0xFF,
                           *joint_deg, *jvel_deg, gripper_deg,
                           *[int(t) & 0xFF for t in temps])
     if len(payload) != FB_LEN:      # 检查编码长度是否符合协议。
-        raise AssertionError("0x80 payload 组出 %d 字节，应为 %d" % (len(payload), FB_LEN))
+        raise AssertionError("0x80 载荷为 %d 字节，应为 %d" % (len(payload), FB_LEN))
     return payload
 
 
@@ -210,7 +210,7 @@ def encode_link_status(rx_total, rx_by_tid, crc8_err, crc16_err, drop_bytes,
                        bad_arm, over_len, ring_drop, gated, tx_fail, dt_ms):
     """编码 0x81 链路状态，共 84 字节；rx_by_tid 含 11 项，末项为其他类型。"""
     if len(rx_by_tid) != LINK_TID_SLOT_NUM:
-        raise ValueError("0x81 的分类计数要 %d 个" % LINK_TID_SLOT_NUM)
+        raise ValueError("0x81 分类计数须有 %d 项" % LINK_TID_SLOT_NUM)
     payload = struct.pack("<%dI" % (10 + LINK_TID_SLOT_NUM), rx_total & 0xFFFFFFFF, *rx_by_tid,
                           crc8_err & 0xFFFFFFFF, crc16_err & 0xFFFFFFFF,
                           drop_bytes & 0xFFFFFFFF, bad_arm & 0xFFFFFFFF,
@@ -218,7 +218,7 @@ def encode_link_status(rx_total, rx_by_tid, crc8_err, crc16_err, drop_bytes,
                           gated & 0xFFFFFFFF, tx_fail & 0xFFFFFFFF,
                           dt_ms & 0xFFFFFFFF)
     if len(payload) != LINK_STATUS_LEN:
-        raise AssertionError("0x81 payload 组出 %d 字节，应为 %d"
+        raise AssertionError("0x81 载荷为 %d 字节，应为 %d"
                              % (len(payload), LINK_STATUS_LEN))
     return payload
 
@@ -273,7 +273,7 @@ class SetZeroAck:
 
 def decode_feedback(payload):
     if len(payload) != FB_LEN:
-        raise ValueError("0x80 长度 %d != %d" % (len(payload), FB_LEN))
+        raise ValueError("0x80 载荷为 %d 字节，应为 %d" % (len(payload), FB_LEN))
     return Feedback(
         mode=payload[0],
         robot_state=payload[1],
@@ -288,7 +288,7 @@ def decode_feedback(payload):
 
 def decode_link_status(payload):
     if len(payload) != LINK_STATUS_LEN:
-        raise ValueError("0x81 长度 %d != %d" % (len(payload), LINK_STATUS_LEN))
+        raise ValueError("0x81 载荷为 %d 字节，应为 %d" % (len(payload), LINK_STATUS_LEN))
     # 前段为总数和分类计数，后段为九项统计；偏移由槽位数计算。
     head = struct.unpack_from("<%dI" % (1 + LINK_TID_SLOT_NUM), payload, 0)
     tail = struct.unpack_from("<9I", payload, 4 * (1 + LINK_TID_SLOT_NUM))
@@ -309,7 +309,7 @@ def decode_link_status(payload):
 
 def decode_setzero_ack(payload):
     if len(payload) != SET_ZERO_ACK_LEN:
-        raise ValueError("0x11 长度 %d != %d" % (len(payload), SET_ZERO_ACK_LEN))
+        raise ValueError("0x11 载荷为 %d 字节，应为 %d" % (len(payload), SET_ZERO_ACK_LEN))
     return SetZeroAck(
         state=payload[0],
         result=tuple(payload[1:8]),
@@ -319,7 +319,7 @@ def decode_setzero_ack(payload):
 
 def decode_version(payload):
     if len(payload) != 4:
-        raise ValueError("0x01 长度 %d != 4" % len(payload))
+        raise ValueError("0x01 载荷为 %d 字节，应为 4" % len(payload))
     return struct.unpack("<I", payload)[0]
 
 

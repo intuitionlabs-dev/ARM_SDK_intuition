@@ -35,7 +35,7 @@ MODE_DAMPING = 2
 MODE_GRAVITY = 3
 
 MODE_NAME = {
-    MODE_STOP: "stop(停止/松劲)",
+    MODE_STOP: "stop(软停机)",
     MODE_RUN: "run(位控)",
     MODE_DAMPING: "damping(阻尼)",
     MODE_GRAVITY: "gravity(重力补偿)",
@@ -64,11 +64,11 @@ STATE_NAME = {
 
 # 0x11 使用的设零状态与结果，见固件 App/inc/arm_zero.h。
 ZERO_STATE_NAME = {
-    0: "空闲", 1: "失能中", 2: "等失能确认", 3: "发设零帧", 4: "等结果", 5: "完成", 6: "超时",
+    0: "空闲", 1: "失能中", 2: "等待失能确认", 3: "发送设零命令", 4: "等待结果", 5: "完成", 6: "超时",
 }
 ZERO_STATE_DONE = 5            # 设零完成状态
 ZERO_RES_NAME = {
-    0: "未走到", 1: "未确认", 2: "成功", 3: "失败", 4: "超时", 5: "跳过",
+    0: "未执行", 1: "未确认", 2: "成功", 3: "失败", 4: "超时", 5: "跳过",
 }
 ZERO_RES_NONE, ZERO_RES_UNCONFIRMED, ZERO_RES_OK = 0, 1, 2
 ZERO_RES_FAIL, ZERO_RES_TIMEOUT, ZERO_RES_SKIP = 3, 4, 5

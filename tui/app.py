@@ -198,8 +198,7 @@ class Ui:
                 else:
                     fv = grip["fb"]
                     unit = "m" if grip["calibrated"] else "raw rad"
-                    if fv is None:      # 无反馈或米制换算时
-                                        # 仅绘制目标
+                    if fv is None:      # 无夹爪反馈时仅绘制目标。
                         line = "%s%-4s %11.4f %13s %11s   [%8.4f,%8.4f] %s" % (
                             mark, i18n.axis_name(GRIPPER), grip["tgt"], "-", "-",
                             grip["lo"], grip["hi"], unit)
