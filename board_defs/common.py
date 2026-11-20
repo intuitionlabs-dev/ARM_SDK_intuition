@@ -1,4 +1,4 @@
-"""Shared wire state/mode identifiers, topology and SDK timing."""
+"""公共协议状态、模式、臂编号和时间参数。"""
 
 # ==================== 拓扑 ====================
 
@@ -14,13 +14,13 @@ AXIS_NAMES = JOINT_NAMES + ("夹爪",)   # 索引 0..6，和 motor_lost_mask / m
 
 
 def arm_label(arm_id):
-    """面板 / 日志里标一台臂的统一写法。"""
+    """返回包含臂编号和 CAN 通道的显示名称。"""
     tag = "AB"[arm_id] if 0 <= arm_id < len("AB") else "?"
     return "臂%s(arm_id=%d, CAN%d)" % (tag, arm_id, arm_id + 1)
 
 
 def expand_mask(mask):
-    """`motor_lost_mask` / `motor_inited_mask` → 人看得懂的一串名字。"""
+    """将电机掩码转换为空格分隔的轴名。"""
     if not mask:
         return "无"
     return " ".join(AXIS_NAMES[i] for i in range(ARM_MOTOR_NUM) if mask >> i & 1)
@@ -97,8 +97,5 @@ def all_close_deg(values6, ref6, tol):
 # ==================== 夹爪换算 ====================
 
 def default_gripper_store():
-    """这条链路默认的夹爪换算存储。`None` = 用文件两点标定（`GripperCalibStore`）。
-
-    型号模块可以覆盖它，给出不需要标定文件的换算（如厂家查表）。
-    """
+    """默认返回 None，使用文件两点标定；型号可提供其他换算存储。"""
     return None

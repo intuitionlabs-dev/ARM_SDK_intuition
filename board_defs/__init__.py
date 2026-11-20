@@ -1,9 +1,4 @@
-"""Per-robot SDK definitions.
-
-Use ``from sdk.board_defs import arx_x5`` or ``metal_arm``, or obtain the
-selected module from ``arm.board_defs`` / ``link.board_defs``. This package
-intentionally exposes no default joint limits or reset pose.
-"""
+"""机械臂型号参数。通过 get_profile()、arm.board_defs 或 link.board_defs 获取。"""
 
 from . import arx_x5, metal_arm
 
@@ -12,7 +7,7 @@ ROBOT_TYPES = tuple(_PROFILES)
 
 
 def get_profile(robot_type):
-    """Resolve an explicit robot type; reject unknown names before opening hardware."""
+    """返回型号参数；未知型号抛 ValueError。"""
     try:
         return _PROFILES[robot_type]
     except (KeyError, TypeError):

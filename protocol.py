@@ -1,20 +1,9 @@
-"""线上协议层：CRC、版本码、码表、组帧 / 切帧、payload 编解码。
+"""H7 串口协议：CRC、版本哈希、帧解析和载荷编解码。
 
-**这一层只用线上单位**（deg / deg·s⁻¹ / deg·s⁻² / N·m / ℃），一比特都不换算 —— 换算是 `arm.py` 的事。
-这样协议层可以脱离硬件、脱离单位策略单独测，也保证"线上到底长什么样"在这里一眼看全。
-
-协议版本串与版本码按型号定义在 `board_defs` 各模块（`VERSION_STRING` / `VERSION_CODE`）；
-板子那边的权威定义在 `libs/frame/frame.h`（帧格式）、`libs/frame/type_id.h`（码表和 payload
-布局）、`App/profiles/` 各机型的 `version_string`（版本串）。
-
-    AA 55 | type_id | datalen | arm_id | crc8 | payload | crc16(LE)
-     0  1  |    2    |    3    |    4   |  5   | 6..5+N  | 6+N 7+N
-
-整帧 8 + datalen 字节，最大 263。crc8 盖偏移 0..4（收完头就能把长度字段被干扰的帧挡掉），
-crc16 盖偏移 0..(5+N)。**全部小端。**
-
-这一层不 import 任何别的 SDK 模块（连 `errors` 都不需要 —— 它只抛 `ValueError`，
-交给上层包装），所以它是最底、最干净的一层。
+协议使用 deg、deg/s、deg/s²、N·m 和 ℃；SDK 单位换算由上层完成。
+帧格式：AA 55 | type_id | datalen | arm_id | crc8 | payload | crc16(LE)。
+总长 8 + datalen，最大 263 字节。CRC8 校验前 5 字节，CRC16 校验头部及载荷。
+多字节字段均为小端。固件定义见 libs/frame/frame.h 和 type_id.h。
 """
 
 import struct
@@ -62,7 +51,7 @@ T16 = _build_t16()
 
 
 def crc8_ref(data):
-    """CRC-8/MAXIM 的**位运算参考实现**（不查表）。给自测拿来对拍表。"""
+    """CRC8 位运算参考实现，用于核对查表算法。"""
     c = 0xFF
     for x in data:
         c ^= x
@@ -72,7 +61,7 @@ def crc8_ref(data):
 
 
 def crc16_ref(data):
-    """CRC-16/X25 的**位运算参考实现**（不查表）。给自测拿来对拍表。"""
+    """CRC16 位运算参考实现，用于核对查表算法。"""
     c = 0xFFFF
     for x in data:
         c ^= x
@@ -98,10 +87,7 @@ def crc16(data):
 # ==================== 版本 ====================
 
 def fnv1a32(s):
-    """板子算版本码用的就是 FNV-1a 32（`libs/frame/frame.c` 的 FrameVersionHash）。
-
-    **任何语言三行就能复刻**，所以上位机不必移植板子那份实现 —— 这个函数就是那三行。
-    """
+    """计算版本串的 FNV-1a 32 位哈希，与固件 FrameVersionHash 一致。"""
     h = 0x811C9DC5
     for b in s.encode("utf-8"):
         h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
@@ -161,11 +147,7 @@ ARM_ID_OFFSET = 4
 # ==================== 组帧 ====================
 
 def encode(tid, payload=b"", arm_id=DEFAULT_ARM_ID):
-    """组一帧：`AA 55 | tid | datalen | arm_id | crc8 | payload | crc16(LE)`。
-
-    arm_id 是"这一包发给哪台臂"（0 = CAN1，1 = CAN2），**所有 type_id 都带**。
-    越界的 arm_id 不加拦截（那是上层的事，见 `link.py` 的闸门）—— 帧层保持"不认识业务"。
-    """
+    """组帧并校验载荷长度和 arm_id 字节范围；实际臂编号范围由链路检查。"""
     if len(payload) > MAX_DATA:
         raise ValueError("payload 太长：%d > %d" % (len(payload), MAX_DATA))
     if not 0 <= arm_id <= 0xFF:
@@ -213,22 +195,13 @@ def decode_ctrl_pos(payload):
 
 
 def encode_version(code):
-    """0x01 的 payload：4 字节小端版本码，取所选型号的 `board_defs.VERSION_CODE`。
-
-    版本串是**协议版本的身份**：帧格式或行为不兼容地变了就换它，两端必须同时改。串不匹配
-    时板子在 0x01 上不回复版本帧（它自己每 100 ms 报一次码），据此判断是上位机版本不对。
-    """
+    """编码 0x01 的四字节小端版本码；主机和固件须使用匹配的协议版本。"""
     return struct.pack("<I", code & 0xFFFFFFFF)
 
 
 def encode_feedback(mode, robot_state, motor_lost_mask, motor_inited_mask,
                     joint_deg, jvel_deg, gripper_deg, temps):
-    """0x80 的 payload（63 字节）—— `decode_feedback` 的逆。
-
-    板子只发这一帧，上位机不主动发；这里存在是为了让 **0x80 的布局只有一处定义**：
-    模拟板子（`sim.py`）和离线自测都拿它组帧，字段一挪两边同时错，不会各抄一份。
-    `temps` 要 7 个（板子那边 NAN 写成 0），其余单位同 `Feedback`（deg / deg·s⁻¹ / deg·s⁻² / N·m / ℃）。
-    """
+    """编码 0x80 反馈载荷，共 63 字节，温度须含七项；供模拟器和测试使用。"""
     if len(joint_deg) != PKT_JOINT_NUM or len(jvel_deg) != PKT_JOINT_NUM:
         raise ValueError("0x80 的关节角和角速度都要 %d 个" % PKT_JOINT_NUM)
     if len(temps) != PKT_MOTOR_NUM:
@@ -245,12 +218,7 @@ def encode_feedback(mode, robot_state, motor_lost_mask, motor_inited_mask,
 
 def encode_link_status(rx_total, rx_by_tid, crc8_err, crc16_err, drop_bytes,
                        bad_arm, over_len, ring_drop, gated, tx_fail, dt_ms):
-    """0x81 的 payload（84 字节）—— `decode_link_status` 的逆。
-
-    和 `encode_feedback` 同一个理由：**0x81 的布局只有一处定义**，模拟板子（`sim.py`）
-    和离线自测都拿它组帧，字段一挪两边同时错。
-    `rx_by_tid` 要 `LINK_TID_SLOT_NUM`(11) 个，顺序同 `LINK_TID_ORDER`，最后一格是「其他」。
-    """
+    """编码 0x81 链路状态，共 84 字节；rx_by_tid 含 11 项，末项为其他类型。"""
     if len(rx_by_tid) != LINK_TID_SLOT_NUM:
         raise ValueError("0x81 的分类计数要 %d 个" % LINK_TID_SLOT_NUM)
     payload = struct.pack("<%dI" % (10 + LINK_TID_SLOT_NUM), rx_total & 0xFFFFFFFF, *rx_by_tid,
@@ -269,13 +237,9 @@ def encode_link_status(rx_total, rx_by_tid, crc8_err, crc16_err, drop_bytes,
 
 @dataclass(frozen=True)
 class Feedback:
-    """一帧 0x80。**字段是线上单位**（deg / deg·s⁻¹ / deg·s⁻² / N·m / ℃），不是 SI。
+    """不可变的 0x80 反馈，单位为 deg、deg/s 和 ℃。
 
-    不可变（frozen）：`link` 每收到一帧就整个换一个新的，读侧拿到的那份永远不会被改写。
-    要 rad / m 用 `arm.Arm.snapshot()`。
-
-    `motor_lost_mask` / `motor_inited_mask`：bit0..5 = j1..j6、bit6 = 夹爪。
-    `robot_state` / `mode` 的取值名字表在 `board_defs/common.py`。
+    电机掩码 bit0..5 对应六轴，bit6 对应夹爪。SI 单位视图见 Arm.snapshot()。
     """
 
     mode: int
@@ -290,19 +254,9 @@ class Feedback:
 
 @dataclass(frozen=True)
 class LinkStatus:
-    """一帧 0x81（链路状态）。**链路级只有一份**，不挂到某台臂上。
+    """链路级 0x81 状态，各计数表示相邻报告之间的窗口增量。
 
-    **每个计数都是增量**：窗口 = 板子发上一帧 0x81 到发这一帧之间。所以两个窗口的数字
-    不能直接相加比较"谁大谁小"，要按窗口看；丢帧只会让某个窗口变小，不会让人看错符号。
-    想累计就自己把窗口加总。
-
-    `rx_by_tid` 是 `LINK_TID_SLOT_NUM`(11) 个，下标同 `LINK_TID_ORDER`，最后一格
-    （`LINK_TID_OTHER`）是"表外的码"，正常应该是 0。查某个码的收到数：
-
-        n = st.rx_by_tid[protocol.LINK_TID_ORDER.index(protocol.TID_ARM_CTRL_POS)]
-
-    `rx_total` 是"解出来的整帧数"，**含**后面那些被丢掉的（闸门挡的、环满丢的都在内）；
-    所以 `rx_total` 是板子"收到了多少"，别的字段是"其中怎么了"。
+    rx_total 包含解析后被拒绝的帧；rx_by_tid 顺序见 LINK_TID_ORDER，末项为其他类型。
     """
 
     rx_total: int             # 这段窗口里解出来的整帧数
@@ -320,7 +274,7 @@ class LinkStatus:
 
 @dataclass(frozen=True)
 class SetZeroAck:
-    """一帧 0x11（设零回复）。`result` 是 7 台电机各自的结果码，索引 0..5 = j1..j6、6 = 夹爪。"""
+    """0x11 设零结果，七项 result 依次对应六轴和夹爪。"""
 
     state: int                # Arm_zero_state（见 board_defs.ZERO_STATE_NAME）
     result: tuple             # 7 个 Arm_zero_result（见 board_defs.ZERO_RES_NAME）
@@ -383,17 +337,10 @@ def decode_version(payload):
 # ==================== 切帧 ====================
 
 class FrameParser:
-    """字节流 → 帧。粘包 / 前导噪声 / 半帧 / 坏 CRC 都能重同步。
+    """将字节流解析为 (type_id, arm_id, payload)。
 
-    重同步策略：找 `AA 55` → 凑够 `8+len` 字节 → 先校 crc8，不对就把窗口**只挪一格**
-    再找（而不是丢掉整帧）—— 因为 payload 里完全可能出现 `AA 55`，整帧丢掉会把紧跟其后的
-    真帧一起吃掉。
-
-    `feed()` 吐出的是 **(type_id, arm_id, payload)** 三元组：arm_id 是帧头偏移 4 那个字节，
-    上层按它分流。
-
-    统计量：`n_ok` / `n_err_crc8` / `n_err_crc16` / `n_drop`（字节）。**没有帧编号、也
-    没有时间戳，所以这一层发现不了"整帧丢了"** —— 能看见的只有字节层面的错。
+    校验失败后逐字节寻找 AA 55，支持半帧、粘包和噪声重同步。
+    统计有效帧、CRC 错误和丢弃字节；协议无帧序号，无法检测整帧丢失。
     """
 
     CRC8_LEN = 5   # crc8 覆盖偏移 0..4
@@ -440,11 +387,7 @@ class FrameParser:
         return out
 
     def reset_stream(self):
-        """接上了一条**新的**字节流（串口重开）：丢掉残留半帧，从头开始凑。
-
-        残留的那几个字节属于上一段流，接着解只会把一帧跨在两次连接中间；计进 `n_drop`
-        是为了"字节去哪了"仍然对得上。计数本身**不清零** —— 它们是累计量。
-        """
+        """丢弃旧连接的残留字节并计入 n_drop，保留累计统计。"""
         self.n_drop += len(self.buf)
         self.buf.clear()
 

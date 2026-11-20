@@ -1,39 +1,11 @@
-"""夹爪：**电机原始角（deg） ↔ 开口距离（m）** 的两点标定模型 + JSON 存取。
+"""夹爪两点标定：原始电机角 deg ↔ 开口距离 m。
 
-## 为什么是两点标定
+初始化成功后记录闭合点和完全张开点，方向与尺度由两点决定。
+两点之间线性插值，范围外线性外推，不自动限幅。夹爪零点变化后须重新标定。
+ARX X5 原始角负向闭合、正向张开；软限位不能代替实测开口标定。
 
-板子线上的 `gripper_angle` 是**电机原始角**（deg），双向都不做 `pos_to_angle` /
-`MOTOR_DIR` / `MOTOR_REDUCTION` 那套换算 —— 那几张表只有 6 个关节有，夹爪是直接透传的
-（见 `App/gimbal_arm.c` 的 `Set_Motor_ref()`）。所以"单位是电机的 deg"这件事是确定的，
-ARX-X5 的原始角负向闭合、正向张开。`GRIPPER_ANGLE_*` 定义目标软限位，
-不能用来推算实际开口距离；角度到米的换算需要每台夹爪的实测标定。
-
-既然没有真值可抄，就用**实测**定：`FULL_OPEN`（正向完全张开的距离）是用户预先配置的参数，
-用户在臂初始化完成后手动把夹爪摆到 `FULL_OPEN` 和 `0 m` 两处，程序把这两处的原始电机角记
-下来、存进配置文件。之后按这两点线性映射：
-
-    opening_m = full_open_m * (raw_deg - deg_at_zero) / (deg_at_full_open - deg_at_zero)
-    raw_deg   = deg_at_zero + (opening_m / full_open_m) * (deg_at_full_open - deg_at_zero)
-
-**方向和尺度完全由这两个记录点决定**：代码里不预设哪端是闭合、也不假设 deg 是减小还是增大
-对应张开。记录点反了就自动反号，所以换一台夹爪、甚至把夹爪装反了都不用改代码，重标一次即可。
-
-## 三个必须知道的边界
-
-1. **两点之间是线性假设**。真实行程可能非线性（连杆式夹爪尤其），超出两点范围会**线性外推
-   而不是夹住** —— 外推出来的数只是工程近似，别当精密测量用。
-2. **原始角的零点由"找零"给出**。ARX-X5 向正向张开端寻找机械限位，再向负向回退 142° 后设零；
-   零点不按软限位上下限的平均值计算。这次找零包含在 0x02 初始化中 ——
-   在那之前 `raw_deg` 的零点是没有含义的。所以**标定必须在一次成功的初始化之后做**；
-   之后再次给夹爪设零或找零，需复核零点并重新标定；仅给其他关节设零不改变夹爪零点。
-3. **未标定时 `opening_m` 这条路直接抛异常**，不返回一个猜的数（见 `GripperNotCalibrated`）；
-   原始角那条路（`raw_gripper_angle_deg` / `gripper_raw_deg=`）任何时候都能用。
-
-## 文件
-
-默认 `sdk/config/gripper_calib.json`，可用环境变量 `ARX_GRIPPER_CALIB` 覆盖（测试用）。
-仓库的 `.gitignore` 全局忽略 `*.json`，所以这个文件天然不进版本库 —— 它是**每台机器一份**
-的实测数据，本来就不该提交（换一台夹爪、拆装一次就可能变）。
+默认文件为 sdk/config/gripper_calib.json，可用 ARX_GRIPPER_CALIB 覆盖。
+标定文件属于本机设备数据，不提交到仓库。
 """
 
 import json
@@ -55,25 +27,19 @@ ENV_CALIB_PATH = "ARX_GRIPPER_CALIB"
 
 
 def default_calib_path():
-    """`sdk/config/gripper_calib.json`（相对本文件定位，跟当前工作目录无关）。"""
+    """返回 SDK 目录下的默认标定路径，与工作目录无关。"""
     return Path(__file__).resolve().parent / "config" / "gripper_calib.json"
 
 
 def calib_path():
-    """实际用的路径：环境变量优先，其次默认。"""
+    """优先使用环境变量指定的路径，否则使用默认路径。"""
     env = os.environ.get(ENV_CALIB_PATH)
     return Path(env).expanduser() if env else default_calib_path()
 
 
 @dataclass(frozen=True)
 class GripperCalibration:
-    """一台臂的夹爪标定：两个记录点 + 预先配置的 FULL_OPEN。
-
-    - `full_open_m`     完全张开时的开口距离（m，> 0）。**预先配置的参数**，不是测出来的。
-    - `deg_at_zero`     开口 = 0 m 处记录的原始电机角（deg）。
-    - `deg_at_full_open` 开口 = FULL_OPEN 处记录的原始电机角（deg）。
-    - `recorded_at` / `note` 记账用，不参与换算。
-    """
+    """夹爪两点标定：full_open_m 为最大开口，两个 deg 字段为端点原始角。"""
 
     full_open_m: float
     deg_at_zero: float
@@ -84,7 +50,7 @@ class GripperCalibration:
     # ---- 校验 ----
 
     def validate(self):
-        """不合法就抛 `CalibrationError`；可疑但不致命只 `warnings.warn`。"""
+        """无效数据抛 CalibrationError；端点过近时发出警告。"""
         if not self.full_open_m > 0:
             raise CalibrationError(
                 "FULL_OPEN 必须 > 0（收到 %r）—— 它是「完全张开时的开口距离」，"
@@ -107,21 +73,18 @@ class GripperCalibration:
 
     @property
     def direction(self):
-        """原始角增大是张开还是闭合：+1 = 角度越大越张开，-1 = 角度越大越闭合。
-
-        只用来在工具/日志里提示"装反了没有"，换算本身不依赖它（两点已经把方向定死了）。
-        """
+        """原始角增大时的开口方向：+1 张开，-1 闭合。"""
         return 1 if self.deg_at_full_open > self.deg_at_zero else -1
 
     # ---- 换算 ----
 
     def opening_from_raw_deg(self, raw_deg):
-        """原始电机角（deg）→ 开口距离（m）。两点之外是**线性外推**，不夹。"""
+        """原始角 deg 转开口 m；范围外线性外推。"""
         return (self.full_open_m * (raw_deg - self.deg_at_zero)
                 / (self.deg_at_full_open - self.deg_at_zero))
 
     def raw_deg_from_opening(self, opening_m):
-        """开口距离（m）→ 原始电机角（deg）。"""
+        """开口 m 转原始角 deg；范围外线性外推。"""
         return (self.deg_at_zero + (opening_m / self.full_open_m)
                 * (self.deg_at_full_open - self.deg_at_zero))
 
@@ -157,7 +120,7 @@ class GripperCalibration:
     @classmethod
     def from_points(cls, full_open_m, deg_at_zero, deg_at_full_open, note="",
                     recorded_at=None):
-        """从两个记录点建一份，并**当场校验**（不合法直接抛）。"""
+        """由两点建立标定并校验。"""
         if recorded_at is None:
             recorded_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
         return cls(full_open_m=float(full_open_m),
@@ -168,7 +131,7 @@ class GripperCalibration:
 
 
 class GripperCalibStore:
-    """`sdk/config/gripper_calib.json` 的读写。一台臂一项，键是 arm_id 的字符串形式。"""
+    """按 arm_id 读写 JSON 标定文件。"""
 
     def __init__(self, path=None):
         self.path = Path(path) if path is not None else calib_path()
@@ -176,7 +139,7 @@ class GripperCalibStore:
     # ---- 原始 JSON ----
 
     def load_raw(self):
-        """整份文件。文件不存在 → 空骨架（不是错误：还没标过而已）。"""
+        """读取完整标定文件；文件不存在时返回空结构。"""
         if not self.path.exists():
             return {"version": CALIB_VERSION,
                     "units": {"opening": "m", "raw_angle": "deg"},
@@ -204,11 +167,7 @@ class GripperCalibStore:
     # ---- 读一台 ----
 
     def get(self, arm_id):
-        """这一台臂的标定。**没标过返回 None**；文件在但这一项坏掉 → 抛 `CalibrationError`。
-
-        坏掉的那一项不静默跳过：那是"标定存在但不可用"，和"没标过"是两回事，糊在一起会让
-        人以为标定丢了。
-        """
+        """返回指定臂的标定；缺失返回 None，无效数据抛 CalibrationError。"""
         arms = self.load_raw()["arms"]
         entry = arms.get(str(int(arm_id)))
         if entry is None:
@@ -223,10 +182,7 @@ class GripperCalibStore:
     # ---- 写一台 ----
 
     def put(self, arm_id, calib):
-        """写一台的标定（读-改-写整份文件，**原子替换**，所以不会写坏别人的那一项）。
-
-        两个并发进程同时写会互相覆盖 —— 标定是手工操作，不值得为它加锁。
-        """
+        """更新指定臂并原子替换文件；不支持多个进程并发写入。"""
         calib.validate()
         data = self.load_raw()
         data["version"] = CALIB_VERSION
@@ -254,10 +210,7 @@ class GripperCalibStore:
     # ---- 给外部用的合成入口 ----
 
     def require(self, arm_id, hint=""):
-        """拿一台的标定，**没标过就抛 `GripperNotCalibrated`**（消息里带怎么标）。
-
-        `arm.py` 的 `gripper_opening` 走的就是这条路。
-        """
+        """返回指定臂的标定；缺失抛 GripperNotCalibrated。"""
         calib = self.get(arm_id)
         if calib is None:
             raise GripperNotCalibrated(self.missing_message(arm_id, hint))

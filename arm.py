@@ -1,40 +1,11 @@
-"""`Arm` —— 单台机械臂的门面对象。**这是 SDK 的主入口。**
+"""单臂控制接口：命令预检、单位换算和反馈读取。
 
-对外单位统一到 SI：关节角 rad、关节角速度 rad/s、夹爪开口 **m**（要过标定）、温度 ℃。
-控制量和反馈量使用同一单位。向 `send_ctrl_pos()` 传入 `arm.joint_angles` 可以保持关节角度。
+双臂共用一个 Link，每台臂使用独立的 Arm。关节使用 rad、rad/s 和 rad/s²，
+夹爪开口使用 m，温度使用 ℃。需要同一帧的数据时使用 snapshot()。
 
-## 两台臂怎么用
-
-板子上**只有一条**上位机链路，链路上跑着所有臂的帧（靠帧头里的 arm_id 分）。所以两台臂
-必须是**一条 `Link` + 每台一个 `Arm`**：
-
-    link = Link(); link.open()
-    a = Arm(0, link)
-    b = Arm(1, link)
-    a.connect(); b.connect()
-
-不要起两个进程 / 两个 `Link` 抢同一个口子（会互相撕帧，报
-`device reports readiness to read but returned no data`，很容易被误读成"臂死了"）。
-
-单台臂可以省掉 Link，`Arm(0)` 会自己建一条（`connect()` 时才打开口子）。
-
-## 闸门预检：为什么会有"没发出去"的异常
-
-板子对所有命令帧都是**静默丢弃** —— 协议里没有 NACK，被拒了和不理你长得一模一样。
-所以每个命令方法在发送前先拿最近一帧反馈把板子的闸门条件**复算一遍**，对不上就抛
-`GateRejected` 并说明缺哪一条（**帧根本没发出去**）。这是省时间的：被拒的原因通常是
-"state 不对，先做 X"，当场告诉你比让你对着线路猜强。
-
-`force=True` 跳过预检（板子那边的闸门仍然生效，只是不再帮你提前挡）。唯一必须用它的场合：
-**"遥控器在线"这一条预检查不到** —— 遥控器状态不在 0x80 反馈帧里（见 README「注意事项」），
-所以"遥控器不在线"这件事只有板子知道。反过来，如果你确认遥控器是离线的，那就没有预检
-挡得住你。
-
-## 保活
-
-**SDK 不自动发心跳。** 板子的判据是"3 s 内收到过**任意**有效帧"，所以你的周期控制帧
-本身就是保活；不在跑控制循环的时候（只看看状态、慢节奏发指令）要显式 `keepalive()`。
-注意**板子自己发的 0x80 不算"收到的帧"**，光收不发照样会掉回阻尼。
+命令预检失败抛 GateRejected；force=True 仅跳过上位机预检，固件条件仍生效。
+遥控器状态不在反馈中，须由调用方确认遥控器离线。
+每台臂须在 3 s 内发送有效命令或 keepalive()；SDK 不自动保活。
 """
 
 import time
@@ -52,13 +23,9 @@ FEEDBACK_STALE_S = 0.1
 
 @dataclass(frozen=True)
 class Snapshot:
-    """**同一帧**里换算好的一致视图（rad / rad·s⁻¹ / m / ℃）。
+    """同一帧的反馈快照，单位为 rad、rad/s、m 和 ℃。
 
-    为什么需要它：`arm.joint_angles` 和 `arm.mode` 是**两次独立的读**，中间可能夹进一帧新的
-    反馈 —— 那样你拿到的是"上一帧的角度 + 这一帧的模式"。要严格一致就用 `snapshot()`。
-
-    夹爪没标定时 `gripper_opening` 是 None、`gripper_calibrated` 是 False（不抛异常：快照
-    是"看一眼"，不该因为你没标定就炸掉）。
+    夹爪未标定时，gripper_opening 为 None，gripper_calibrated 为 False。
     """
 
     arm_id: int
@@ -83,7 +50,7 @@ class Snapshot:
 
     @property
     def motors_online(self):
-        """7 台（含夹爪）全在线。0x02 / 0x18 的闸门就是看这个。"""
+        """六个关节和夹爪电机均在线。"""
         return self.motor_lost_mask == 0
 
     def __str__(self):
@@ -98,7 +65,7 @@ class Snapshot:
 
 
 class Arm:
-    """一台臂。所有命令方法都发这一台的帧（帧头 arm_id = `arm_id`）。"""
+    """通过 arm_id 指定一台机械臂。"""
 
     def __init__(self, arm_id=protocol.DEFAULT_ARM_ID, link=None, *, calib_store=None):
         from .link import Link
@@ -120,11 +87,9 @@ class Arm:
     # ==================== 生命周期 ====================
 
     def connect(self, timeout=3.0, port=None):
-        """打开链路 → 发 0x01 → 等这一台的第一帧反馈。等不到就抛 `LinkError` 带诊断。
+        """打开链路、发送版本帧并等待本臂反馈；超时抛 LinkError。
 
-        板子在握手通过之前**不发 0x80**，所以"收到反馈帧"就是"握手成了"的判据。
-        （唯一在握手前发的是 `0x01` 自己 —— 板子没握手时每 100 ms 一帧，所以"看到
-        板子的版本码"不等于握手成了，`board_version` 只代表链路通了。）
+        收到 0x80 反馈表示握手成功；仅收到 0x01 版本帧不足以确认握手。
         """
         if not self.link.is_open:
             self.link.open(port)
@@ -136,10 +101,7 @@ class Arm:
         return self
 
     def close(self):
-        """关掉自己建的链路（`Arm(0)` 那种）。共享链路时**什么都不做**。
-
-        共享链路要一起关就在 `link.close()` 上关 —— 一台臂把公共口子关掉会把另一台带下水。
-        """
+        """关闭自行创建的链路；共享链路由调用方关闭。"""
         if self._own_link:
             self.link.close()
 
@@ -176,57 +138,53 @@ class Arm:
 
     @property
     def feedback(self):
-        """最近一帧 0x80（`protocol.Feedback`，**线上单位**）。没收到过返回 None。"""
+        """最近一帧 Feedback，使用协议单位；尚无反馈时返回 None。"""
         return self._chan.snapshot_feedback()[0]
 
     @property
     def feedback_age(self):
-        """最近一帧反馈距今秒数。没收到过返回 None。"""
+        """反馈年龄，单位 s；尚无反馈时返回 None。"""
         return self._chan.feedback_age()
 
     @property
     def feedback_ok(self):
-        """手上有足够新的反馈帧（`FEEDBACK_STALE_S` 以内）。"""
+        """是否有 FEEDBACK_STALE_S 以内的反馈。"""
         age = self.feedback_age
         return age is not None and age <= FEEDBACK_STALE_S
 
     @property
     def link_up(self):
-        """链路本身还活着（串口没报错）。**它不代表板子在回帧** —— 要看 `feedback_ok`。"""
+        """串口链路是否正常；反馈是否有效应检查 feedback_ok。"""
         return self.link.link_up
 
     @property
     def n_feedback(self):
-        """累计收到多少帧反馈。"""
+        """累计反馈帧数。"""
         return self._chan.snapshot_feedback()[2]
 
     # ---- 单属性（方便，但**可能跨帧**；要一致用 snapshot()） ----
 
     @property
     def joint_angles(self):
-        """6 个关节角，rad。没收到反馈返回 None。"""
+        """六个关节角，单位 rad；尚无反馈时返回 None。"""
         fb = self.feedback
         return None if fb is None else units.deg_seq_to_rad(fb.joint_angle)
 
     @property
     def joint_velocities(self):
-        """6 个关节角速度，rad/s。没收到反馈返回 None。"""
+        """六个关节角速度，单位 rad/s；尚无反馈时返回 None。"""
         fb = self.feedback
         return None if fb is None else units.deg_s_seq_to_rad_s(fb.joint_vel)
 
     @property
     def temperatures(self):
-        """7 台电机温度，℃（索引 0..5 = j1..j6、6 = 夹爪）。
-
-        ⚠ 板子那边温度取不到时会写成 0，所以 **0 ℃ 既可能是"真的 0 度"也可能是"没读到"**，
-        协议里区分不了。
-        """
+        """七个电机温度，单位 ℃，最后一项为夹爪。0 也可能表示未读到温度。"""
         fb = self.feedback
         return None if fb is None else fb.motor_temp
 
     @property
     def raw_gripper_angle_deg(self):
-        """夹爪的**原始电机角**，deg（线上就是这个）。没收到反馈返回 None。"""
+        """夹爪原始电机角，单位 deg；尚无反馈时返回 None。"""
         fb = self.feedback
         return None if fb is None else fb.gripper_angle
 
@@ -237,12 +195,7 @@ class Arm:
 
     @property
     def gripper_opening(self):
-        """夹爪开口距离，**m**。
-
-        没收到过反馈 → None。**没标定 → 抛 `GripperNotCalibrated`**（不返回猜的数，
-        因为没有任何真值可猜 —— 见 sdk/README.md 的「夹爪标定」）。
-        要"看一眼有没有数"、不想被异常打断，用 `snapshot()`。
-        """
+        """夹爪开口，单位 m。无反馈返回 None；未标定抛 GripperNotCalibrated。"""
         fb = self.feedback
         if fb is None:
             return None
@@ -285,7 +238,7 @@ class Arm:
         return None if m is None else self.board_defs.expand_mask(m)
 
     def snapshot(self):
-        """同一帧里换算好的一致视图。没收到过反馈返回 None。"""
+        """返回同一帧的反馈快照；尚无反馈时返回 None。"""
         fb, t, _ = self._chan.snapshot_feedback()
         if fb is None:
             return None
@@ -317,14 +270,14 @@ class Arm:
 
     @property
     def calibration(self):
-        """这一台的夹爪标定，**没标过返回 None**（不抛）。第一次访问才读文件。"""
+        """首次访问时加载夹爪换算；未标定返回 None。"""
         if not self._calib_loaded:
             self._calib = self._calib_store.get(self.arm_id)
             self._calib_loaded = True
         return self._calib
 
     def require_calibration(self):
-        """拿标定，没标过就抛 `GripperNotCalibrated`（消息里带怎么标）。"""
+        """返回夹爪换算；未标定抛 GripperNotCalibrated。"""
         calib = self.calibration
         if calib is None:
             raise GripperNotCalibrated(
@@ -332,7 +285,7 @@ class Arm:
         return calib
 
     def reload_calibration(self):
-        """重新读一遍标定文件（刚在另一个进程里标完，不用重启）。"""
+        """重新加载夹爪换算，使外部更新的标定生效。"""
         self._calib_loaded = False
         self._calib = None
         return self.calibration
@@ -348,7 +301,7 @@ class Arm:
     # ==================== 发：不用看状态的 ====================
 
     def send_version(self):
-        """发版本匹配包（0x01）。也是**保活**：见 `keepalive()`。"""
+        """发送 0x01 版本帧，也用于保活。"""
         return self._send(protocol.TID_VERSION,
                           protocol.encode_version(self.board_defs.VERSION_CODE))
 
@@ -360,13 +313,10 @@ class Arm:
     # ==================== 发：命令 ====================
 
     def init_arm(self, *, force=False):
-        """0x02 初始化：一键复位 → 一键夹爪找零 → 正常运行。
+        """发送 0x02 初始化，完成后进入正常运行 / 阻尼。
 
-        闸门（板子侧，`robot_state.c` 的 `HandleArmInit`）：
-          ① state == 待初始化(2)，**或** state == 正常运行(4) 且 mode ∈ {stop, damping}；
-          ② 7 台电机全部在线；
-          ③ 6 个关节（**不含夹爪**）与复位位姿偏差 ≤ 20°；
-          ④ 遥控器离线（**预检查不到，见类注释**）。
+        要求待初始化，或正常运行且处于 STOP / 阻尼；七台电机在线，
+        六轴偏离复位角不超过型号容差。固件还要求遥控器离线。
         """
         if not force:
             fb = self._fresh_feedback("init_arm")
@@ -385,13 +335,10 @@ class Arm:
         return self._send(protocol.TID_ARM_INIT)
 
     def set_zero(self, *, force=False):
-        """0x10 触发一轮设零。**会覆盖电机里的原零点**（把"当前位姿"定义成零点），
-        所以触发前先把臂摆到基准位姿。
+        """发送 0x10，将六轴当前位姿写为电机零点；须先摆到基准位姿。
 
-        闸门：state == 待初始化(2) + 遥控器离线。
-        没有即时反馈帧 —— 结果走单独的一帧 0x11（跑完才发，几秒），拿它用
-        `wait_setzero_ack()`。**0x10 只管 j1~j6**，夹爪不在默认参与集里（它的零点是行程中点，
-        只能由找零给出）。注意这会挪动夹爪所在总线上的东西，标定过的话大概率要重标。
+        要求待初始化且遥控器离线。结果通过 wait_setzero_ack() 读取。
+        默认不修改夹爪零点；夹爪零点另有变化时须重新标定。
         """
         if not force:
             fb = self._fresh_feedback("set_zero")
@@ -405,23 +352,19 @@ class Arm:
         return self._send(protocol.TID_MOTOR_SET_ZERO)
 
     def start(self, *, force=False):
-        """0x12 进 run 档（位控）。控制帧只在 run 档被接受。闸门：state == 正常运行(4)。
-
-        切档会**作废上一帧控制指令**（板子侧的 `Ctrl_Invalidate`，防止把切档前的旧目标重新
-        灌进位置环把你猛拽一下），所以切过来之后要重新发 0x16。
-        """
+        """发送 0x12 进入 RUN，要求正常运行。反馈确认后须重新发送控制目标。"""
         return self._mode_cmd(protocol.TID_ARM_START, "start", force)
 
     def gravity(self, *, force=False):
-        """0x13 进重力补偿档。闸门：state == 正常运行(4)。"""
+        """发送 0x13 进入重力补偿，要求正常运行。"""
         return self._mode_cmd(protocol.TID_ARM_GRAVITY, "gravity", force)
 
     def stop(self, *, force=False):
-        """0x14 失能电机（**松劲**，不是"停在这不动"）。闸门：state == 正常运行(4)。"""
+        """发送 0x14 软停机，要求正常运行；不保持位置或提供重力补偿。"""
         return self._mode_cmd(protocol.TID_ARM_STOP, "stop", force)
 
     def damping(self, *, force=False):
-        """0x15 进阻尼档。闸门：state == 正常运行(4)。"""
+        """发送 0x15 进入阻尼，要求正常运行。"""
         return self._mode_cmd(protocol.TID_ARM_DAMPING, "damping", force)
 
     def _mode_cmd(self, tid, name, force):
@@ -437,20 +380,12 @@ class Arm:
 
     def send_ctrl_pos(self, joint_rad, gripper_m=None, *, gripper_torque_limit_nm, gripper_raw_deg=None,
                       joint_vel_rad_s=None, joint_acc_rad_s2=None, force=False):
-        """发送 0x16 轨迹目标。关节角使用 rad，夹爪力矩上限使用 N·m。
+        """发送 0x16 轨迹目标，要求正常运行 / RUN 且遥控器离线。
 
-        `joint_vel_rad_s` 和 `joint_acc_rad_s2` 各含六项，单位分别为 rad/s 和 rad/s²。
-        省略对应参数时，该组目标为零。
-
-        夹爪目标三选一：
-          - `gripper_m=0.03`        按标定换算成原始角（要先标定）
-          - `gripper_raw_deg=-141.5` 直接给原始电机角（不用标定）
-          - 都不给                  **保持当前**（拿最近一帧反馈里的原始角）
-
-        闸门：state == 正常运行(4) **且** mode == run(1) + 遥控器离线。
-
-        `gripper_torque_limit_nm` 必须为有限非负数。零表示请求零夹爪力矩。
-        板子按机型配置限制已初始化电机的角度。
+        关节角使用 rad。可选速度和加速度各含六项，单位为 rad/s 和 rad/s²，默认全零。
+        夹爪目标可用 gripper_m（经标定）或 gripper_raw_deg，均省略时保持反馈角。
+        gripper_torque_limit_nm 为有限非负数，单位 N·m；零表示请求零夹爪力矩。
+        固件按型号限制已初始化电机的角度。
         """
         name = "send_ctrl_pos"
         angles = units.check_joint_seq(joint_rad, i18n.tr("arm.joint_angle"))
@@ -478,12 +413,9 @@ class Arm:
                                                    joint_vel_deg_s=vel_deg_s, joint_acc_deg_s2=acc_deg_s2))
 
     def reset(self, *, force=False):
-        """0x18 一键复位：走一段 `ARM_AUTO_RESET_TIME_S` 的轨迹回复位位姿，**不做夹爪找零**，
-        跑完停在阻尼。
+        """发送 0x18 回复位，要求正常运行且七台电机在线。
 
-        闸门：state == 正常运行(4) + 7 台全在线（**故意不查姿态** —— 臂歪着才要收）。
-
-        没有专用反馈帧：受理与否看反馈里的 robot_state（4 → 7 受理了、7 → 4 跑完了）。
+        约 2 s 后进入阻尼，不修改零点或执行夹爪找零。状态 4→7→4 表示开始和完成。
         """
         if not force:
             fb = self._fresh_feedback("reset")
@@ -497,11 +429,7 @@ class Arm:
         return self._send(protocol.TID_ARM_RESET)
 
     def send_raw(self, tid, payload=b""):
-        """**总逃逸口**：任意 type_id + 任意 payload，不做任何预检、不做任何换算。
-
-        给"板子加了新包但 SDK 还没跟上"以及"我就是想试试"用。注意它绕过所有保护：
-        单位是你自己的事，闸门是板子的事。
-        """
+        """透传 type_id 和 payload，不做预检或单位换算；固件仍检查执行条件。"""
         if not isinstance(payload, (bytes, bytearray)):
             raise TypeError(i18n.tr("arm.payload_type", type(payload).__name__))
         return self._send(tid, bytes(payload))
@@ -510,18 +438,13 @@ class Arm:
 
     @property
     def last_setzero_ack(self):
-        """最近一帧 0x11（`protocol.SetZeroAck`）。没收到过返回 None。"""
+        """最近一帧 SetZeroAck；尚无回复时返回 None。"""
         return self._chan.snapshot_ack()[0]
 
     def wait_setzero_ack(self, timeout=25.0, *, after=None):
-        """等一轮设零的结果（0x11）。超时抛 `TimeoutError`。
+        """等待本轮设零回复，超时抛 TimeoutError。
 
-        `after=None` 时用 `set_zero()` 记下的那个序号（就是"这一轮"）；没调过 `set_zero()`
-        就用当前序号（等下一帧来的）。
-
-        一轮设零实测几秒（两臂各 3 台 ENCOS + 3 台达妙，最坏十几秒），所以默认给 25 s。
-        注意 `result=1(未确认)` **不是故障**：它表示"帧发了、位置本来就在容差内"，无法证明
-        零点写进去了（臂本来就停在零位时必然是它）。
+        after 默认取 set_zero() 前的序号；未调用过时等待下一帧。result=1 表示写零未确认。
         """
         ch = self._chan
         if after is None:
@@ -541,11 +464,7 @@ class Arm:
             time.sleep(0.02)
 
     def wait_for(self, pred, timeout=5.0, poll=0.02):
-        """轮询等 `pred(arm)` 为真（比如 `lambda a: a.robot_state == 4`）。
-
-        真了返回 True，超时返回 False。**不抛** —— 它是"等一个状态"，不是一个必须成功的
-        动作，要不要失败由调用方决定。
-        """
+        """轮询 pred(arm)；满足返回 True，超时返回 False。等待期间不自动保活。"""
         deadline = time.monotonic() + timeout
         while True:
             if pred(self):
@@ -555,7 +474,7 @@ class Arm:
             time.sleep(poll)
 
     def wait_feedback(self, timeout=1.0):
-        """等一帧**新的**反馈（比手上这帧新）。超时返回 None。"""
+        """等待下一帧反馈；超时返回 None。"""
         before = self._chan.snapshot_feedback()[2]
         return self.link.wait_feedback(self.arm_id, before, timeout)
 
@@ -614,7 +533,7 @@ class Arm:
     # ==================== 杂项 ====================
 
     def describe(self):
-        """日志用的一行。没收到反馈也出得来。"""
+        """返回单行机械臂状态，支持尚无反馈的情况。"""
         s = self.snapshot()
         head = "%s %s" % (i18n.arm_label(self.arm_id), self.link.describe())
         if s is None:

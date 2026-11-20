@@ -1,4 +1,4 @@
-"""ARX X5 limits and reset pose, matching the H7 firmware."""
+"""ARX X5 限位与复位参考，与 H7 固件对应。"""
 
 import math
 
@@ -31,12 +31,7 @@ def axis_hi(axis):
 
 
 def clamp_axis(axis, value):
-    """把一根轴的值夹进软限位，返回 `(夹住之后的值, 是否发生了夹)`。
-
-    **SDK 不自动调它** —— 命令方法发出去的就是你给的值。理由：板子是静默夹的，上位机再
-    悄悄夹一次，你看到的期望角和电机实际收到的角会不一致，排查时很难发现。要夹就自己夹，
-    而且**最好自己知道夹了**（第二个返回值就是干这个的）。
-    """
+    """按软限位限制单轴目标，返回 (目标值, 是否限幅)。SDK 命令不会自动调用此函数。"""
     lo, hi = axis_lo(axis), axis_hi(axis)
     if value < lo:
         return lo, True
@@ -46,7 +41,7 @@ def clamp_axis(axis, value):
 
 
 def pose_deviation_deg(joint_deg6):
-    """Maximum joint deviation from this robot's reset pose, in degrees."""
+    """六轴相对复位参考的最大偏差，单位 deg。"""
     return max(abs(a - b) for a, b in zip(joint_deg6, RESET_POSE_DEG))
 
 
