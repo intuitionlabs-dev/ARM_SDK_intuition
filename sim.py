@@ -1,7 +1,7 @@
-"""H7 协议模拟器，供 TUI --fake 和离线测试使用，不访问硬件。
+"""协议模拟器，供 TUI --fake 和离线测试使用，不访问硬件。
 
 复用 Link 的解析与分流逻辑，模拟握手、状态转换、双臂独立保活和电机掉线。
-反馈使用协议编码器生成；实际电机行为和时序仍需硬件验证。
+反馈使用协议编码器生成。
 """
 
 import threading
@@ -12,14 +12,14 @@ from .board_defs import common as board_defs
 from .errors import NotConnected
 from .link import Link
 
-# 模拟时限对应固件 robot_state.c / arm_auto.c。
+# 模拟状态转换时限。
 POWERUP_S = 0.6           # 上电 → 离线等待
 OFFLINE_WAIT_S = 0.8      # 模拟等待电机上线的时长
 INIT_S = 3.0              # 0x02 初始化
 CALIB_S = 1.2             # 0x10 设零
 RESET_S = 2.0             # 0x18：ARM_AUTO_RESET_TIME_S
 COMM_TIMEOUT_S = 3.0      # 每臂有效命令超时
-LINK_STATUS_S = 0.1       # ROBOT_LINK_STATUS_PERIOD_MS：0x81 的周期
+LINK_STATUS_S = 0.1       # 0x81 的周期
 INIT_GRIPPER_CLEAR_S = 1.5  # 初始化末段清除夹爪初始化标志
 FAKE_LOST_PERIOD_S = 5.0  # --fake-lost 的翻转周期
 
@@ -56,7 +56,7 @@ class _Board:
 
 
 class SimLink(Link):
-    """模拟 H7 链路，后台生成反馈。
+    """模拟链路，后台生成反馈。
 
     arm_ids 选择模拟臂，lost_mask/lost_arm 配置周期掉线，robot_type 选择参数。
     """

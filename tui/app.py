@@ -144,15 +144,6 @@ class Ui:
             elif time.monotonic() - self.sess.t0 > self.opts.handshake_timeout:
                 self.put(y, 0, i18n.tr("app.hs_timeout",
                                        int(self.opts.handshake_timeout)), self.attr(C_ERR))
-                for i, line in enumerate([
-                    i18n.tr("app.hs1"),
-                    i18n.tr("app.hs2", self.sess.board_defs.VERSION_CODE,
-                            self.sess.board_defs.VERSION_STRING),
-                    i18n.tr("app.hs3"),
-                    i18n.tr("app.hs4"),
-                    i18n.tr("app.hs5"),
-                ]):
-                    self.put(y + 1 + i, 0, line, self.attr(C_WARN))
         else:
             missing = ~fb["inited"] & 0x7F
             extra = ""

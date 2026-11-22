@@ -3,8 +3,7 @@
 双臂共用一个 Link，每台臂使用独立的 Arm。关节使用 rad、rad/s 和 rad/s²，
 夹爪开口使用 m，温度使用 ℃。需要同一帧的数据时使用 snapshot()。
 
-命令预检失败抛 GateRejected；force=True 仅跳过上位机预检，固件条件仍生效。
-遥控器状态不在反馈中，须由调用方确认遥控器离线。
+命令预检失败抛 GateRejected；force=True 仅跳过上位机预检，设备端仍会校验命令。
 每台臂须在 3 s 内发送有效命令或 keepalive()；SDK 不自动保活。
 """
 
@@ -314,7 +313,7 @@ class Arm:
         """发送 0x02 初始化，完成后进入正常运行 / 阻尼。
 
         要求待初始化，或正常运行且处于 STOP / 阻尼；七台电机在线，
-        六轴偏离复位角不超过型号容差。固件还要求遥控器离线。
+        六轴偏离复位角不超过型号容差。
         """
         if not force:
             fb = self._fresh_feedback("init_arm")
@@ -335,7 +334,7 @@ class Arm:
     def set_zero(self, *, force=False):
         """发送 0x10，将六轴当前位姿写为电机零点；须先摆到基准位姿。
 
-        要求待初始化且遥控器离线。结果通过 wait_setzero_ack() 读取。
+        要求待初始化。结果通过 wait_setzero_ack() 读取。
         默认不修改夹爪零点；夹爪零点另有变化时须重新标定。
         """
         if not force:
@@ -378,12 +377,11 @@ class Arm:
 
     def send_ctrl_pos(self, joint_rad, gripper_m=None, *, gripper_torque_limit_nm, gripper_raw_deg=None,
                       joint_vel_rad_s=None, joint_acc_rad_s2=None, force=False):
-        """发送 0x16 轨迹目标，要求正常运行 / RUN 且遥控器离线。
+        """发送 0x16 轨迹目标，要求正常运行 / RUN。
 
         关节角使用 rad。可选速度和加速度各含六项，单位为 rad/s 和 rad/s²，默认全零。
         夹爪目标可用 gripper_m（经标定）或 gripper_raw_deg，均省略时保持反馈角。
         gripper_torque_limit_nm 为有限非负数，单位 N·m；零表示请求零夹爪力矩。
-        固件按型号限制已初始化电机的角度。
         """
         name = "send_ctrl_pos"
         angles = units.check_joint_seq(joint_rad, i18n.tr("arm.joint_angle"))
@@ -427,7 +425,7 @@ class Arm:
         return self._send(protocol.TID_ARM_RESET)
 
     def send_raw(self, tid, payload=b""):
-        """透传 type_id 和 payload，不做预检或单位换算；固件仍检查执行条件。"""
+        """透传 type_id 和 payload，不做预检或单位换算；设备端仍会校验命令。"""
         if not isinstance(payload, (bytes, bytearray)):
             raise TypeError(i18n.tr("arm.payload_type", type(payload).__name__))
         return self._send(tid, bytes(payload))

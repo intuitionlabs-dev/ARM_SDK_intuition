@@ -2,7 +2,6 @@
 
 初始化成功后记录闭合点和完全张开点，方向与尺度由两点决定。
 两点之间线性插值，范围外线性外推，不自动限幅。夹爪零点变化后须重新标定。
-ARX X5 原始角负向闭合、正向张开；软限位不能代替实测开口标定。
 
 默认文件为 sdk/config/gripper_calib.json，可用 ARX_GRIPPER_CALIB 覆盖。
 标定文件属于本机设备数据，不提交到仓库。
@@ -216,7 +215,7 @@ class GripperCalibStore:
 
     def missing_message(self, arm_id, hint=""):
         tail = ("\n" + hint + "\n") if hint else "\n"
-        return ("标定文件 %s 缺少 arm_id=%d。%s请先完成初始化，再运行 ARX H7 夹爪标定：\n"
+        return ("标定文件 %s 缺少 arm_id=%d。%s请先完成初始化，再运行夹爪标定工具：\n"
                 "    python3 -m sdk.calibrate_gripper --arm-id %d --full-open-m <最大开口米数>\n"
-                "详见 docs/H7.md 的夹爪标定说明。"
+                "详见 docs/SERIAL.md 的夹爪标定说明。"
                 % (self.path, arm_id, tail, arm_id))

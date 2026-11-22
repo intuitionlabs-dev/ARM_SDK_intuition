@@ -1,52 +1,22 @@
-# H7 后端接入与协议
+# 串口接入与协议
 
-H7 后端由控制板执行状态机、轨迹、动力学及电机控制，Python 和 TUI 通过同一串口协议提交命令。公共操作见 [Python 调用](PYTHON.md) 和 [TUI 调用](TUI.md)。
+Python 和 TUI 通过串口协议提交命令并读取反馈。
+公共操作见 [Python 调用](PYTHON.md) 和 [TUI 调用](TUI.md)。
 
-## 接线与臂编号
+## 连接与臂编号
 
+使用 `sdk.Link(robot_type=...)` 自动选择端口。
+也可通过 `port` 参数指定当前系统的串口路径。
+两台臂共享一个 `sdk.Link`，通过 `arm_id` 区分。
+有效编号范围为 `0..ARM_NUM-1`。
 
-```text
-PC 上层程序 → sdk.Arm → sdk.Link
-                           │ USB CDC 或 USB 转 RS485
-                           ▼
-                 CtrBoard-H7（STM32H723）
-                           ├─ CAN1 → 机械臂 A
-                           └─ CAN2 → 机械臂 B
-```
-
-H7 执行状态机、轨迹、动力学和电机控制。
-PC 通过一条链路发送双臂目标并接收反馈。
-两台臂共享一个 `sdk.Link`。
-
-固件中的 `ROBOT_LINK` 选择上位机接口：
-
-| 固件配置 | PC 接线 |
-| --- | --- |
-| `ROBOT_LINK_USB` | PC USB 口连接 H7 板载 USB CDC 口 |
-| `ROBOT_LINK_UART` | PC USB 转 RS485 适配器连接 H7 的 USART3 RS485 端子 |
-
-接线须与设备运行的固件配置一致。
-H7 将 `arm_id=0` 映射到 CAN1。
-H7 将 `arm_id=1` 映射到 CAN2。
-
-## 链路与型号
-
-| 项目 | 配置与行为 |
-| --- | --- |
-| 创建入口 | `sdk.Link(port, robot_type=...)`；默认型号为 `arx_x5` |
-| 上位机参数 | `arx_x5` 或 `metal_arm`；提供预检、限位、复位参考与协议版本码 |
-| 控制程序 | 由 H7 固件决定，固件须与机械臂匹配 |
-| 夹爪换算 | 由所选型号给出：ARX X5 按臂编号读取文件标定，Metal Arm 用厂家查表 |
-| 保活 | 每台臂独立接收有效命令，间隔小于 3 s |
-| 遥控器 | 遥控器在线时由其接管，使用上位机控制前须关闭遥控器 |
-| 关闭链路 | 关闭主机串口；控制板按固件看门狗处理失联 |
-
-`robot_type` 选择主机配置，不能据此判断 H7 固件已支持对应机械臂。初始化中的硬件动作与 STOP 电机输出由设备固件实现。
+`robot_type` 支持 `arx_x5` 和 `metal_arm`。
+所选参数用于命令预检、限位、复位参考、夹爪换算及协议握手。
 
 ## 握手与重连
 
 1. `Arm.connect()` 打开链路并发送协议版本帧。
-2. H7 校验版本码，收到第一帧机械臂反馈后连接成功；仅收到版本帧不代表控制握手完成。
+2. 收到第一帧机械臂反馈后连接成功。握手要求双方协议版本匹配。
 3. 读写失败时，串口链路按 USB 身份寻找设备并退避重连；默认最多 10 次，初始等待 0.5 s，上限 2 s。
 4. 恢复连接后重新检查状态、在线掩码和反馈年龄，再决定初始化或切换模式。重连成功不代表机械臂已可运动。
 
@@ -54,8 +24,7 @@ H7 将 `arm_id=1` 映射到 CAN2。
 
 ## 帧接口
 
-
-本节描述 PC 与 H7 之间的串口协议。
+本节描述 SDK 收发的串口帧。
 
 payload 全是小端。头部 6 字节 =
 `AA 55 | type_id | datalen | arm_id | crc8`，尾 2 字节 crc16，整帧长 = `8 + datalen`。
@@ -64,39 +33,40 @@ payload 全是小端。头部 6 字节 =
 
 | type_id（简称 tid） | 帧名 | 发送方 | payload | 线上单位 | SDK 方法 |
 |---|---|---|---|---|---|
-| `0x01` | 版本帧 | 上位机、单片机 | 4 B：u32 版本码 | — | `send_version()` / `keepalive()` |
+| `0x01` | 版本帧 | 上位机、设备端 | 4 B：u32 版本码 | — | `send_version()` / `keepalive()` |
 | `0x02` | 初始化帧 | 上位机 | 0 | — | `init_arm()` |
 | `0x10` | 设零帧 | 上位机 | 0 | — | `set_zero()` |
-| `0x11` | 设零回复帧 | 单片机 | 12 B：u8 state + u8[7] result + u32 用时 ms | — | `wait_setzero_ack()` / `last_setzero_ack` |
+| `0x11` | 设零回复帧 | 设备端 | 12 B：u8 state + u8[7] result + u32 用时 ms | — | `wait_setzero_ack()` / `last_setzero_ack` |
 | `0x12` | 启动帧 | 上位机 | 0 | — | `start()`（进 run 档） |
 | `0x13` | 重力补偿帧 | 上位机 | 0 | — | `gravity()` |
 | `0x14` | 停止帧 | 上位机 | 0 | — | `stop()`（STOP / 软停机） |
 | `0x15` | 阻尼帧 | 上位机 | 0 | — | `damping()` |
 | `0x16` | 位置控制帧 | 上位机 | 80 B，依次为 f32[6] 关节角、f32 夹爪角、f32 夹爪力矩上限、f32[6] 关节速度、f32[6] 关节加速度 | deg、N·m、deg/s、deg/s² | `send_ctrl_pos()` |
 | `0x18` | 一键复位帧 | 上位机 | 0 | — | `reset()` |
-| `0x80` | 反馈帧 | 单片机 | 63 B：4×u8 + f32[6] + f32[6] + f32 + u8[7] | deg, deg/s, ℃ | `arm.feedback` / `snapshot()` |
-| `0x81` | 链路状态帧 | 单片机 | 84 B：21×u32（见下） | — | `link.link_status` |
+| `0x80` | 反馈帧 | 设备端 | 63 B：4×u8 + f32[6] + f32[6] + f32 + u8[7] | deg, deg/s, ℃ | `arm.feedback` / `snapshot()` |
+| `0x81` | 链路状态帧 | 设备端 | 84 B：21×u32（见下） | — | `link.link_status` |
 | 其它 | （自定义） | 上位机 | 任意 | — | `send_raw(tid, payload)` —— **通用透传入口**，无预检无换算 |
 
 `0x80` 的 4 个 u8 依次是 `mode`（档位）、`robot_state`（状态）、`motor_lost_mask`（掉线掩码）、
 `motor_inited_mask`（已初始化掩码），后面是 6 个关节角、6 个关节角速度、夹爪原始角和 7 个
-温度。掩码 **bit0..5 = j1..j6、bit6 = 夹爪**。`0x80` 单片机侧**目标 250 Hz**。
+温度。掩码 **bit0..5 = j1..j6、bit6 = 夹爪**。
 
-`0x81` 是**握手后 10 Hz** 的链路状态帧，链路级只有一份，不按台分。它报的是"距上一帧 `0x81`
-之间，单片机收到了你多少帧"，**每个数都是窗口增量**，不是累计值。字段有 `rx_total`（解出来的
+`0x81` 是握手后的链路状态帧，链路级只有一份，不按台分。它报的是"距上一帧 `0x81`
+之间，设备端收到了你多少帧"，**每个数都是窗口增量**，不是累计值。字段有 `rx_total`（解出来的
 整帧数）、`rx_by_tid[11]`（按 tid 分，下标同 `protocol.LINK_TID_ORDER`，最后一格是"表外的
 码"）、`crc8_err`、`crc16_err`、`drop_bytes`（没能组成任何有效帧的字节数）、`bad_arm`、
-`over_len`、`ring_drop`、`gated`（被握手闸门挡下的）、`tx_fail`（单片机**发**帧失败）、
+`over_len`、`ring_drop`、`gated`（被握手闸门挡下的）、`tx_fail`（设备端**发**帧失败）、
 `dt_ms`。`link.link_status` 存最近一帧，`link.stats["link_status"]` 同款；没收到过是 `None`。
 
-## ARX H7 夹爪标定工具
+## 夹爪标定工具
 
-此工具连接 ARX H7 链路；参数不包含 `--robot-type`。其他连接的标定存储见 [机械臂差异](ROBOTS.md#夹爪换算)。
+此工具使用默认型号配置。其他配置的标定存储见 [机械臂差异](ROBOTS.md#夹爪换算)。
 
-以下标定工具使用 H7 串口后端：
+将环境变量 `FULL_OPEN_M` 设为完全张开的实测开口，单位 m。
+运行时通过 `--full-open-m` 传入。
 
 ```bash
-python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085
+python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m "$FULL_OPEN_M"
 ```
 
 工具会连上、显示状态。然后 `d` 切阻尼（或 `x` 切 STOP），**手动把夹爪移动到两个端点**，各按一次键
@@ -109,15 +79,13 @@ python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085
 - 也可以用 `r` 进 run 档后按 `←`/`→` **点动**。点动方向按原始角，不是"张开/闭合"。run 档
   整条臂都使能，不便手动移动时再用。
 
-ARX X5 的原始角负向闭合、正向张开；协议角到电机角不反号。
-**必须在一次成功的初始化之后标定**：找零向正向张开端寻找机械限位，再向负向回退 142° 后设零。
-这个零点不按软限位上下限的平均值计算。工具会查反馈帧里夹爪的"已初始化"标志位，并在开头警告。
-夹爪重新找零或更改夹爪零点后，需要复核并重做开口标定。`set_zero()` 的默认参与对象仅为 J1～J6，不包含夹爪。
+标定前须完成初始化，并确认夹爪反馈有效。
+夹爪零点变化后须重新标定。
 
 **标定之后怎么用**（下面三条用的是同一份文件里 `arm_id` 那一项）：
 
 - **控制开口** `arm.send_ctrl_pos(joints, gripper_m=0.03, gripper_torque_limit_nm=0.5)`。`gripper_m=` 按标定换算成原始角。
-  不标定就走 `gripper_raw_deg=-141.5`（原始电机角）。**两个都不给 = 保持当前**；两个都给直接
+  原始角目标可传入 `gripper_raw_deg=arm.raw_gripper_angle_deg`。**两个都不给 = 保持当前**；两个都给直接
   报错。
 - **读开口**：`arm.gripper_opening`，单位米。**没标定就抛 `GripperNotCalibrated`**，不返回推测
   值。不希望被异常打断就用 `snapshot()`：同一帧里换算好的一套，`gripper_calibrated` 为假时
@@ -127,6 +95,5 @@ ARX X5 的原始角负向闭合、正向张开；协议角到电机角不反号�
   两台。标定存在时，面板上夹爪那一行显示为米，步长也换成米档。
 
 SDK 在 `FULL_OPEN` 和 `0` 两点之间线性换算。
-夹爪标定与 H7 固件软限位分别生效。
 
 标定文件是本机实测数据。仓库 `.gitignore` 忽略 `*.json`，**不要提交**。

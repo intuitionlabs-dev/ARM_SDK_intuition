@@ -6,8 +6,8 @@
 
 | 连接 | 默认方式 | 配置要求 |
 | --- | --- | --- |
-| H7，ARX X5 | JSON 两点标定 | 初始化找零后测量开口端点 |
-| H7，Metal Arm | 厂家查表，0..0.1 m | 有效出厂零点；显式存储可覆盖 |
+| ARX X5 | JSON 两点标定 | 初始化后测量开口端点 |
+| Metal Arm | 厂家查表 | 有效出厂零点；显式存储可覆盖 |
 
 默认存储由所选型号给出（`sdk.board_defs.<profile>.default_gripper_store()`）；`sdk.Arm(..., calib_store=...)` 可改为 JSON 两点标定。
 
@@ -26,4 +26,4 @@
 
 ## 标定工具
 
-`python3 -m sdk.calibrate_gripper` 使用 ARX H7 串口链路。工具参数、两点采样和保存步骤见 [H7 夹爪标定](../docs/H7.md#arx-h7-夹爪标定工具)。其他连接可通过公共 `GripperCalibration` 和 `GripperCalibStore` 接口提供实测结果，见 [API](../API.md#sdkgripper--夹爪两点标定)。
+`python3 -m sdk.calibrate_gripper` 使用默认型号的串口链路。工具参数、两点采样和保存步骤见 [夹爪标定](../docs/SERIAL.md#夹爪标定工具)。其他连接可通过公共 `GripperCalibration` 和 `GripperCalibStore` 接口提供实测结果，见 [API](../API.md#sdkgripper--夹爪两点标定)。

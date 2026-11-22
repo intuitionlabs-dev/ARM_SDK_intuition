@@ -1,16 +1,16 @@
-"""H7 串口协议：CRC、版本哈希、帧解析和载荷编解码。
+"""串口协议：CRC、版本哈希、帧解析和载荷编解码。
 
 协议使用 deg、deg/s、deg/s²、N·m 和 ℃；SDK 单位换算由上层完成。
 帧格式：AA 55 | type_id | datalen | arm_id | crc8 | payload | crc16(LE)。
 总长 8 + datalen，最大 263 字节。CRC8 校验前 5 字节，CRC16 校验头部及载荷。
-多字节字段均为小端。固件定义见 libs/frame/frame.h 和 type_id.h。
+多字节字段均为小端。
 """
 
 import struct
 from dataclasses import dataclass
 from math import isfinite
 
-# CRC 查表按反射多项式生成，与固件 soft_crc.c 对应。
+# CRC 查表按反射多项式生成。
 # CRC8：多项式 0x8C，初值 0xFF。
 # CRC16：多项式 0x8408，初值 0xFFFF。自测以位运算实现和固定帧核对。
 
@@ -79,17 +79,17 @@ def crc16(data):
 # 版本
 
 def fnv1a32(s):
-    """计算版本串的 FNV-1a 32 位哈希，与固件 FrameVersionHash 一致。"""
+    """计算版本串的 FNV-1a 32 位哈希。"""
     h = 0x811C9DC5
     for b in s.encode("utf-8"):
         h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
     return h
 
 
-# arm_id：0 对应 CAN1 / 臂 A，1 对应 CAN2 / 臂 B。固件丢弃越界编号。
+# arm_id 选择共享链路中的机械臂。
 DEFAULT_ARM_ID = 0
 
-# 码表（libs/frame/type_id.h）
+# 协议帧类型。
 
 TID_VERSION = 0x01            # 版本握手，双向
 TID_ARM_INIT = 0x02           # 初始化，空载荷
@@ -116,7 +116,7 @@ CTRL_POS_LEN = _CTRL_POS.size
 SET_ZERO_ACK_LEN = 12          # u8 + u8[7] + u32
 LINK_STATUS_LEN = 84           # 10×u32 + 11×u32
 
-# 0x81 分类计数顺序对应固件 FRAME_TID_DOWN_LIST，末项统计其他类型。
+# 0x81 分类计数顺序见 LINK_TID_ORDER，末项统计其他类型。
 # 上行反馈 0x80 不属于下行命令，误发时计入其他类型。
 LINK_TID_ORDER = (TID_VERSION, TID_ARM_INIT,
                   TID_MOTOR_SET_ZERO, TID_MOTOR_SET_ZERO_ACK,
@@ -185,7 +185,7 @@ def decode_ctrl_pos(payload):
 
 
 def encode_version(code):
-    """编码 0x01 的四字节小端版本码；主机和固件须使用匹配的协议版本。"""
+    """编码 0x01 的四字节小端版本码；通信双方须使用匹配的协议版本。"""
     return struct.pack("<I", code & 0xFFFFFFFF)
 
 
@@ -258,7 +258,7 @@ class LinkStatus:
     over_len: int             # 载荷超长帧数
     ring_drop: int            # 接收环形缓冲区溢出帧数
     gated: int                # 握手前被拒绝的帧数
-    tx_fail: int              # 固件发送失败次数
+    tx_fail: int              # 设备端发送失败次数
     dt_ms: int                # 报告间隔，单位 ms，标称 100
 
 

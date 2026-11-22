@@ -1,24 +1,24 @@
 # SDK API 参考
 
-`sdk.Arm` 为 Python 程序与 TUI 提供公共控制方法。控制命令通过串口交给 H7 单片机执行；机械臂型号在创建链路时选择，之后的常规操作使用本页接口。
+`sdk.Arm` 为 Python 程序与 TUI 提供公共控制方法。控制命令通过串口发送；机械臂型号在创建链路时选择，之后的常规操作使用本页接口。
 
 | 约定 | 内容 |
 | --- | --- |
 | 单位 | 关节 rad / rad/s，夹爪 m，温度 ℃；`Feedback` 与协议 payload 使用 deg / deg/s |
 | 预检 | 命令使用最近反馈和 `arm.board_defs`；反馈缺失或超过 100 ms 抛 `FeedbackStale` |
 | 拒绝 | 预检不满足条件抛 `GateRejected`，命令不提交 |
-| `force=True` | 只跳过上位机预检，固件执行条件仍生效 |
+| `force=True` | 只跳过上位机预检，设备端仍会校验命令 |
 | 结果 | 提交成功不代表执行完成，通过状态、模式与反馈判断 |
 
 完整调用见 [Python 示例](docs/PYTHON.md)，按键与启动参数见 [TUI](docs/TUI.md)。
 
-## H7 控制链路
+## 串口控制链路
 
 | 类别 | 创建入口 | 配置 |
 | --- | --- | --- |
-| H7 单片机 | `sdk.Link(port, robot_type=...)` | 上位机参数选 `arx_x5` / `metal_arm`；固件须与机械臂匹配 |
+| 串口 | `sdk.Link(port, robot_type=...)` | 参数配置选 `arx_x5` / `metal_arm` |
 
-构造代码见 [创建链路](docs/PYTHON.md#创建链路)。通信、关闭、重连和诊断见 [链路生命周期](docs/BACKENDS.md#生命周期与诊断)，硬件参数见 [型号对照](docs/ROBOTS.md)。
+构造代码见 [创建链路](docs/PYTHON.md#创建链路)。通信、关闭、重连和状态读取见 [链路生命周期](docs/BACKENDS.md#生命周期)，型号参数见 [型号对照](docs/ROBOTS.md)。
 
 ## 1. 顶层入口
 
@@ -27,7 +27,7 @@
 | 名字 | 是什么 |
 |---|---|
 | `sdk.Arm` | 一台臂。**主入口**，见第 3 节 |
-| `sdk.Link` | H7 串口链路。见第 2 节 |
+| `sdk.Link` | 串口链路。见第 2 节 |
 | `sdk.Snapshot` | 同一帧里换算好的一致视图（第 4 节） |
 | `sdk.Feedback` / `sdk.SetZeroAck` / `sdk.LinkStatus` | 原始帧数据（**线上单位**） |
 | `sdk.GripperCalibration` / `sdk.GripperCalibStore` | 夹爪标定模型和文件存取（第 6 节） |
@@ -54,7 +54,7 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 |---|---|
 | `Link(port=None, baud=921600, *, timeout=0.1, verify_on_open=True, auto_reconnect=True, reconnect_wait=0.5, reconnect_max_wait=2.0, reconnect_max_tries=10, robot_type=None)` | `timeout` 是串口读超时；`port=None` 时自动选口。重连参数依次控制是否重连、首次等待、退避上限、最多尝试次数（`<=0` = 不限次）。`robot_type` 见下文 |
 | `board_defs` | 本链路所选的机械臂参数模块，供所有 `Arm` 和 TUI 使用 |
-| `open(port=None)` | 打开串口 + 起 RX 线程。**幂等**。第一次在这里 `import pyserial`；打不开或查出是 J-Link 探针口 → `LinkError`（连上之后再掉线才走自动重连） |
+| `open(port=None)` | 打开串口 + 起 RX 线程。**幂等**。首次打开时加载 `pyserial`；打开失败或端口校验失败时抛 `LinkError`（连上之后再掉线才走自动重连） |
 | `close()` / `reopen(port=None)` | 关闭 / 关闭后重新打开（拔线、适配器重枚举之后用 `reopen`）。`reopen` 打开失败照样抛 `LinkError`，但会重新启动 RX 线程继续退避重试 |
 | `with sdk.Link() as link:` | 进入 `with` 时 open，退出时 close |
 | `is_open` | 串口已打开 |
@@ -63,19 +63,19 @@ a, b = sdk.Arm(0, link), sdk.Arm(1, link)   # 或 link.arm(0) / link.arms()
 | `arm(arm_id)` / `arms()` | 获取（必要时创建）`Arm` / 列出已创建的 `Arm`。同一 `arm_id` 只有一个对象 |
 | `inject_bytes(chunk)` | 手动写入字节进解析器 + 按 `arm_id` 分流。真链路由 RX 线程调用，假链路也走这一条 |
 | `wait_feedback(arm_id, after_seq=0, timeout=3.0, poll=0.005)` | 等**序号大于** `after_seq` 的一帧，返回 `Feedback`；超时 `None`。按序号等待 ⇒ 没有竞态 |
-| `stats` | 诊断字典，键见下 |
+| `stats` | 链路状态字典，键见下 |
 | `describe()` | 一行描述（用于日志） |
 
-`robot_type` 支持 `"arx_x5"` 和 `"metal_arm"`，未知值在构造时抛出 `ValueError`。`None` 沿用类的默认配置：`sdk.Link` 默认 ARX。同一 H7 链路的两台臂共用所选参数，不同链路互不影响。此选择只影响上位机预检与界面限位、参考角，不下发参数或改变 H7 固件。
+`robot_type` 支持 `"arx_x5"` 和 `"metal_arm"`，未知值在构造时抛出 `ValueError`。`None` 沿用类的默认配置：`sdk.Link` 默认 ARX。同一链路的两台臂共用所选参数，不同链路互不影响。所选参数用于上位机预检、界面限位和参考角。
 
 ```python
-link = sdk.Link("/dev/ttyACM0", robot_type="metal_arm")
+link = sdk.Link(robot_type="metal_arm")
 arm = link.arm(0)
 assert arm.board_defs is sdk.board_defs.metal_arm
 ```
 
 **属性**：`port`、`baud`、`kind`（`"USB"` / `"RS485"` / `"FAKE"` / `None`）、`link_up`、
-`link_err`、`board_version`（单片机回的版本码）、`version_seen`、`link_status`（最近一帧 `0x81`）、
+`link_err`、`board_version`（设备端回的版本码）、`version_seen`、`link_status`（最近一帧 `0x81`）、
 `n_tx`、`n_rx`、`n_bad_arm`、`auto_reconnect`、`open_gen`（每成功 open 一次 +1）、
 `n_reconnect`（自动重连成功过的次数）、`reconnect_tries`（这一轮掉线试到第几次）、
 `reconnect_err`、`reconnect_gave_up`。
@@ -93,12 +93,12 @@ assert arm.board_defs is sdk.board_defs.metal_arm
 |---|---|
 | `port` / `kind` / `is_open` | 串口路径、链路类型、是否已打开 |
 | `link_up` / `link_err` | 链路是否正常 / 最后一条错误（读写出错会把它置假） |
-| `n_tx` | 发出的帧数（**不代表**单片机已收到） |
+| `n_tx` | 发出的帧数（**不代表**设备端已收到） |
 | `n_rx` | 收到的**整链路段**帧数（两台臂之和） |
-| `n_bad_arm` | `arm_id` 越界、被丢弃的帧数（单片机侧同样丢弃） |
+| `n_bad_arm` | `arm_id` 越界、被丢弃的帧数（设备端侧同样丢弃） |
 | `n_err_crc8` / `n_err_crc16` / `n_drop` | CRC8 错帧数 / CRC16 错帧数 / 被丢弃的字节数 |
-| `board_version` | 版本帧里的版本码；没收到过是 `None`（单片机未握手时每 100 ms 主动发一帧，因此链路一通就立刻有值） |
-| `link_status` | 最近一帧 `LinkStatus`（`0x81` 链路状态帧）。**握手之后才有**，每 100 ms 一帧；没收到过是 `None` |
+| `board_version` | 最近收到的协议版本码；尚未收到时为 `None` |
+| `link_status` | 最近一帧 `LinkStatus`（`0x81` 链路状态帧）；尚未收到时为 `None` |
 | `auto_reconnect` / `reconnect_tries` / `reconnect_max_tries` | 自动重连开不开 / 这一轮试到第几次 / 这一轮的上限 |
 | `reconnect_err` | 最近一次重连**开串口**失败的原因（一行）；没失败过是 `None` |
 | `reconnect_gave_up` | 这一轮试满上限、已停止重试（等 `reopen()` 再开一轮） |
@@ -112,7 +112,7 @@ assert arm.board_defs is sdk.board_defs.metal_arm
 
 | 函数 | 说明 |
 |---|---|
-| `pick_default_port()` | 自动选择：单片机 USB(`0483:5740`) → RS485 适配器(`1a86`) → 回退路径。**始终排除 J-Link 探针(`1366`)** |
+| `pick_default_port()` | 优先选择受支持的 USB CDC 端口，其次选择 RS485 适配器，最后使用回退路径 |
 | `list_links()` | `[(path, kind, ident), ...]`：机器上当前的候选链路 |
 | `describe_port(path)` | 一行描述（含链路类型） |
 | `usb_identity(path)` | 顺着 `/sys/class/tty` 向上查找 `idVendor` / `idProduct` / `serial` / `product` / `manufacturer`；查不到返回 `None` |
@@ -131,7 +131,7 @@ Arm(arm_id=0, link=None, *, calib_store=None)
 
 | 方法 | 说明 |
 |---|---|
-| `connect(timeout=3.0, port=None)` | 必要时打开链路，提交握手并等待本臂第一帧反馈；超时抛 `LinkError`，附链路诊断信息 |
+| `connect(timeout=3.0, port=None)` | 必要时打开链路，提交握手并等待本臂第一帧反馈；超时抛 `LinkError`，附链路状态信息 |
 | `close()` | 关闭自己创建的那条链路（共享链路时无动作） |
 | `describe()` | 日志用的一行；没有收到反馈时也能输出 |
 
@@ -162,21 +162,21 @@ Arm(arm_id=0, link=None, *, calib_store=None)
 
 ### 3.3 发命令
 
-下表列出公共 SDK 的预检条件。命令通过串口帧发送至 H7，帧号用于协议对照。H7 的遥控器接管和固件执行条件另见 [H7 接入](docs/H7.md)。
+下表列出公共 SDK 的预检条件。帧号用于协议对照。
 
 | 方法 | 帧 | 闸门 | 备注 |
 |---|---|---|---|
 | `send_version()` | `0x01` | — | 也是保活 |
-| `keepalive()` | `0x01` | — | `send_version` 的别名。**SDK 不会自动发送**：H7 3 s 收不到有效命令时，已初始化的臂切回阻尼（每台各算各的；没初始化过的落到通信离线，收到下一帧才进离线等待） |
+| `keepalive()` | `0x01` | — | `send_version` 的别名。调用方须在 `KEEPALIVE_TIMEOUT_S` 内为每台臂发送有效命令或保活 |
 | `init_arm(*, force=False)` | `0x02` | state 是**待初始化(2)**，**或**（正常运行(4) 且 mode ∈ 停/阻尼）；**且** 7 台电机全在线；**且** 6 个关节（不含夹爪）与复位位姿偏差 ≤ 20° | 完成后落 `4` + **阻尼**，要再 `start()` 才进 run |
 | `set_zero(*, force=False)` | `0x10` | state 是**待初始化(2)** | **覆盖电机的原零点**，触发前先调整位姿；只管 j1~j6；结果走 `wait_setzero_ack()` |
 | `start(*, force=False)` | `0x12` | state == 正常运行(4) | 进 run 档。切档会作废上一帧控制指令 ⇒ **切档完成后必须重发控制帧** |
 | `gravity(*, force=False)` | `0x13` | 同 `start` | 重力补偿档 |
 | `stop(*, force=False)` | `0x14` | 同 `start` | STOP / 软停机，不保持位置或重力补偿；电机输出策略见 [行为表](docs/ROBOTS.md#控制行为) |
 | `damping(*, force=False)` | `0x15` | 同 `start` | 阻尼档 |
-| `reset(*, force=False)` | `0x18` | state == 正常运行(4) **且** 7 台全在线（**不检查位姿** —— 位姿偏离时才需要复位） | 走约 2 s 轨迹回复复位位姿，**不做夹爪找零**，完成后停在阻尼 |
+| `reset(*, force=False)` | `0x18` | state == 正常运行(4) **且** 7 台全在线（**不检查位姿** —— 位姿偏离时才需要复位） | 请求运动到所选复位参考，完成后进入阻尼 |
 | `send_ctrl_pos(joint_rad, gripper_m=None, *, gripper_torque_limit_nm, gripper_raw_deg=None, joint_vel_rad_s=None, joint_acc_rad_s2=None, force=False)` | `0x16` | state == 4 **且** mode == run | 六轴轨迹目标及夹爪力矩上限（N·m） |
-| `send_raw(tid, payload=b"")` | 任意 | **无预检、无换算** | 底层 payload 入口；通过 H7 串口透传。`payload` 不是 `bytes` → `TypeError` |
+| `send_raw(tid, payload=b"")` | 任意 | **无预检、无换算** | 底层 payload 入口；通过串口透传。`payload` 不是 `bytes` → `TypeError` |
 
 **夹爪目标三选一**（`gripper_m` / `gripper_raw_deg` 都不给 = **保持当前**）：
 
@@ -198,9 +198,6 @@ arm.send_ctrl_pos(joints, gripper_torque_limit_nm=0.5,
 每次调用都必须显式传入 `gripper_torque_limit_nm`。
 该值是夹爪电机输出轴的力矩上限，单位为 N·m。
 该值必须有限且非负。零表示请求零夹爪力矩。
-H7 对夹爪速度环 PID 的输出执行双向力矩限幅。
-H7 使用机型配置的固件上限约束位置指令中的上限。
-找零搜索使用机型配置的搜索力矩上限。
 
 **公共异常**：`FeedbackStale`（没有反馈或反馈过旧，无法判断闸门）、`GateRejected`
 （预检不通过，**帧未发出**）、`ValueError` / `TypeError`（参数本身不合法）、`LinkError`
@@ -278,12 +275,12 @@ except sdk.ArError as e:
 | `crc8_err` / `crc16_err` | 校验失败被丢弃的帧数 |
 | `drop_bytes` | 写入解析器但**未能组成任何有效帧**的字节数 |
 | `bad_arm` / `over_len` | arm_id 越界 / payload 超长被丢弃的帧数（都正常恒 0） |
-| `ring_drop` | 收包环满被丢弃的帧数（单片机处理能力不足） |
+| `ring_drop` | 收包环满被丢弃的帧数（设备端处理能力不足） |
 | `gated` | 被握手闸门拒绝的帧数（握手前发的非 `0x01` 帧都算） |
-| `tx_fail` | 单片机**发**帧失败的次数 |
+| `tx_fail` | 设备端**发**帧失败的次数 |
 | `dt_ms` | 距上一帧 `0x81` 的实际毫秒数（标称 100） |
 
-**每个数都是窗口增量**（窗口 = 单片机发上一帧 `0x81` 到发这一帧之间），不是累计值。两个窗口
+**每个数都是窗口增量**（窗口 = 设备端发上一帧 `0x81` 到发这一帧之间），不是累计值。两个窗口
 不能直接比较大小，要按窗口看；需要累计值则自行累加。
 
 ## 5. 异常
@@ -311,10 +308,10 @@ ArError
 
 | 名字 | 值 / 说明 |
 |---|---|
-| `ARM_NUM` | 2（H7 的 CAN1 / CAN2 对应臂 0 / 1） |
+| `ARM_NUM` | 2，有效臂编号为 0 和 1 |
 | `ARM_JOINT_NUM` / `GRIPPER` / `ARM_MOTOR_NUM` | 6 / 6（夹爪的轴号）/ 7 |
 | `JOINT_NAMES` / `AXIS_NAMES` | `("j1"..."j6")` / 前者 + `("夹爪",)`，索引与掩码的位一一对应 |
-| `arm_label(arm_id)` | `"臂A(arm_id=0, CAN1)"` 的统一写法 |
+| `arm_label(arm_id)` | `"臂A(arm_id=0)"` 的统一写法 |
 | `MODE_STOP/RUN/DAMPING/GRAVITY` + `MODE_NAME` | 档位码 0/1/2/3 与名字 |
 | `STATE_WAIT_HANDSHAKE` … `STATE_RESETTING` + `STATE_NAME` | 状态码 0..7 与名字 |
 | `ZERO_STATE_NAME` / `ZERO_RES_NAME` | 上面 `SetZeroAck` 两张名字表 |
@@ -322,9 +319,9 @@ ArError
 | `GRIPPER_ANGLE_MIN` / `MAX`（deg） | 所选型号的夹爪原始角范围，见 [参数对照](docs/ROBOTS.md#关节与夹爪参数) |
 | `GRIPPER_STROKE_DEG` | 所选配置的 `MAX - MIN` |
 | `AXIS_MIN` / `AXIS_MAX` / `axis_lo(i)` / `axis_hi(i)` | 上面两套拼起来的 7 轴版本 |
-| `clamp_axis(axis, value)` | → `(限幅后的值, 是否发生限幅)`。**SDK 不自动调用它**：H7 固件按其参数限幅；调用方可显式检查限幅标志 |
+| `clamp_axis(axis, value)` | → `(限幅后的值, 是否发生限幅)`。调用方可显式使用限幅结果和标志 |
 | `expand_mask(mask)` | 掩码 → `"j3 夹爪"` 这样的名字串 |
-| `VERSION_STRING` / `VERSION_CODE` | 握手用的协议版本串与其 FNV-1a 32 版本码，各型号独立；不匹配时单片机不回复版本帧（它自身每 100 ms 报一次码） |
+| `VERSION_STRING` / `VERSION_CODE` | 握手协议版本串及其 FNV-1a 32 位哈希，读取所选配置的当前值 |
 | `RESET_POSE_DEG` / `RESET_POSE_RAD` | 所选型号的六轴复位参考，分别提供度与弧度形式 |
 | `ROBOT_INIT_POSE_TOL_DEG` / `_RAD` | 20° —— 即 `init_arm()` 的位姿闸门 |
 | `KEEPALIVE_TIMEOUT_S` | 3：每台臂的有效命令保活窗口 |
@@ -375,7 +372,7 @@ ArError
 
 | 模拟对象 | 用途 |
 | --- | --- |
-| `sdk.sim.SimLink` | H7 协议解析、分流、握手和模拟状态机 |
+| `sdk.sim.SimLink` | 协议解析、分流、握手和模拟状态机 |
 
 `SimLink` 是 `Link` 子类，不访问串口。用法与公共 `sdk.Arm` 相同：
 
@@ -396,9 +393,9 @@ SimLink(port=None, baud=921600, *, arm_ids=(0, 1), lost_mask=0, lost_arm=0,
 
 `lost_mask` 非 0 时每 5 s 翻转 `lost_arm` 那台的掉线掩码（等价于面板的 `--fake-lost 0x41`）。
 `speed > 1` 使其整体时钟加速（时间缩放，运动同步加快）。
-`robot_type` 与 `Link` 相同，假板子的复位目标跟随所选参数；它仍是 H7 协议状态机模拟器。实际电机动作需要匹配型号的 H7 固件与硬件验证。
+`robot_type` 与 `Link` 相同。模拟器使用所选配置的复位目标。
 
-时间常数（对拍固件用）：上电 0.6 s → 离线等待、0.8 s → 待初始化、`0x02` 3 s、`0x10` 1.2 s、
+模拟时间常数：上电 0.6 s → 离线等待、0.8 s → 待初始化、`0x02` 3 s、`0x10` 1.2 s、
 `0x18` 2 s、通信看门狗 3 s（**每台一份**：发往某台的帧只为该台保活，另一台照常超时）、
 `--fake-lost` 翻转周期 5 s。
 
@@ -414,4 +411,4 @@ SimLink(port=None, baud=921600, *, arm_ids=(0, 1), lost_mask=0, lost_arm=0,
 | 等待时保活 | 为每台臂周期调用 `keepalive()` |
 | 复位 | `reset()`，观察复位中再等待正常运行 |
 | 模式 | `damping()` / `gravity()` / `stop()` |
-| 退出 | [生命周期与诊断](docs/BACKENDS.md#生命周期与诊断) |
+| 退出 | [生命周期](docs/BACKENDS.md#生命周期) |

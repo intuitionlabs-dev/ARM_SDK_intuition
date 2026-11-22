@@ -161,7 +161,7 @@ def test_crc(c):
 # 2. 整帧锚点
 
 def test_anchors(c):
-    c.section("2. 与固件 FrameEncode 输出逐字节对照")
+    c.section("2. 整帧编码参考值")
     cases = [
         ("版本帧 arm_id=0", protocol.encode(
             TID_VERSION, protocol.encode_version(metal_arm.VERSION_CODE), 0),
@@ -782,7 +782,7 @@ def _sim_wait(arms, pred, timeout=2.0, extra=None):
 
 def test_sim(c, tmpdir):
     """检查握手、状态时序、双臂隔离、看门狗和掉线模拟。"""
-    c.section("9. H7 协议模拟器")
+    c.section("9. 协议模拟器")
     from .sim import SimLink
 
     BD = board_defs
@@ -800,7 +800,7 @@ def test_sim(c, tmpdir):
         time.sleep(0.3)
         c.check("版本不匹配时不回复、不发反馈",
                 a.n_feedback == 0 and link.board_version is None,
-                "A 反馈数=%d，固件版本=%r" % (a.n_feedback, link.board_version))
+                "A 反馈数=%d，协议版本=%r" % (a.n_feedback, link.board_version))
 
         a.send_version()
         b.send_version()
@@ -926,9 +926,9 @@ def test_reconnect(c, tmpdir):
     # 按 USB 身份匹配设备。
     board = {"idVendor": "0483", "idProduct": "5740", "serial": "ABC"}
     other = {"idVendor": "0483", "idProduct": "5740", "serial": "XYZ"}
-    c.check("VID:PID 和序列号相同：识别为同一设备", same_usb_ident(board, dict(board)))
-    c.check("VID:PID 相同但序列号不同：识别为不同设备", not same_usb_ident(board, other))
-    c.check("无序列号时按 VID:PID 匹配",
+    c.check("USB 身份字段相同：识别为同一设备", same_usb_ident(board, dict(board)))
+    c.check("USB 身份标记不同：识别为不同设备", not same_usb_ident(board, other))
+    c.check("身份标记缺失时按设备类型匹配",
             same_usb_ident(dict(board, serial=""), dict(board)))
     c.check("VID:PID 不同：识别为不同设备",
             not same_usb_ident(board, {"idVendor": "1a86", "idProduct": "5740"}))

@@ -1,11 +1,11 @@
-"""H7 控制台命令行入口。
+"""控制台命令行入口。
 
-python3 -m sdk.tui --port /dev/ttyACM0 --robot-type arx_x5
+python3 -m sdk.tui --robot-type arx_x5
 --fake 使用协议模拟器，--selftest 运行离线检查，--lang en 切换英文。
 双臂共享串口，按 a 切换操作对象，按 h 查看帮助。
 
 界面使用 rad 和 m，角度日志使用 deg。各臂独立发送目标或保活。
-默认退出仅关闭链路；--stop-on-exit 向双臂发送 STOP，设备随后按固件策略处理。
+默认退出关闭链路；--stop-on-exit 向双臂发送 STOP。
 """
 
 
@@ -87,7 +87,7 @@ def main(argv=None, prog=None):
             opts.port = opts.port or pick_default_port()
             assert_port_allowed(opts.port)
         except LinkError as e:
-            # 保留 SDK 的探针端口拒绝原因。
+            # 显示端口校验失败原因。
             print("%s" % e)
             return 2
         if not os.path.exists(opts.port):
@@ -120,7 +120,7 @@ def main(argv=None, prog=None):
         if "Permission" in str(e):
             print(i18n.tr("main.permission_hint"))
         return 2
-    # 显示设备路径和链路类型，便于核对固件接线。
+    # 显示所选端口和链路类型。
     sess.info(i18n.tr("main.link_info",
                       describe_port(opts.port) if not opts.fake
                       else i18n.tr("main.fake_link")))

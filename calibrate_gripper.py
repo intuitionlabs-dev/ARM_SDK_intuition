@@ -1,6 +1,6 @@
-"""ARX H7 夹爪两点标定工具：记录闭合和完全张开时的原始角。
+"""夹爪两点标定工具：记录闭合和完全张开时的原始角。
 
-运行：python3 -m sdk.calibrate_gripper --arm-id 0 --full-open-m 0.085。
+运行时用 --full-open-m 指定实测的完全张开距离，单位 m。
 须先完成初始化；夹爪零点变化后须重新标定。
 按 d/x 切阻尼/STOP 后手动调整，或按 r 进入 RUN 后用方向键点动。
 RUN 会使能整条臂，点动会实际驱动夹爪。按 0/f 记录两点，回车保存，q 放弃。
@@ -199,7 +199,7 @@ class Calibrator:
     def _status(self):
         s = self.arm.snapshot()
         if s is None:
-            print("\n尚无反馈，请检查串口、接线和固件。")
+            print("\n尚无反馈。")
             return
         print("\n" + "-" * 68)
         print("  %s" % s)
@@ -366,7 +366,7 @@ class Calibrator:
     def _warn_preconditions(self):
         s = self.arm.snapshot()
         if s is None:
-            self._say("尚无反馈，请检查串口、接线和固件。")
+            self._say("尚无反馈。")
             return
         if not (s.motor_inited_mask >> bd.GRIPPER) & 1:
             self._say("夹爪尚未找零（夹爪初始化标志为 0），请先完成 0x02 初始化再标定。")
@@ -396,10 +396,10 @@ def parse_args(argv=None):
         epilog="请先完成 0x02 初始化，确定夹爪零点后再标定。",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--arm-id", type=int, default=0,
-                   help="机械臂编号：0=CAN1，1=CAN2（默认 0）")
+                   help="机械臂编号：0 或 1（默认 0）")
     p.add_argument("--full-open-m", type=float, default=None, metavar="M",
                    help="最大开口距离，单位 m，须 >0；默认读取已有标定")
-    p.add_argument("--port", default=None, help="串口路径；默认自动选择，板载 USB 优先")
+    p.add_argument("--port", default=None, help="串口路径；默认自动选择受支持的端口")
     p.add_argument("--baud", type=int, default=921600, help="波特率（默认 921600）")
     p.add_argument("--calib", default=None, help="标定文件路径（默认 sdk/config/gripper_calib.json）")
     p.add_argument("--note", default="", help="标定备注")
@@ -449,8 +449,8 @@ def main(argv=None):
         return Calibrator(arm, store, full_open_m, note=args.note).run()
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attr)
-        # 退出不主动切换模式；关闭串口后由固件处理通信超时。
-        print("已退出，最后反馈模式为 %s；停止发帧约 3 s 后，固件触发通信超时并切换阻尼。" % (arm.mode_name or "未知"))
+        # 关闭链路并显示最后收到的模式。
+        print("已退出，最后反馈模式为 %s。" % (arm.mode_name or "未知"))
         link.close()
 
 

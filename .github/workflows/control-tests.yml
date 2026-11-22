@@ -1,4 +1,4 @@
-name: H7 SDK tests
+name: SDK tests
 on:
   push:
     branches: [master, main]

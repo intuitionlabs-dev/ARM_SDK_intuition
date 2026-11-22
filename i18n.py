@@ -50,7 +50,7 @@ _ZH.update({
     "session.sent_mode": "[%s] 已发 %s（%s）",
     "session.init_no_fb": "[%s] 尚无反馈，初始化未发送",
     "session.init_pose_bad":
-        "[%s] 偏离复位角超过 %.0f°（%s）。先在 STOP/阻尼下调整至 %s；再按 i 仅跳过姿态预检，固件仍会检查",
+        "[%s] 偏离复位角超过 %.0f°（%s）。先在 STOP/阻尼下调整至 %s；再按 i 仅跳过姿态预检，设备端仍会校验命令",
     "session.init_force": "[%s] 跳过姿态预检，其他条件仍检查",
     "session.what.init": "0x02 初始化",
     "session.init_sent":
@@ -73,9 +73,9 @@ _ZH.update({
     "session.keepalive_tx_fail": "[%s] 保活发送失败：%s",
     "session.hs_fb_only":
         "已收到反馈，尚无版本帧；SDK 版本码 0x%08X",
-    "session.hs_ok": "握手成功：固件版本 0x%08X 匹配（%s）",
+    "session.hs_ok": "握手成功：协议版本 0x%08X 匹配（%s）",
     "session.hs_bad":
-        "版本不匹配：固件 0x%08X，SDK 0x%08X；请使用匹配的型号、SDK 和固件",
+        "版本不匹配：设备端 0x%08X，SDK 0x%08X",
     "session.why.first_fb": "首帧反馈",
     "session.grip_uncal":
         "[%s] 夹爪未标定，显示原始角；标定：python3 -m sdk.calibrate_gripper --arm-id %d",
@@ -122,7 +122,7 @@ _EN.update({
         "[%s] No feedback; initialization not sent",
     "session.init_pose_bad":
         "[%s] Reset-pose error exceeds %.0f° (%s). Move to %s in STOP/damping; "
-        "press i again to skip the host pose check. Firmware checks still apply",
+        "press i again to skip the host pose check. Device command checks still apply",
     "session.init_force":
         "[%s] Skipping pose pre-check; other checks remain active",
     "session.what.init": "0x02 init",
@@ -151,9 +151,9 @@ _EN.update({
     "session.keepalive_tx_fail": "[%s] Keepalive send failed: %s",
     "session.hs_fb_only":
         "Feedback received, no version frame yet; SDK version 0x%08X",
-    "session.hs_ok": "Handshake complete: firmware version 0x%08X matches (%s)",
+    "session.hs_ok": "Handshake complete: protocol version 0x%08X matches (%s)",
     "session.hs_bad":
-        "Version mismatch: firmware 0x%08X, SDK 0x%08X; check profile, SDK and firmware",
+        "Version mismatch: device 0x%08X, SDK 0x%08X",
     "session.why.first_fb": "first feedback frame",
     "session.grip_uncal":
         "[%s] Gripper uncalibrated; showing raw angle. Run: python3 -m sdk.calibrate_gripper --arm-id %d",
@@ -210,7 +210,7 @@ _ZH.update({
     "app.help.two1":
         "i/o/s/d/v/x 仅作用于 > 标记的当前臂。",
     "app.help.two2": "同一串口只运行一个控制进程。",
-    "app.help.exit": "默认退出仅关闭链路，固件约 3 s 后处理超时；--stop-on-exit 可发送 STOP。",
+    "app.help.exit": "退出关闭链路；--stop-on-exit 可发送 STOP。",
     # 面板
     "app.log_head": "# sdk.tui 启动 %s port=%s fake=%s 当前臂=%d\n",
     "app.log_warn": "日志文件打开失败（%s），仅显示在屏幕",
@@ -230,12 +230,7 @@ _ZH.update({
     "app.arms_line": "两台：%s",
     "app.no_fb": "尚无反馈",
     "app.link_dead": "串口断开；检查接线和重连状态，可按 r 重开",
-    "app.hs_timeout": "握手超时（%d s 无反馈），请检查：",
-    "app.hs1": "1) 检查供电，以及 USB CDC 或 RS485 接线。",
-    "app.hs2": "2) 核对串口波特率 921600，版本码 0x%08X，版本串 %s。",
-    "app.hs3": "3) SDK 型号参数须与运行的固件匹配。",
-    "app.hs4": "4) 固件 ROBOT_LINK（UART/USB）须与接线一致。",
-    "app.hs5": "5) 查看事件区的链路或版本错误。",
+    "app.hs_timeout": "握手超时（%d s 无反馈）",
     "app.lost_prefix": "  掉线: ",
     "app.uninit_prefix": "  未初始化: ",
     "app.grip_limit_note": "（夹爪软限位依赖初始化成功）",
@@ -283,19 +278,19 @@ _ZH.update({
 
 # 命令行提示
 _ZH.update({
-    "main.cli_description": "H7 双臂控制台，支持 USB CDC 和 RS485。",
+    "main.cli_description": "双臂控制台，支持 USB CDC 和 RS485。",
     "main.epilog": "按 h 看按键表；--selftest / --fake 都不需要硬件。",
     "main.help.lang": "界面与消息语言：zh 中文、en 英文（默认 zh）",
-    "main.help.port": "串口路径；默认优先板载 USB，其次 1a86 适配器",
+    "main.help.port": "串口路径；默认优先 USB CDC，其次 RS485 适配器",
     "main.help.baud": "波特率（默认 921600）",
-    "main.help.robot_type": "H7 链路使用的上位机机械臂参数（默认 arx_x5）",
-    "main.help.arm_id": "当前臂：0=CAN1/A，1=CAN2/B（默认 %d）；按 a 切换",
+    "main.help.robot_type": "链路使用的机械臂参数（默认 arx_x5）",
+    "main.help.arm_id": "当前臂：0=A，1=B（默认 %d）；按 a 切换",
     "main.help.ctrl_hz": "0x16 下发频率（默认 100，每台）",
     "main.help.fb_hz": "面板刷新率（默认 5，按键响应不受影响）",
     "main.help.step": "初始步长 rad（%s；默认 %g）",
     "main.help.handshake": "无反馈时的握手超时提示阈值，单位 s",
     "main.help.init_tol": "复位确认与到位判断容差，单位 rad；默认取型号参数，不改变初始化预检",
-    "main.help.fake": "使用 H7 协议模拟器，不连接硬件",
+    "main.help.fake": "使用协议模拟器，不连接硬件",
     "main.help.fake_lost": "周期模拟所选臂的电机掉线掩码，如 0x41",
     "main.help.selftest": "离线自测，不接硬件不起 curses",
     "main.help.log": "追加事件日志到指定文件",
@@ -308,13 +303,13 @@ _ZH.update({
     "main.permission_hint": "串口权限不足；请检查设备权限或 dialout 组",
     "main.link_info": "链路 %s",
     "main.robot_type": "上位机机械臂参数：%s",
-    "main.fake_link": "H7 协议模拟器，无硬件连接",
+    "main.fake_link": "协议模拟器，无硬件连接",
     "main.two_arms": "双臂：%s、%s；当前 %s，按 a 切换",
     "main.usb_note": "USB CDC 不使用波特率设置 %d 控制传输速度",
-    "main.unknown_kind": "未识别链路类型，请核对端口与固件 ROBOT_LINK 配置",
+    "main.unknown_kind": "未识别链路类型。",
     "main.stopped": "已向 %s 发送 STOP。",
     "main.stop_sep": "、",
-    "main.exit_note": "已停止双臂目标流并关闭链路；固件约 3 s 后处理通信超时。",
+    "main.exit_note": "已停止双臂目标流并关闭链路。",
 })
 
 # 自测项目与结果
@@ -383,7 +378,7 @@ _ZH.update({
     "selftest.sent": "发出的：%r",
 })
 
-# Arm 预检和连接诊断。
+# Arm 预检和连接状态。
 # 公共状态名称保留中文；消息中的名称按当前语言显示。
 _ZH.update({
     "arm.snapshot_line": "臂%s 状态=%s 模式=%s 关节(rad)=%s 夹爪=%s 温度(℃)=%s 离线=%s",
@@ -395,15 +390,15 @@ _ZH.update({
     "arm.arm_id_range": "arm_id 应为 0..%d（臂数 %d），收到 %r",
     "arm.no_version": "未收到版本帧",
     "arm.ver_ok": "0x%08X（和 SDK 一致）",
-    "arm.ver_mismatch": "固件 0x%08X 与 SDK 0x%08X 不匹配，无法握手",
+    "arm.ver_mismatch": "设备端 0x%08X 与 SDK 0x%08X 不匹配，无法握手",
     "arm.connect_timeout": "连接超时：%.1f s 内未收到 %s 的反馈",
     "arm.connect_port": "  端口：%s",
     "arm.no_port": "未选择端口",
     "arm.connect_link": "  链路：open=%s up=%s",
     "arm.link_error": "  错误：%s",
     "arm.connect_rx": "  收到 %d 帧（CRC8 错 %d、CRC16 错 %d、丢弃字节 %d）",
-    "arm.connect_board_ver": "  固件版本：%s",
-    "arm.connect_zero_bytes": "  未收到有效帧；请检查接线、端口及固件 ROBOT_LINK",
+    "arm.connect_board_ver": "  协议版本：%s",
+    "arm.connect_zero_bytes": "  未收到有效帧。",
     "arm.bytes_no_version": "  已收到帧但无版本帧；请检查协议版本和链路",
     "arm.joint_angle": "关节角(rad)",
     "arm.gate_init_state": "当前 %s / %s；初始化要求 %s，或 %s 且为 STOP/阻尼",
@@ -429,21 +424,21 @@ _ZH.update({
 
 # 串口选择与连接错误
 _ZH.update({
-    "link.kind_usb": "H7 USB CDC",
+    "link.kind_usb": "USB CDC",
     "link.kind_rs485": "USB 转 RS485 适配器",
-    "link.kind_fake": "H7 协议模拟器",
+    "link.kind_fake": "协议模拟器",
     "link.kind_unknown": "未知链路",
     "link.not_link_dev": "，非控制链路",
     "link.desc_port": "%s（USB %s:%s %s %s%s）",
     "link.desc_no_ident": "%s（查不到 USB 身份）",
     "link.desc_kind_tag": "，%s",
-    "link.hint_uart": "ROBOT_LINK_UART：连接 USB 转 RS485 适配器；",
-    "link.hint_usb": "ROBOT_LINK_USB：连接板载 USB CDC（%s:%s）。",
+    "link.hint_uart": "串口连接支持 USB 转 RS485 适配器。",
+    "link.hint_usb": "串口连接支持 USB CDC。",
     "link.hint_cands": "候选端口：",
     "link.hint_no_tty": "未发现 ttyUSB/ttyACM 设备，请检查接线",
     "link.hint_port_arg": "可用 port= 指定端口。",
-    "link.reject_probe_ident": "拒绝打开 %s：J-Link 调试端口，请改用控制链路。\n  %s",
-    "link.reject_probe_name": "拒绝打开 %s：无法确认 USB 身份，路径疑似调试端口。\n  %s",
+    "link.reject_probe_ident": "拒绝打开 %s：端口未通过控制链路校验。\n  %s",
+    "link.reject_probe_name": "拒绝打开 %s：无法确认此端口可用于控制链路。\n  %s",
     "link.not_open": "链路未打开；请先 link.open() 或 arm.connect()",
     "link.down_reconnecting": "链路断开，重连 %d/%d；本帧未发送",
     "link.open_failed": "打不开 %s：%s\n%s",
@@ -496,7 +491,7 @@ _EN.update({
     "app.help.two2":
         "Use one control process per serial port.",
     "app.help.exit":
-        "Exit closes the link; firmware handles timeout after about 3 s. --stop-on-exit sends STOP.",
+        "Exit closes the link. --stop-on-exit sends STOP.",
     # 面板
     "app.log_head": "# sdk.tui started %s port=%s fake=%s arm=%d\n",
     "app.log_warn": "Cannot open log file (%s); using screen output only",
@@ -516,12 +511,7 @@ _EN.update({
     "app.arms_line": "Arms: %s",
     "app.no_fb": "No feedback yet",
     "app.link_dead": "Serial link lost; check wiring and reconnect status, or press r",
-    "app.hs_timeout": "Handshake timeout (%d s without feedback); check:",
-    "app.hs1": "1) Check power and USB CDC or RS485 wiring.",
-    "app.hs2": "2) Check baud 921600, version code 0x%08X and version string %s.",
-    "app.hs3": "3) Match the SDK robot profile to the running firmware.",
-    "app.hs4": "4) Match firmware ROBOT_LINK (UART/USB) to the connection.",
-    "app.hs5": "5) Check link and version errors in the event log.",
+    "app.hs_timeout": "Handshake timeout (%d s without feedback)",
     "app.lost_prefix": "  lost: ",
     "app.uninit_prefix": "  not initialized: ",
     "app.grip_limit_note":
@@ -576,20 +566,20 @@ _EN.update({
 # 命令行提示
 _EN.update({
     "main.cli_description":
-        "H7 dual-arm console over USB CDC or RS485.",
+        "Dual-arm console over USB CDC or RS485.",
     "main.epilog": "press h for the key list; --selftest / --fake need no hardware.",
     "main.help.lang": "UI and message language: zh or en (default zh)",
-    "main.help.port": "Serial path; prefer board USB, then a 1a86 adapter",
+    "main.help.port": "Serial path; prefer USB CDC, then an RS485 adapter",
     "main.help.baud": "baud rate (default 921600)",
-    "main.help.robot_type": "host robot parameters for the H7 link (default arx_x5)",
-    "main.help.arm_id": "Current arm: 0=CAN1/A, 1=CAN2/B (default %d); press a to switch",
+    "main.help.robot_type": "robot parameters for the link (default arx_x5)",
+    "main.help.arm_id": "Current arm: 0=A, 1=B (default %d); press a to switch",
     "main.help.ctrl_hz": "0x16 send rate (default 100, per arm)",
     "main.help.fb_hz": "panel refresh rate (default 5; key handling is unaffected)",
     "main.help.step": "initial step in rad (%s; default %g)",
     "main.help.handshake": "Handshake warning timeout without feedback, in s",
     "main.help.init_tol": "Reset confirmation and completion tolerance in rad; "
                           "defaults to profile, does not change initialization checks",
-    "main.help.fake": "Use the H7 protocol simulator without hardware",
+    "main.help.fake": "Use the protocol simulator without hardware",
     "main.help.fake_lost": "Periodically simulate this lost-motor mask on the selected arm, e.g. 0x41",
     "main.help.selftest": "offline self-test; no hardware, no curses",
     "main.help.log": "Append event logs to this file",
@@ -602,13 +592,13 @@ _EN.update({
     "main.permission_hint": "Serial permission denied; check device permissions or dialout membership",
     "main.link_info": "Link %s",
     "main.robot_type": "Host robot parameters: %s",
-    "main.fake_link": "H7 protocol simulator, no hardware connection",
+    "main.fake_link": "protocol simulator, no hardware connection",
     "main.two_arms": "Arms: %s, %s; current: %s, press a to switch",
     "main.usb_note": "USB CDC does not use baud setting %d to set transfer speed",
-    "main.unknown_kind": "Unknown link type; check port and firmware ROBOT_LINK setting",
+    "main.unknown_kind": "Unknown link type.",
     "main.stopped": "Sent STOP to %s.",
     "main.stop_sep": ", ",
-    "main.exit_note": "Both position streams stopped and link closed; firmware handles timeout after about 3 s.",
+    "main.exit_note": "Both position streams stopped and link closed.",
 })
 
 # 自测提示
@@ -688,15 +678,15 @@ _EN.update({
     "arm.arm_id_range": "arm_id must be 0..%d (arm count %d), got %r",
     "arm.no_version": "No version frame received",
     "arm.ver_ok": "0x%08X (matches the SDK)",
-    "arm.ver_mismatch": "Firmware 0x%08X differs from SDK 0x%08X; handshake blocked",
+    "arm.ver_mismatch": "Device 0x%08X differs from SDK 0x%08X; handshake blocked",
     "arm.connect_timeout": "Connection timeout: no feedback in %.1f s from %s",
     "arm.connect_port": "  Port: %s",
     "arm.no_port": "No port selected",
     "arm.connect_link": "  link: open=%s up=%s",
     "arm.link_error": "  error: %s",
     "arm.connect_rx": "  %d frames received (CRC8 err %d, CRC16 err %d, dropped bytes %d)",
-    "arm.connect_board_ver": "  Firmware version: %s",
-    "arm.connect_zero_bytes": "  No valid frames; check wiring, port and firmware ROBOT_LINK",
+    "arm.connect_board_ver": "  Protocol version: %s",
+    "arm.connect_zero_bytes": "  No valid frames received.",
     "arm.bytes_no_version": "  Frames received without a version frame; check protocol version and link",
     "arm.joint_angle": "joint angles (rad)",
     "arm.gate_init_state": "Current %s / %s; initialization requires %s, or %s with STOP/damping",
@@ -723,21 +713,21 @@ _EN.update({
 
 # 链路提示
 _EN.update({
-    "link.kind_usb": "H7 USB CDC",
+    "link.kind_usb": "USB CDC",
     "link.kind_rs485": "USB-to-RS485 adapter",
-    "link.kind_fake": "H7 protocol simulator",
+    "link.kind_fake": "protocol simulator",
     "link.kind_unknown": "unknown link",
     "link.not_link_dev": ", not a control link",
     "link.desc_port": "%s (USB %s:%s %s %s%s)",
     "link.desc_no_ident": "%s (no USB identity found)",
     "link.desc_kind_tag": ", %s",
-    "link.hint_uart": "ROBOT_LINK_UART: connect a USB-to-RS485 adapter;",
-    "link.hint_usb": "ROBOT_LINK_USB: connect board USB CDC (%s:%s).",
+    "link.hint_uart": "Serial connections support USB-to-RS485 adapters.",
+    "link.hint_usb": "Serial connections support USB CDC.",
     "link.hint_cands": "Candidate ports:",
     "link.hint_no_tty": "No ttyUSB/ttyACM devices; check wiring",
     "link.hint_port_arg": "Use port= to select a port.",
-    "link.reject_probe_ident": "Cannot open %s: J-Link debug port; use a control link.\n  %s",
-    "link.reject_probe_name": "Cannot open %s: unknown USB identity and possible debug port.\n  %s",
+    "link.reject_probe_ident": "Cannot open %s: port failed control-link validation.\n  %s",
+    "link.reject_probe_name": "Cannot open %s: port could not be validated as a control link.\n  %s",
     "link.not_open": "Link not open; call link.open() or arm.connect() first",
     "link.down_reconnecting": "Link lost, reconnect %d/%d; frame not sent",
     "link.open_failed": "cannot open %s: %s\n%s",
@@ -834,7 +824,7 @@ def arm_label(arm_id):
     if _LANG == DEFAULT_LANG:
         return board_defs.arm_label(arm_id)
     tag = "AB"[arm_id] if 0 <= arm_id < board_defs.ARM_NUM else "?"
-    return "Arm%s(arm_id=%d, CAN%d)" % (tag, arm_id, arm_id + 1)
+    return "Arm%s(arm_id=%d)" % (tag, arm_id)
 
 
 def expand_mask(mask):

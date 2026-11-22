@@ -4,17 +4,17 @@
 
 ## 创建链路
 
-`sdk.Link(port, robot_type=...)` 创建 H7 串口链路。`robot_type` 支持 `arx_x5` 和 `metal_arm`；完整构造参数见 [API](../API.md)。
+`sdk.Link(port, robot_type=...)` 创建串口链路。`robot_type` 支持 `arx_x5` 和 `metal_arm`；完整构造参数见 [API](../API.md)。
 
-### H7 连接
+### 串口连接
 
 ```python
 import sdk
 
-link = sdk.Link("/dev/ttyACM0", robot_type="arx_x5")
+link = sdk.Link(robot_type="arx_x5")
 ```
 
-连接 Metal 参数配置时，将 `robot_type` 设为 `"metal_arm"`，并使用匹配的 H7 固件。构造对象不打开串口，`open()` 或 `Arm.connect()` 才建立连接。
+使用 Metal 参数配置时，将 `robot_type` 设为 `"metal_arm"`。构造对象不打开串口，`open()` 或 `Arm.connect()` 才建立连接。
 
 ### 离线协议模拟
 
@@ -24,16 +24,15 @@ from sdk.sim import SimLink
 link = SimLink(robot_type="arx_x5")
 ```
 
-`SimLink` 模拟 H7 协议与状态机，不访问硬件。可选择 `robot_type="metal_arm"` 验证对应的上位机参数与夹爪换算。实际动力学、负载和总线时序需要设备验证。
+`SimLink` 模拟协议与状态机。可选择 `robot_type="metal_arm"` 验证对应的上位机参数与夹爪换算。
 
 ## 公共控制流程
 
-下面的 `operate()` 接受已经打开的链路，两种型号共用此流程。它执行初始化，短时间保持初始化后的关节目标，然后进入阻尼。运行前需确认机械臂处于复位参考附近、工作空间可运动；各型号初始化中的夹爪动作见 [行为表](ROBOTS.md#控制行为)。
+下面的 `operate()` 接受已经打开的链路，两种型号共用此流程。它执行初始化，短时间保持初始化后的关节目标，然后进入阻尼。运行前需确认机械臂处于复位参考附近、工作空间可运动；初始化接口见 [行为表](ROBOTS.md#控制行为)。
 
 ```python
 import time
 import sdk
-
 
 def wait_all(arms, predicate, timeout=20.0):
     deadline = time.monotonic() + timeout
@@ -44,7 +43,6 @@ def wait_all(arms, predicate, timeout=20.0):
             return
         time.sleep(0.02)
     raise TimeoutError("机械臂未在期限内达到目标状态")
-
 
 def operate(link, arm_ids=(0,)):
     arms = [sdk.Arm(arm_id, link) for arm_id in arm_ids]
@@ -76,8 +74,7 @@ def operate(link, arm_ids=(0,)):
         if pending:
             wait_all(pending, lambda a: a.mode == a.board_defs.MODE_DAMPING, timeout=2.0)
 
-
-# 实机连接请改用 sdk.Link("/dev/ttyACM0", robot_type="arx_x5")。
+# 实机连接请改用 sdk.Link(robot_type="arx_x5")。
 from sdk.sim import SimLink
 
 with SimLink(robot_type="arx_x5") as link:
@@ -98,8 +95,8 @@ with SimLink(robot_type="arx_x5") as link:
 ## 反馈、夹爪和退出
 
 1. `arm.snapshot()` 返回同一帧的状态、模式、关节位置速度、温度和夹爪开口；连续读取多个属性可能跨帧。
-2. `gripper_m` 使用链路对应的换算模型；`gripper_raw_deg` 为调试用原始电机角。两者都省略时保持当前夹爪角，两者同时提供会报错。
+2. `gripper_m` 使用链路对应的换算模型；`gripper_raw_deg` 使用原始角度，单位为 deg。两者都省略时保持当前夹爪角，两者同时提供会报错。
 3. `GateRejected` 表示预检失败，`FeedbackStale` 表示预检反馈超过 100 ms 或缺失，`LinkError` 表示链路故障。`force=True` 只跳过上位机预检。
-4. 共享链路由外层上下文统一关闭。退出前放稳或支撑机械臂；串口关闭行为见 [链路生命周期](BACKENDS.md#生命周期与诊断)。
+4. 共享链路由外层上下文统一关闭。退出前放稳或支撑机械臂；串口关闭行为见 [链路生命周期](BACKENDS.md#生命周期)。
 
 方法签名、单位、预检条件和异常见 [API 参考](../API.md)。

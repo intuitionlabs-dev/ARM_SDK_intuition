@@ -10,7 +10,7 @@ from ..errors import CalibrationError
 from ..protocol import fnv1a32
 from .common import *  # 各型号同时导出公共协议常量。
 
-# 版本串与固件 App/profiles/metal.c 一致；版本码为 FNV-1a 32 位哈希。
+# 握手协议版本码为版本串的 FNV-1a 32 位哈希。
 VERSION_STRING = "Intuition-Metal-Arm-v0.7"
 VERSION_CODE = fnv1a32(VERSION_STRING)
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "arx-x5-control"
 version = "0.6.0"
-description = "Python SDK and terminal UI for ARX X5 and Metal Arm via H7 controllers"
+description = "Python SDK and terminal UI for ARX X5 and Metal Arm over serial links"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["pyserial>=3.5"]

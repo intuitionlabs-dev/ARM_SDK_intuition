@@ -2,7 +2,7 @@
 
 # 拓扑
 
-# H7 支持的臂数，见 App/inc/robot_def.h；编号须小于 ARM_NUM。
+# 有效臂编号为 0..ARM_NUM-1。
 ARM_NUM = 2
 
 ARM_JOINT_NUM = 6          # 关节数
@@ -14,9 +14,9 @@ AXIS_NAMES = JOINT_NAMES + ("夹爪",)   # 轴索引对应掉线和初始化掩�
 
 
 def arm_label(arm_id):
-    """返回包含臂编号和 CAN 通道的显示名称。"""
+    """返回包含臂编号的显示名称。"""
     tag = "AB"[arm_id] if 0 <= arm_id < len("AB") else "?"
-    return "臂%s(arm_id=%d, CAN%d)" % (tag, arm_id, arm_id + 1)
+    return "臂%s(arm_id=%d)" % (tag, arm_id)
 
 
 def expand_mask(mask):
@@ -26,9 +26,9 @@ def expand_mask(mask):
     return " ".join(AXIS_NAMES[i] for i in range(ARM_MOTOR_NUM) if mask >> i & 1)
 
 
-# 状态 / 模式名（App/inc/robot_def.h、robot_state.h）
+# 状态和模式名称。
 
-# 模式值须与固件及调试工具保持一致。
+# 协议模式码。
 MODE_STOP = 0
 MODE_RUN = 1
 MODE_DAMPING = 2
@@ -41,7 +41,7 @@ MODE_NAME = {
     MODE_GRAVITY: "gravity(重力补偿)",
 }
 
-# 状态值须与固件 robot_state.h 枚举一致。
+# 协议状态码。
 STATE_WAIT_HANDSHAKE = 0
 STATE_OFFLINE_WAIT = 1
 STATE_WAIT_INIT = 2
@@ -62,7 +62,7 @@ STATE_NAME = {
     STATE_RESETTING: "复位中",
 }
 
-# 0x11 使用的设零状态与结果，见固件 App/inc/arm_zero.h。
+# 0x11 使用的设零状态与结果。
 ZERO_STATE_NAME = {
     0: "空闲", 1: "失能中", 2: "等待失能确认", 3: "发送设零命令", 4: "等待结果", 5: "完成", 6: "超时",
 }

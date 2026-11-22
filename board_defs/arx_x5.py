@@ -1,17 +1,16 @@
-"""ARX X5 限位与复位参考，与 H7 固件对应。"""
+"""ARX X5 限位与复位参考。"""
 
 import math
 
 from ..protocol import fnv1a32
 from .common import *  # 各型号同时导出公共协议常量。
 
-# 版本串与固件 App/profiles/arx_x5.c 一致；版本码为 FNV-1a 32 位哈希。
+# 握手协议版本码为版本串的 FNV-1a 32 位哈希。
 VERSION_STRING = "Intuition-ARX-X5-2023-v0.6"
 VERSION_CODE = fnv1a32(VERSION_STRING)
 
 JOINT_ANGLE_MIN = (-115.0, 0.5, 0.5, -90.0, -90.0, -112.87)
 JOINT_ANGLE_MAX = (90.0, 206.26, 171.88, 90.0, 90.0, 119.17)
-# 原始角负向闭合、正向张开；软限位不替代实测开口标定。
 GRIPPER_ANGLE_MIN = -157.0
 GRIPPER_ANGLE_MAX = 142.0
 GRIPPER_TORQUE_MAX_NM = 10.0

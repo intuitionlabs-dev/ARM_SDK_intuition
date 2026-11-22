@@ -1,4 +1,4 @@
-"""H7 串口链路：端口选择、后台接收、协议解析和按 arm_id 分流。
+"""串口链路：端口选择、后台接收、协议解析和按 arm_id 分流。
 
 同一串口只由一个进程和一个 Link 使用，双臂共享该链路。
 每台臂须独立保活；命令预检由 Arm 执行。
@@ -20,9 +20,9 @@ from .errors import LinkError, NotConnected
 BY_ID_DIR = "/dev/serial/by-id"
 DEFAULT_PORT = BY_ID_DIR + "/usb-1a86_USB_Serial-if00-port0"
 
-SEGGER_VID = "1366"     # SEGGER 调试探针，不用于控制链路
-ADAPTER_VID = "1a86"    # 沁恒 USB 转串口 / RS485 适配器
-BOARD_VID = "0483"      # STM32 板载 USB CDC
+SEGGER_VID = "1366"     # 端口校验使用的厂商标识
+ADAPTER_VID = "1a86"    # RS485 适配器识别标识
+BOARD_VID = "0483"      # USB CDC 识别标识
 BOARD_PID = "5740"
 
 FORBIDDEN_HINTS = ("segger", "j-link", "jlink")
@@ -33,7 +33,6 @@ RECONNECT_WAIT_S = 0.5        # 首次重试等待时间
 RECONNECT_MAX_WAIT_S = 2.0    # 最大退避时间
 RECONNECT_MAX_TRIES = 10      # 一轮掉线最多试几次（<=0 = 不限）
 
-# 链路类型对应固件 ROBOT_LINK。
 # 保存翻译键，在显示时取文案，以支持运行时切换语言。
 KIND_NAMES = {"USB": "link.kind_usb", "RS485": "link.kind_rs485",
               "FAKE": "link.kind_fake"}
@@ -53,7 +52,7 @@ def _read_sys(path):
 
 
 def usb_identity(path):
-    """沿 sysfs 查找 USB 身份；查不到返回 None，缺失序列号记为空串。"""
+    """沿 sysfs 查找 USB 身份；查不到返回 None。"""
     name = os.path.basename(os.path.realpath(path))
     d = os.path.realpath("/sys/class/tty/%s/device" % name)
     for _ in range(8):
@@ -74,7 +73,7 @@ def usb_identity(path):
 
 
 def same_usb_ident(a, b):
-    """比较 VID:PID；两侧均有序列号时还须匹配序列号。不访问设备。"""
+    """根据 USB 身份字段判断是否为同一设备。"""
     if not a or not b:
         return False
     if a["idVendor"].lower() != b["idVendor"].lower() or \
@@ -105,7 +104,7 @@ def classify_port(ident):
 
 
 def _pick_from(candidates):
-    """优先选择板载 USB，其次 RS485；同类设备按路径字典序选择。"""
+    """优先选择受支持的 USB CDC，其次 RS485；同类设备按路径字典序选择。"""
     for want in ("USB", "RS485"):
         for path, ident in sorted(candidates, key=lambda c: c[0]):
             if classify_port(ident) == want:
@@ -139,7 +138,7 @@ def list_links():
 
 
 def pick_default_port():
-    """优先选择板载 USB，再选 RS485，最后使用回退路径；排除 SEGGER 探针。"""
+    """优先选择受支持的 USB CDC，再选 RS485，最后使用回退路径。"""
     got = _pick_from(_port_candidates())
     return got if got else DEFAULT_PORT
 
@@ -157,9 +156,9 @@ def describe_port(path):
 
 
 def link_hint():
-    """返回 USB CDC 和 RS485 的接线及固件配置提示。"""
+    """返回链路类型和候选端口说明。"""
     lines = [i18n.tr("link.hint_uart"),
-             i18n.tr("link.hint_usb", BOARD_VID, BOARD_PID)]
+             i18n.tr("link.hint_usb")]
     cands = list_links()
     if cands:
         lines.append(i18n.tr("link.hint_cands"))
@@ -173,7 +172,7 @@ def link_hint():
 
 
 def assert_port_allowed(path):
-    """拒绝调试探针端口；优先核对 USB 身份，身份缺失时检查路径。"""
+    """校验端口是否可用于控制链路。"""
     if not path:
         return
     ident = usb_identity(path)
@@ -182,7 +181,7 @@ def assert_port_allowed(path):
         if ident["idVendor"].lower() == SEGGER_VID or any(h in blob for h in FORBIDDEN_HINTS):
             raise LinkError(i18n.tr("link.reject_probe_ident", path, describe_port(path)))
         return
-    # 身份未知时拒绝 SEGGER 路径及裸 ttyACM 路径，避免占用探针。
+    # USB 身份缺失时按路径执行端口校验。
     real = os.path.realpath(path)
     blob = (path + " " + real).lower()
     if any(h in blob for h in FORBIDDEN_HINTS) or \
@@ -254,7 +253,7 @@ class ArmChannel:
 class Link:
     """串口链路，后台接收，发送时加锁。
 
-    robot_type 选择整条链路的上位机参数，默认 ARX，不修改固件。
+    robot_type 选择整条链路的参数，默认 ARX。
     读写失败后按配置退避重连；达到重试上限后等待 reopen()。
     发送计数仅表示写入串口，命令是否执行应通过反馈判断。
     """
@@ -280,7 +279,7 @@ class Link:
         self.kind = None
         self.link_up = False
         self.link_err = None
-        self.board_version = None         # 最近收到的固件版本码
+        self.board_version = None         # 最近收到的协议版本码
         self.version_seen = False
         self.link_status = None           # 最近的链路级 0x81 状态
         self.link_status_t = None         # 接收时刻，使用单调时钟
@@ -604,7 +603,7 @@ class Link:
                 return None
             time.sleep(poll)
 
-    # 诊断
+    # 链路状态
 
     @property
     def stats(self):
