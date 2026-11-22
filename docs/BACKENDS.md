@@ -1,17 +1,18 @@
 # 链路与会话
 
-SDK 通过 `sdk.Link` 连接设备，向 `sdk.Arm` 提供命令与反馈通道。机械臂型号决定上位机限位、复位参考、夹爪换算及握手版本码。
+SDK 通过 `sdk.Link` 连接单片机，向 `sdk.Arm` 提供命令与反馈通道。机械臂型号决定上位机限位、复位参考、夹爪换算及握手版本码。
 
 ## 链路配置
 
 | 项目 | 配置与行为 |
 | --- | --- |
-| 控制路径 | `sdk.Arm → sdk.Link → 串口` |
-| 设备连接 | USB CDC 或 USB 转 RS485 |
+| 控制路径 | `sdk.Arm → sdk.Link → 串口 → 单片机 → 电机` |
+| 单片机连接 | USB CDC 或 USB 转 RS485 |
 | 创建入口 | `sdk.Link(port, robot_type=...)` |
 | 型号选择 | `robot_type="arx_x5"` 或 `"metal_arm"`，默认 ARX |
 | 双臂组织 | 一个共享串口链路，通过 `arm_id` 区分 |
-| 离线模拟 | `sdk.sim.SimLink`，模拟协议及状态机 |
+| 控制执行 | 单片机执行状态机、轨迹、动力学和电机控制 |
+| 离线模拟 | `sdk.sim.SimLink`，模拟单片机协议及状态机 |
 
 `arm_id` 选择连接中的臂。链路创建后，通过 `sdk.Arm(arm_id, link)` 或 `link.arm(arm_id)` 操作。
 具体构造代码见 [Python 调用](PYTHON.md#创建链路)，终端启动参数见 [TUI 调用](TUI.md#启动入口)。
@@ -40,7 +41,7 @@ SDK 通过 `sdk.Link` 连接设备，向 `sdk.Arm` 提供命令与反馈通道�
 | `reopen()` | 重开通信，读取当前状态 |
 | `close()` | 关闭串口并停止接收线程 |
 | 原始命令 | `send_raw()` 支持协议透传 |
-| 链路统计 | 串口帧、CRC 和 `LinkStatus` |
+| 链路统计 | 串口帧、CRC 和单片机报告的 `LinkStatus` |
 
 STOP 不提供位置保持或重力补偿。关闭前须放稳或支撑机械臂；关闭串口不等于已经禁用电机。共享链路由创建它的应用统一关闭，`Arm.close()` 只关闭该对象自行创建的链路。
 

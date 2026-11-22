@@ -1,4 +1,4 @@
-"""机械臂 SDK，提供 Link 链路和 Arm 控制接口。
+"""机械臂 SDK，通过 Link 连接单片机，由 Arm 提供控制接口。
 
 支持 ARX X5 和 Metal Arm。关节使用 rad、rad/s 和 rad/s²，夹爪开口使用 m。
 双臂共用一个 Link，通过 arm_id 区分；调用方须为每台臂持续发送命令或保活。

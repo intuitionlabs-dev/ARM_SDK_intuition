@@ -50,7 +50,7 @@ _ZH.update({
     "session.sent_mode": "[%s] 已发 %s（%s）",
     "session.init_no_fb": "[%s] 尚无反馈，初始化未发送",
     "session.init_pose_bad":
-        "[%s] 偏离复位角超过 %.0f°（%s）。先在 STOP/阻尼下调整至 %s；再按 i 仅跳过姿态预检，设备端仍会校验命令",
+        "[%s] 偏离复位角超过 %.0f°（%s）。先在 STOP/阻尼下调整至 %s；再按 i 仅跳过姿态预检，单片机仍会校验命令",
     "session.init_force": "[%s] 跳过姿态预检，其他条件仍检查",
     "session.what.init": "0x02 初始化",
     "session.init_sent":
@@ -75,7 +75,7 @@ _ZH.update({
         "已收到反馈，尚无版本帧；SDK 版本码 0x%08X",
     "session.hs_ok": "握手成功：协议版本 0x%08X 匹配（%s）",
     "session.hs_bad":
-        "版本不匹配：设备端 0x%08X，SDK 0x%08X",
+        "版本不匹配：单片机 0x%08X，SDK 0x%08X",
     "session.why.first_fb": "首帧反馈",
     "session.grip_uncal":
         "[%s] 夹爪未标定，显示原始角；标定：python3 -m sdk.calibrate_gripper --arm-id %d",
@@ -122,7 +122,7 @@ _EN.update({
         "[%s] No feedback; initialization not sent",
     "session.init_pose_bad":
         "[%s] Reset-pose error exceeds %.0f° (%s). Move to %s in STOP/damping; "
-        "press i again to skip the host pose check. Device command checks still apply",
+        "press i again to skip the host pose check. Microcontroller command checks still apply",
     "session.init_force":
         "[%s] Skipping pose pre-check; other checks remain active",
     "session.what.init": "0x02 init",
@@ -153,7 +153,7 @@ _EN.update({
         "Feedback received, no version frame yet; SDK version 0x%08X",
     "session.hs_ok": "Handshake complete: protocol version 0x%08X matches (%s)",
     "session.hs_bad":
-        "Version mismatch: device 0x%08X, SDK 0x%08X",
+        "Version mismatch: microcontroller 0x%08X, SDK 0x%08X",
     "session.why.first_fb": "first feedback frame",
     "session.grip_uncal":
         "[%s] Gripper uncalibrated; showing raw angle. Run: python3 -m sdk.calibrate_gripper --arm-id %d",
@@ -390,14 +390,14 @@ _ZH.update({
     "arm.arm_id_range": "arm_id 应为 0..%d（臂数 %d），收到 %r",
     "arm.no_version": "未收到版本帧",
     "arm.ver_ok": "0x%08X（和 SDK 一致）",
-    "arm.ver_mismatch": "设备端 0x%08X 与 SDK 0x%08X 不匹配，无法握手",
+    "arm.ver_mismatch": "单片机 0x%08X 与 SDK 0x%08X 不匹配，无法握手",
     "arm.connect_timeout": "连接超时：%.1f s 内未收到 %s 的反馈",
     "arm.connect_port": "  端口：%s",
     "arm.no_port": "未选择端口",
     "arm.connect_link": "  链路：open=%s up=%s",
     "arm.link_error": "  错误：%s",
     "arm.connect_rx": "  收到 %d 帧（CRC8 错 %d、CRC16 错 %d、丢弃字节 %d）",
-    "arm.connect_board_ver": "  协议版本：%s",
+    "arm.connect_board_ver": "  单片机协议版本：%s",
     "arm.connect_zero_bytes": "  未收到有效帧。",
     "arm.bytes_no_version": "  已收到帧但无版本帧；请检查协议版本和链路",
     "arm.joint_angle": "关节角(rad)",
@@ -426,7 +426,7 @@ _ZH.update({
 _ZH.update({
     "link.kind_usb": "USB CDC",
     "link.kind_rs485": "USB 转 RS485 适配器",
-    "link.kind_fake": "协议模拟器",
+    "link.kind_fake": "单片机协议模拟器",
     "link.kind_unknown": "未知链路",
     "link.not_link_dev": "，非控制链路",
     "link.desc_port": "%s（USB %s:%s %s %s%s）",
@@ -678,14 +678,14 @@ _EN.update({
     "arm.arm_id_range": "arm_id must be 0..%d (arm count %d), got %r",
     "arm.no_version": "No version frame received",
     "arm.ver_ok": "0x%08X (matches the SDK)",
-    "arm.ver_mismatch": "Device 0x%08X differs from SDK 0x%08X; handshake blocked",
+    "arm.ver_mismatch": "Microcontroller 0x%08X differs from SDK 0x%08X; handshake blocked",
     "arm.connect_timeout": "Connection timeout: no feedback in %.1f s from %s",
     "arm.connect_port": "  Port: %s",
     "arm.no_port": "No port selected",
     "arm.connect_link": "  link: open=%s up=%s",
     "arm.link_error": "  error: %s",
     "arm.connect_rx": "  %d frames received (CRC8 err %d, CRC16 err %d, dropped bytes %d)",
-    "arm.connect_board_ver": "  Protocol version: %s",
+    "arm.connect_board_ver": "  Microcontroller protocol version: %s",
     "arm.connect_zero_bytes": "  No valid frames received.",
     "arm.bytes_no_version": "  Frames received without a version frame; check protocol version and link",
     "arm.joint_angle": "joint angles (rad)",
@@ -715,7 +715,7 @@ _EN.update({
 _EN.update({
     "link.kind_usb": "USB CDC",
     "link.kind_rs485": "USB-to-RS485 adapter",
-    "link.kind_fake": "protocol simulator",
+    "link.kind_fake": "microcontroller protocol simulator",
     "link.kind_unknown": "unknown link",
     "link.not_link_dev": ", not a control link",
     "link.desc_port": "%s (USB %s:%s %s %s%s)",

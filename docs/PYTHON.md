@@ -4,7 +4,7 @@
 
 ## 创建链路
 
-`sdk.Link(port, robot_type=...)` 创建串口链路。`robot_type` 支持 `arx_x5` 和 `metal_arm`；完整构造参数见 [API](../API.md)。
+`sdk.Link(port, robot_type=...)` 创建连接单片机的串口链路。`robot_type` 支持 `arx_x5` 和 `metal_arm`；完整构造参数见 [API](../API.md)。
 
 ### 串口连接
 
@@ -24,7 +24,7 @@ from sdk.sim import SimLink
 link = SimLink(robot_type="arx_x5")
 ```
 
-`SimLink` 模拟协议与状态机。可选择 `robot_type="metal_arm"` 验证对应的上位机参数与夹爪换算。
+`SimLink` 模拟单片机协议与状态机。可选择 `robot_type="metal_arm"` 验证对应的上位机参数与夹爪换算。
 
 ## 公共控制流程
 

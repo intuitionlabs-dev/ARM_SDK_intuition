@@ -1,4 +1,4 @@
-"""串口链路：端口选择、后台接收、协议解析和按 arm_id 分流。
+"""单片机串口链路：端口选择、后台接收、协议解析和按 arm_id 分流。
 
 同一串口只由一个进程和一个 Link 使用，双臂共享该链路。
 每台臂须独立保活；命令预检由 Arm 执行。
@@ -251,7 +251,7 @@ class ArmChannel:
 # 链路
 
 class Link:
-    """串口链路，后台接收，发送时加锁。
+    """连接单片机的串口链路，后台接收，发送时加锁。
 
     robot_type 选择整条链路的参数，默认 ARX。
     读写失败后按配置退避重连；达到重试上限后等待 reopen()。
@@ -279,7 +279,7 @@ class Link:
         self.kind = None
         self.link_up = False
         self.link_err = None
-        self.board_version = None         # 最近收到的协议版本码
+        self.board_version = None         # 最近收到的单片机协议版本码
         self.version_seen = False
         self.link_status = None           # 最近的链路级 0x81 状态
         self.link_status_t = None         # 接收时刻，使用单调时钟

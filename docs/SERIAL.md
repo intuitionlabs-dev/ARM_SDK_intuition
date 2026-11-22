@@ -1,6 +1,7 @@
 # 串口接入与协议
 
-Python 和 TUI 通过串口协议提交命令并读取反馈。
+Python 和 TUI 通过串口协议向单片机提交命令，并读取单片机反馈。
+单片机执行控制状态机、轨迹、动力学和电机控制。
 公共操作见 [Python 调用](PYTHON.md) 和 [TUI 调用](TUI.md)。
 
 ## 连接与臂编号
@@ -16,7 +17,7 @@ Python 和 TUI 通过串口协议提交命令并读取反馈。
 ## 握手与重连
 
 1. `Arm.connect()` 打开链路并发送协议版本帧。
-2. 收到第一帧机械臂反馈后连接成功。握手要求双方协议版本匹配。
+2. 收到第一帧机械臂反馈后连接成功。握手要求 SDK 与单片机协议版本匹配。
 3. 读写失败时，串口链路按 USB 身份寻找设备并退避重连；默认最多 10 次，初始等待 0.5 s，上限 2 s。
 4. 恢复连接后重新检查状态、在线掩码和反馈年龄，再决定初始化或切换模式。重连成功不代表机械臂已可运动。
 
@@ -24,7 +25,7 @@ Python 和 TUI 通过串口协议提交命令并读取反馈。
 
 ## 帧接口
 
-本节描述 SDK 收发的串口帧。
+本节描述 SDK 与单片机之间的串口帧。
 
 payload 全是小端。头部 6 字节 =
 `AA 55 | type_id | datalen | arm_id | crc8`，尾 2 字节 crc16，整帧长 = `8 + datalen`。
@@ -33,18 +34,18 @@ payload 全是小端。头部 6 字节 =
 
 | type_id（简称 tid） | 帧名 | 发送方 | payload | 线上单位 | SDK 方法 |
 |---|---|---|---|---|---|
-| `0x01` | 版本帧 | 上位机、设备端 | 4 B：u32 版本码 | — | `send_version()` / `keepalive()` |
+| `0x01` | 版本帧 | 上位机、单片机 | 4 B：u32 版本码 | — | `send_version()` / `keepalive()` |
 | `0x02` | 初始化帧 | 上位机 | 0 | — | `init_arm()` |
 | `0x10` | 设零帧 | 上位机 | 0 | — | `set_zero()` |
-| `0x11` | 设零回复帧 | 设备端 | 12 B：u8 state + u8[7] result + u32 用时 ms | — | `wait_setzero_ack()` / `last_setzero_ack` |
+| `0x11` | 设零回复帧 | 单片机 | 12 B：u8 state + u8[7] result + u32 用时 ms | — | `wait_setzero_ack()` / `last_setzero_ack` |
 | `0x12` | 启动帧 | 上位机 | 0 | — | `start()`（进 run 档） |
 | `0x13` | 重力补偿帧 | 上位机 | 0 | — | `gravity()` |
 | `0x14` | 停止帧 | 上位机 | 0 | — | `stop()`（STOP / 软停机） |
 | `0x15` | 阻尼帧 | 上位机 | 0 | — | `damping()` |
 | `0x16` | 位置控制帧 | 上位机 | 80 B，依次为 f32[6] 关节角、f32 夹爪角、f32 夹爪力矩上限、f32[6] 关节速度、f32[6] 关节加速度 | deg、N·m、deg/s、deg/s² | `send_ctrl_pos()` |
 | `0x18` | 一键复位帧 | 上位机 | 0 | — | `reset()` |
-| `0x80` | 反馈帧 | 设备端 | 63 B：4×u8 + f32[6] + f32[6] + f32 + u8[7] | deg, deg/s, ℃ | `arm.feedback` / `snapshot()` |
-| `0x81` | 链路状态帧 | 设备端 | 84 B：21×u32（见下） | — | `link.link_status` |
+| `0x80` | 反馈帧 | 单片机 | 63 B：4×u8 + f32[6] + f32[6] + f32 + u8[7] | deg, deg/s, ℃ | `arm.feedback` / `snapshot()` |
+| `0x81` | 链路状态帧 | 单片机 | 84 B：21×u32（见下） | — | `link.link_status` |
 | 其它 | （自定义） | 上位机 | 任意 | — | `send_raw(tid, payload)` —— **通用透传入口**，无预检无换算 |
 
 `0x80` 的 4 个 u8 依次是 `mode`（档位）、`robot_state`（状态）、`motor_lost_mask`（掉线掩码）、
@@ -52,10 +53,10 @@ payload 全是小端。头部 6 字节 =
 温度。掩码 **bit0..5 = j1..j6、bit6 = 夹爪**。
 
 `0x81` 是握手后的链路状态帧，链路级只有一份，不按台分。它报的是"距上一帧 `0x81`
-之间，设备端收到了你多少帧"，**每个数都是窗口增量**，不是累计值。字段有 `rx_total`（解出来的
+之间，单片机收到了你多少帧"，**每个数都是窗口增量**，不是累计值。字段有 `rx_total`（解出来的
 整帧数）、`rx_by_tid[11]`（按 tid 分，下标同 `protocol.LINK_TID_ORDER`，最后一格是"表外的
 码"）、`crc8_err`、`crc16_err`、`drop_bytes`（没能组成任何有效帧的字节数）、`bad_arm`、
-`over_len`、`ring_drop`、`gated`（被握手闸门挡下的）、`tx_fail`（设备端**发**帧失败）、
+`over_len`、`ring_drop`、`gated`（被握手闸门挡下的）、`tx_fail`（单片机**发**帧失败）、
 `dt_ms`。`link.link_status` 存最近一帧，`link.stats["link_status"]` 同款；没收到过是 `None`。
 
 ## 夹爪标定工具

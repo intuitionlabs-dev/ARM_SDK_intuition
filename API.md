@@ -1,13 +1,13 @@
 # SDK API 参考
 
-`sdk.Arm` 为 Python 程序与 TUI 提供公共控制方法。控制命令通过串口发送；机械臂型号在创建链路时选择，之后的常规操作使用本页接口。
+`sdk.Arm` 为 Python 程序与 TUI 提供公共控制方法。控制命令通过串口发送至单片机；机械臂型号在创建链路时选择，之后的常规操作使用本页接口。
 
 | 约定 | 内容 |
 | --- | --- |
 | 单位 | 关节 rad / rad/s，夹爪 m，温度 ℃；`Feedback` 与协议 payload 使用 deg / deg/s |
 | 预检 | 命令使用最近反馈和 `arm.board_defs`；反馈缺失或超过 100 ms 抛 `FeedbackStale` |
 | 拒绝 | 预检不满足条件抛 `GateRejected`，命令不提交 |
-| `force=True` | 只跳过上位机预检，设备端仍会校验命令 |
+| `force=True` | 只跳过上位机预检，单片机仍会校验命令 |
 | 结果 | 提交成功不代表执行完成，通过状态、模式与反馈判断 |
 
 完整调用见 [Python 示例](docs/PYTHON.md)，按键与启动参数见 [TUI](docs/TUI.md)。
@@ -16,7 +16,7 @@
 
 | 类别 | 创建入口 | 配置 |
 | --- | --- | --- |
-| 串口 | `sdk.Link(port, robot_type=...)` | 参数配置选 `arx_x5` / `metal_arm` |
+| 单片机 | `sdk.Link(port, robot_type=...)` | 参数配置选 `arx_x5` / `metal_arm` |
 
 构造代码见 [创建链路](docs/PYTHON.md#创建链路)。通信、关闭、重连和状态读取见 [链路生命周期](docs/BACKENDS.md#生命周期)，型号参数见 [型号对照](docs/ROBOTS.md)。
 
@@ -27,7 +27,7 @@
 | 名字 | 是什么 |
 |---|---|
 | `sdk.Arm` | 一台臂。**主入口**，见第 3 节 |
-| `sdk.Link` | 串口链路。见第 2 节 |
+| `sdk.Link` | 连接单片机的串口链路。见第 2 节 |
 | `sdk.Snapshot` | 同一帧里换算好的一致视图（第 4 节） |
 | `sdk.Feedback` / `sdk.SetZeroAck` / `sdk.LinkStatus` | 原始帧数据（**线上单位**） |
 | `sdk.GripperCalibration` / `sdk.GripperCalibStore` | 夹爪标定模型和文件存取（第 6 节） |
@@ -39,7 +39,7 @@
 
 ## 2. `Link` —— 一条链路
 
-本节描述 `sdk.Link` 串口后端。
+本节描述 `sdk.Link` 与单片机之间的串口链路。
 
 一条链路承载**所有**臂的帧（靠帧头 `arm_id` 分），因此两台臂必须**共享一个 `Link`**；
 两个进程争用同一个串口会导致字节流交错。
@@ -75,7 +75,7 @@ assert arm.board_defs is sdk.board_defs.metal_arm
 ```
 
 **属性**：`port`、`baud`、`kind`（`"USB"` / `"RS485"` / `"FAKE"` / `None`）、`link_up`、
-`link_err`、`board_version`（设备端回的版本码）、`version_seen`、`link_status`（最近一帧 `0x81`）、
+`link_err`、`board_version`（单片机回的版本码）、`version_seen`、`link_status`（最近一帧 `0x81`）、
 `n_tx`、`n_rx`、`n_bad_arm`、`auto_reconnect`、`open_gen`（每成功 open 一次 +1）、
 `n_reconnect`（自动重连成功过的次数）、`reconnect_tries`（这一轮掉线试到第几次）、
 `reconnect_err`、`reconnect_gave_up`。
@@ -93,9 +93,9 @@ assert arm.board_defs is sdk.board_defs.metal_arm
 |---|---|
 | `port` / `kind` / `is_open` | 串口路径、链路类型、是否已打开 |
 | `link_up` / `link_err` | 链路是否正常 / 最后一条错误（读写出错会把它置假） |
-| `n_tx` | 发出的帧数（**不代表**设备端已收到） |
+| `n_tx` | 发出的帧数（**不代表**单片机已收到） |
 | `n_rx` | 收到的**整链路段**帧数（两台臂之和） |
-| `n_bad_arm` | `arm_id` 越界、被丢弃的帧数（设备端侧同样丢弃） |
+| `n_bad_arm` | `arm_id` 越界、被丢弃的帧数（单片机侧同样丢弃） |
 | `n_err_crc8` / `n_err_crc16` / `n_drop` | CRC8 错帧数 / CRC16 错帧数 / 被丢弃的字节数 |
 | `board_version` | 最近收到的协议版本码；尚未收到时为 `None` |
 | `link_status` | 最近一帧 `LinkStatus`（`0x81` 链路状态帧）；尚未收到时为 `None` |
@@ -275,12 +275,12 @@ except sdk.ArError as e:
 | `crc8_err` / `crc16_err` | 校验失败被丢弃的帧数 |
 | `drop_bytes` | 写入解析器但**未能组成任何有效帧**的字节数 |
 | `bad_arm` / `over_len` | arm_id 越界 / payload 超长被丢弃的帧数（都正常恒 0） |
-| `ring_drop` | 收包环满被丢弃的帧数（设备端处理能力不足） |
+| `ring_drop` | 收包环满被丢弃的帧数（单片机处理能力不足） |
 | `gated` | 被握手闸门拒绝的帧数（握手前发的非 `0x01` 帧都算） |
-| `tx_fail` | 设备端**发**帧失败的次数 |
+| `tx_fail` | 单片机**发**帧失败的次数 |
 | `dt_ms` | 距上一帧 `0x81` 的实际毫秒数（标称 100） |
 
-**每个数都是窗口增量**（窗口 = 设备端发上一帧 `0x81` 到发这一帧之间），不是累计值。两个窗口
+**每个数都是窗口增量**（窗口 = 单片机发上一帧 `0x81` 到发这一帧之间），不是累计值。两个窗口
 不能直接比较大小，要按窗口看；需要累计值则自行累加。
 
 ## 5. 异常
@@ -372,7 +372,7 @@ ArError
 
 | 模拟对象 | 用途 |
 | --- | --- |
-| `sdk.sim.SimLink` | 协议解析、分流、握手和模拟状态机 |
+| `sdk.sim.SimLink` | 单片机协议解析、分流、握手和模拟状态机 |
 
 `SimLink` 是 `Link` 子类，不访问串口。用法与公共 `sdk.Arm` 相同：
 

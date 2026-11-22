@@ -1,4 +1,4 @@
-"""串口协议：CRC、版本哈希、帧解析和载荷编解码。
+"""SDK 与单片机的串口协议：CRC、版本哈希、帧解析和载荷编解码。
 
 协议使用 deg、deg/s、deg/s²、N·m 和 ℃；SDK 单位换算由上层完成。
 帧格式：AA 55 | type_id | datalen | arm_id | crc8 | payload | crc16(LE)。
@@ -185,7 +185,7 @@ def decode_ctrl_pos(payload):
 
 
 def encode_version(code):
-    """编码 0x01 的四字节小端版本码；通信双方须使用匹配的协议版本。"""
+    """编码 0x01 的四字节小端版本码；SDK 与单片机须使用匹配的协议版本。"""
     return struct.pack("<I", code & 0xFFFFFFFF)
 
 
@@ -258,7 +258,7 @@ class LinkStatus:
     over_len: int             # 载荷超长帧数
     ring_drop: int            # 接收环形缓冲区溢出帧数
     gated: int                # 握手前被拒绝的帧数
-    tx_fail: int              # 设备端发送失败次数
+    tx_fail: int              # 单片机发送失败次数
     dt_ms: int                # 报告间隔，单位 ms，标称 100
 
 

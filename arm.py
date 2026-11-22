@@ -3,7 +3,7 @@
 双臂共用一个 Link，每台臂使用独立的 Arm。关节使用 rad、rad/s 和 rad/s²，
 夹爪开口使用 m，温度使用 ℃。需要同一帧的数据时使用 snapshot()。
 
-命令预检失败抛 GateRejected；force=True 仅跳过上位机预检，设备端仍会校验命令。
+命令预检失败抛 GateRejected；force=True 仅跳过上位机预检，单片机仍会校验命令。
 每台臂须在 3 s 内发送有效命令或 keepalive()；SDK 不自动保活。
 """
 
@@ -425,7 +425,7 @@ class Arm:
         return self._send(protocol.TID_ARM_RESET)
 
     def send_raw(self, tid, payload=b""):
-        """透传 type_id 和 payload，不做预检或单位换算；设备端仍会校验命令。"""
+        """透传 type_id 和 payload，不做预检或单位换算；单片机仍会校验命令。"""
         if not isinstance(payload, (bytes, bytearray)):
             raise TypeError(i18n.tr("arm.payload_type", type(payload).__name__))
         return self._send(tid, bytes(payload))

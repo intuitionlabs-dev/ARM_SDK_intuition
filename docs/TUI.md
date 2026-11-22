@@ -9,9 +9,9 @@ TUI 通过公共 SDK 显示反馈、初始化、切换模式和发送关节目�
 | 串口 | ARX X5 | `python3 -m sdk.tui --robot-type arx_x5` | `python3 -m sdk.tui --fake --robot-type arx_x5` |
 | 串口 | Metal 参数 | `python3 -m sdk.tui --robot-type metal_arm` | `python3 -m sdk.tui --fake --robot-type metal_arm` |
 
-型号参数用于命令预检与显示。`--fake` 使用协议模拟器。
+型号参数用于命令预检与显示。`--fake` 使用单片机协议模拟器。
 
-双臂共享同一串口；`--arm-id` 选择启动时显示的臂，进入界面后使用 `a` 切换。
+双臂共享通往单片机的串口链路；`--arm-id` 选择启动时显示的臂，进入界面后使用 `a` 切换。
 
 ## 操作流程
 
@@ -62,6 +62,6 @@ TUI 为每台臂发送目标或保活，切换显示臂不会停止另一台臂�
 | 标识 | 来源 | 含义 |
 | --- | --- | --- |
 | `vcode 0xXXXXXXXX` | 所选配置的 `board_defs.VERSION_CODE` | 握手用的协议版本码，随 `--robot-type` 变化 |
-| `board_version` | 收到的版本帧 | 握手协议版本 |
+| `board_version` | 单片机返回的版本帧 | 握手协议版本 |
 | `package_version` | `arx-x5-control` 安装元数据，当前 `0.6.0` | 发行包版本 |
 | 源码提交 | `git rev-parse --short HEAD` | 当前源码版本 |
