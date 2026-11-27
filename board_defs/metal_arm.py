@@ -11,7 +11,7 @@ from ..protocol import fnv1a32
 from .common import *  # 各型号同时导出公共协议常量。
 
 # 握手协议版本码为版本串的 FNV-1a 32 位哈希。
-VERSION_STRING = "Intuition-Metal-Arm-v0.7"
+VERSION_STRING = "Intuition-Metal-Arm-v0.8"
 VERSION_CODE = fnv1a32(VERSION_STRING)
 
 JOINT_ANGLE_MIN = (-160.0, -180.0, 0.0, -123.0, -85.0, -145.0)

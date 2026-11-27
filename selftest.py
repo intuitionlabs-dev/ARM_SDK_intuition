@@ -152,8 +152,8 @@ def test_crc(c):
             "实际 0x%02X" % protocol.crc8(b"123456789"))
     c.check("crc16(\"123456789\") == 0x6F91", protocol.crc16(b"123456789") == 0x6F91,
             "实际 0x%04X" % protocol.crc16(b"123456789"))
-    for name, defs, want in (("arx_x5", board_defs, 0xFD1DDA15),
-                             ("metal_arm", metal_arm, 0xD7D0431B)):
+    for name, defs, want in (("arx_x5", board_defs, 0xFC1DD882),
+                             ("metal_arm", metal_arm, 0xD4D03E62)):
         c.check("%s 版本码 == 0x%08X" % (name, want), defs.VERSION_CODE == want,
                 "实际 0x%08X（版本串 %s）" % (defs.VERSION_CODE, defs.VERSION_STRING))
 
@@ -165,10 +165,10 @@ def test_anchors(c):
     cases = [
         ("版本帧 arm_id=0", protocol.encode(
             TID_VERSION, protocol.encode_version(metal_arm.VERSION_CODE), 0),
-         "aa550104008e1b43d0d7c7da"),
+         "aa550104008e623ed0d4dd34"),
         ("版本帧 arm_id=1（只差 arm_id 和两个 CRC）",
          protocol.encode(TID_VERSION, protocol.encode_version(metal_arm.VERSION_CODE), 1),
-         "aa55010401d01b43d0d736ca"),
+         "aa55010401d0623ed0d42c24"),
         ("0x02 空包", protocol.encode(TID_ARM_INIT), "aa5502000051f088"),
         ("0x18 空包", protocol.encode(TID_ARM_RESET), "aa5518000071fdb6"),
     ]

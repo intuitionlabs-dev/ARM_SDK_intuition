@@ -6,7 +6,7 @@ from ..protocol import fnv1a32
 from .common import *  # 各型号同时导出公共协议常量。
 
 # 握手协议版本码为版本串的 FNV-1a 32 位哈希。
-VERSION_STRING = "Intuition-ARX-X5-2023-v0.6"
+VERSION_STRING = "Intuition-ARX-X5-2023-v0.7"
 VERSION_CODE = fnv1a32(VERSION_STRING)
 
 JOINT_ANGLE_MIN = (-115.0, 0.5, 0.5, -90.0, -90.0, -112.87)
