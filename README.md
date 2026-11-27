@@ -9,7 +9,7 @@ SDK 通过串口与单片机通信，发送机械臂命令并接收反馈。单�
 
 ## 安装
 
-Python 要求 3.10 及以上。发行包 `arx-x5-control 0.6.0` 提供 Python API、TUI 和离线协议模拟器。
+Python 要求 3.10 及以上。发行包 `arx-x5-control 0.7.0` 提供 Python API、TUI 和离线协议模拟器。
 
 ```bash
 git clone --branch master https://github.com/intuitionlabs-dev/ARM_SDK_intuition.git

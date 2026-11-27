@@ -6,6 +6,7 @@
 
 import threading
 import time
+import struct
 
 from . import protocol
 from .board_defs import common as board_defs
@@ -34,8 +35,9 @@ _EMPTY_MODE_TID_TO_MODE = {
 class _Board:
     """单臂模拟状态，角度使用协议单位 deg。"""
 
-    def __init__(self, arm_id):
+    def __init__(self, arm_id, post_process_algorithm):
         self.arm_id = arm_id
+        self.post_process_algorithm = post_process_algorithm
         self.version_ok = False        # 是否已通过版本握手
         self.state = board_defs.STATE_WAIT_HANDSHAKE
         self.mode = board_defs.MODE_STOP
@@ -80,7 +82,8 @@ class SimLink(Link):
         self.arm_ids = arm_ids
         self.lost_mask = int(lost_mask) & 0xFF
         self.lost_arm = lost_arm
-        self.boards = {a: _Board(a) for a in arm_ids}
+        self.boards = {a: _Board(a, self.board_defs.DEFAULT_POST_PROCESS_ALGORITHM)
+                       for a in arm_ids}
 
         self._lock = threading.Lock()
         self._alive = False
@@ -99,7 +102,9 @@ class SimLink(Link):
         self.link_up = True
         self.link_err = None
         self._t = 0.0
-        self.boards = {a: _Board(a) for a in self.arm_ids}   # 重开时重置模拟状态。
+        self.boards = {a: _Board(a, self.board_defs.DEFAULT_POST_PROCESS_ALGORITHM)
+                       for a in self.arm_ids}
+        self._on_serial_open()
         self._thr = threading.Thread(target=self._gen, name="sdk-sim", daemon=True)
         self._thr.start()
         return self
@@ -146,6 +151,18 @@ class SimLink(Link):
                         protocol.encode_version(self.board_defs.VERSION_CODE), arm_id)
                 # 版本不匹配时不回复；收到匹配版本后即可握手。
                 # 模拟器不主动广播握手前的版本帧。
+            elif tid == protocol.TID_PARAMETER_SET and board.version_ok:
+                if len(payload) % protocol.PARAMETER_ITEM_LEN == 0 \
+                        and board.state == board_defs.STATE_NORMAL \
+                        and board.mode in (board_defs.MODE_STOP, board_defs.MODE_DAMPING):
+                    for parameter_id, value in struct.iter_unpack("<HI", payload):
+                        if parameter_id == protocol.PARAM_ID_JOINT_POST_PROCESS \
+                                and value in (protocol.POST_PROCESS_RUCKIG,
+                                              protocol.POST_PROCESS_QUINTIC,
+                                              protocol.POST_PROCESS_DIRECT):
+                            board.post_process_algorithm = value
+                reply = protocol.encode(protocol.TID_PARAMETER_FEEDBACK,
+                                        struct.pack("<I", board.post_process_algorithm), arm_id)
             elif tid == protocol.TID_ARM_INIT and (
                     board.state == board_defs.STATE_WAIT_INIT
                     or (board.state == board_defs.STATE_NORMAL

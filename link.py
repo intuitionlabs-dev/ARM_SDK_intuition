@@ -195,7 +195,8 @@ class ArmChannel:
     """单臂收包状态，写入受锁保护；反馈和 ACK 使用不可变对象。"""
 
     __slots__ = ("arm_id", "lock", "feedback", "feedback_t", "feedback_seq",
-                 "n_feedback", "ack", "ack_t", "ack_seq", "ack_event", "unknown_tids")
+                 "n_feedback", "ack", "ack_t", "ack_seq", "ack_event", "unknown_tids",
+                 "parameters", "parameters_t", "parameters_seq")
 
     def __init__(self, arm_id):
         self.arm_id = arm_id
@@ -209,6 +210,9 @@ class ArmChannel:
         self.ack_seq = 0
         self.ack_event = threading.Event()
         self.unknown_tids = {}     # tid -> 计数
+        self.parameters = None
+        self.parameters_t = 0.0
+        self.parameters_seq = 0
 
     # 写侧（只有 RX 线程调）
 
@@ -229,6 +233,17 @@ class ArmChannel:
     def note_unknown(self, tid):
         with self.lock:
             self.unknown_tids[tid] = self.unknown_tids.get(tid, 0) + 1
+
+    def put_parameters(self, parameters, ts):
+        with self.lock:
+            self.parameters = parameters
+            self.parameters_t = ts
+            self.parameters_seq += 1
+
+    def snapshot_parameters(self):
+        """返回参数反馈、接收时刻和序号。"""
+        with self.lock:
+            return self.parameters, self.parameters_t, self.parameters_seq
 
     # 读侧
 
@@ -389,6 +404,10 @@ class Link:
         self.link_status_t = None
         self.open_gen += 1
         with self._chan_lock:
+            for channel in self._channels.values():
+                with channel.lock:
+                    channel.parameters = None
+                    channel.parameters_t = 0.0
             self.link_up = True
             self.link_err = None
 
@@ -581,6 +600,12 @@ class Link:
             elif tid == protocol.TID_VERSION and len(payload) == 4:
                 self.board_version = protocol.decode_version(payload)
                 self.version_seen = True
+            elif tid == protocol.TID_PARAMETER_FEEDBACK:
+                try:
+                    self.channel(arm_id).put_parameters(
+                        protocol.decode_parameter_feedback(payload), now)
+                except ValueError:
+                    pass
             elif tid == protocol.TID_LINK_STATUS and len(payload) == protocol.LINK_STATUS_LEN:
                 # 0x81 属于整条链路，存入 Link，不按臂分流。
                 self.link_status = protocol.decode_link_status(payload)

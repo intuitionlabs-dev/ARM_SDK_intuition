@@ -29,7 +29,7 @@
 | `sdk.Arm` | 一台臂。**主入口**，见第 3 节 |
 | `sdk.Link` | 连接单片机的串口链路。见第 2 节 |
 | `sdk.Snapshot` | 同一帧里换算好的一致视图（第 4 节） |
-| `sdk.Feedback` / `sdk.SetZeroAck` / `sdk.LinkStatus` | 原始帧数据（**线上单位**） |
+| `sdk.Feedback` / `sdk.SetZeroAck` / `sdk.LinkStatus` / `sdk.ParameterFeedback` | 原始帧数据（**线上单位**） |
 | `sdk.GripperCalibration` / `sdk.GripperCalibStore` | 夹爪标定模型和文件存取（第 6 节） |
 | `sdk.ArError` + 7 种下级异常 | 异常层级（第 5 节） |
 | `sdk.pick_default_port` / `list_links` / `describe_port` / `usb_identity` | 串口选择（第 2 节） |
@@ -212,7 +212,37 @@ except sdk.ArError as e:
     print("SDK 的错：", e)
 ```
 
-### 3.4 等
+### 3.4 参数接口
+
+| 成员 | 说明 |
+| --- | --- |
+| `set_parameters(parameters, *, force=False)` | 发送参数映射或 `(id, value)` 序列。每帧最多 42 项。返回发送字节数 |
+| `query_parameters(timeout=1.0)` | 发送空参数帧，等待本臂的新参数反馈。每 100 ms 重试，直至收到反馈或超时。返回 `ParameterFeedback`。超时抛 `TimeoutError` |
+| `last_parameter_feedback` | 最近收到的参数反馈。当前连接尚无反馈时为 `None` |
+
+设置参数要求 `STATE_NORMAL`，且为 STOP 或阻尼模式。单片机同时检查遥控器控制权。
+单片机按顺序处理参数项。重复编号以最后一个有效值为准。
+单片机跳过未知编号和无效算法值。载荷长度错误时，单片机保留全部参数。
+每次设置或查询均反馈实际参数值。调用 `query_parameters()` 确认结果。
+同一臂的参数操作须串行执行。
+
+`ParameterFeedback.param` 是全部可变参数的元组，下标为参数编号。
+`post_process_algorithm` 返回关节后处理算法。
+
+| 参数编号 | 常量 | 值 |
+| --- | --- | --- |
+| 0 | `protocol.PARAM_ID_JOINT_POST_PROCESS` | `POST_PROCESS_RUCKIG=0`、`POST_PROCESS_QUINTIC=1`、`POST_PROCESS_DIRECT=2` |
+
+```python
+from sdk import protocol
+
+# 机械臂已握手，处于正常运行状态和 STOP 或阻尼模式。
+arm.set_parameters({protocol.PARAM_ID_JOINT_POST_PROCESS: protocol.POST_PROCESS_RUCKIG})
+parameters = arm.query_parameters()
+print(parameters.post_process_algorithm)
+```
+
+### 3.5 等
 
 | 方法 | 说明 |
 |---|---|
@@ -223,7 +253,7 @@ except sdk.ArError as e:
 
 设零结果在流程结束后返回。结果码依赖电机确认机制，应用应逐项检查 ACK；等待时持续保活，流程和协议差异见 [型号对照](docs/ROBOTS.md#控制行为)。
 
-### 3.5 夹爪标定
+### 3.6 夹爪标定
 
 | 成员 | 说明 |
 |---|---|
@@ -350,6 +380,9 @@ ArError
 | `LINK_TID_ORDER` / `LINK_TID_OTHER` / `LINK_TID_SLOT_NUM` | `0x81` 里 `rx_by_tid` 的 10 个帧类型顺序、「其他」槽位下标和数组长度（11） |
 | `HEADER_LEN`=6 / `OVERHEAD`=8 / `ARM_ID_OFFSET`=4 / `MAX_DATA`=255 / `MAX_FRAME`=263 | 帧结构 |
 | `encode(tid, payload=b"", arm_id=0)` | 组一帧（`AA 55 │ tid │ len │ arm_id │ crc8 │ payload │ crc16`） |
+| `TID_PARAMETER_SET=0x19` / `TID_PARAMETER_FEEDBACK=0x82` | 参数设置、查询和反馈帧类型 |
+| `encode_parameter_set(parameters=())` | 参数映射或参数项序列编码。每项为小端 `u16 id`、`u32 value`，共 6 B。空序列用于查询。范围或容量错误抛 `ValueError` |
+| `decode_parameter_feedback(payload)` | 解码固定 4 B 的参数反馈，返回 `ParameterFeedback`。长度错误抛 `ValueError` |
 | `encode_version(code)` / `encode_ctrl_pos(angles_deg7, gripper_torque_limit_nm, *, joint_vel_deg_s=None, joint_acc_deg_s2=None)` / `encode_feedback(...)` / `encode_link_status(...)` | 各 payload |
 | `decode_feedback(payload)` / `decode_setzero_ack(payload)` / `decode_version(payload)` / `decode_link_status(payload)` | → `Feedback` / `SetZeroAck` / 版本码 / `LinkStatus`。长度不符抛 `ValueError`（由 `link` 静默丢弃） |
 | `crc8(data)` / `crc16(data)` / `fnv1a32(s)` | CRC-8/MAXIM、反射多项式 `0x8408`、版本码用的 FNV-1a 32 |

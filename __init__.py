@@ -14,13 +14,13 @@ from .errors import (ArError, CalibrationError, FeedbackStale, GateRejected,
 from .gripper import GripperCalibration, GripperCalibStore
 from .link import (Link, describe_port, list_links, match_ident, pick_default_port,
                    same_usb_ident, usb_identity)
-from .protocol import Feedback, LinkStatus, SetZeroAck
+from .protocol import Feedback, LinkStatus, ParameterFeedback, SetZeroAck
 
 __all__ = [
     # 入口
     "Arm", "Link", "Snapshot",
     # 数据
-    "Feedback", "SetZeroAck", "LinkStatus", "GripperCalibration", "GripperCalibStore",
+    "Feedback", "SetZeroAck", "LinkStatus", "ParameterFeedback", "GripperCalibration", "GripperCalibStore",
     # 异常
     "ArError", "LinkError", "NotConnected", "ProtocolError", "GateRejected",
     "FeedbackStale", "GripperNotCalibrated", "CalibrationError",

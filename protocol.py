@@ -101,8 +101,19 @@ TID_ARM_STOP = 0x14           # STOP 软停机，空载荷
 TID_ARM_DAMPING = 0x15        # 阻尼，空载荷
 TID_ARM_CTRL_POS = 0x16       # 位置控制
 TID_ARM_RESET = 0x18          # 复位，空载荷，不执行夹爪找零
+TID_PARAMETER_SET = 0x19      # 参数设置或查询
 TID_ARM_FEEDBACK = 0x80       # 反馈，握手后目标频率 250 Hz
 TID_LINK_STATUS = 0x81        # 链路统计，握手后 10 Hz
+TID_PARAMETER_FEEDBACK = 0x82  # 全部可变参数
+
+PARAM_ID_JOINT_POST_PROCESS = 0
+PARAM_ID_NUM = 1
+POST_PROCESS_RUCKIG = 0
+POST_PROCESS_QUINTIC = 1
+POST_PROCESS_DIRECT = 2
+_PARAMETER_ITEM = struct.Struct("<HI")
+PARAMETER_ITEM_LEN = _PARAMETER_ITEM.size
+PARAMETER_FEEDBACK_LEN = PARAM_ID_NUM * 4
 
 EMPTY_MODE_TIDS = (TID_ARM_START, TID_ARM_GRAVITY, TID_ARM_STOP, TID_ARM_DAMPING)
 
@@ -182,6 +193,39 @@ def decode_ctrl_pos(payload):
     if not all(isfinite(value) for value in values) or values[7] < 0:
         raise ValueError("控制字段必须有限，夹爪力矩上限必须非负")
     return values[:7], values[7], values[8:14], values[14:20]
+
+
+def encode_parameter_set(parameters=()):
+    """编码参数项序列或映射；每项为 u16 编号和 u32 值，空序列用于查询。"""
+    items = parameters.items() if hasattr(parameters, "items") else parameters
+    payload = bytearray()
+    for parameter_id, value in items:
+        if type(parameter_id) is not int or not 0 <= parameter_id <= 0xffff:
+            raise ValueError("参数编号必须为 u16 整数")
+        if type(value) is not int or not 0 <= value <= 0xffffffff:
+            raise ValueError("参数值必须为 u32 整数")
+        payload.extend(_PARAMETER_ITEM.pack(parameter_id, value))
+        if len(payload) > MAX_DATA:
+            raise ValueError("参数项超过单帧容量")
+    return bytes(payload)
+
+
+@dataclass(frozen=True)
+class ParameterFeedback:
+    """全部可变参数，param 的下标为参数编号。"""
+
+    param: tuple
+
+    @property
+    def post_process_algorithm(self):
+        return self.param[PARAM_ID_JOINT_POST_PROCESS]
+
+
+def decode_parameter_feedback(payload):
+    """解码固定长度的参数反馈。"""
+    if len(payload) != PARAMETER_FEEDBACK_LEN:
+        raise ValueError("参数反馈载荷长度错误")
+    return ParameterFeedback(struct.unpack("<%dI" % PARAM_ID_NUM, payload))
 
 
 def encode_version(code):

@@ -430,6 +430,47 @@ class Arm:
             raise TypeError(i18n.tr("arm.payload_type", type(payload).__name__))
         return self._send(tid, bytes(payload))
 
+    def set_parameters(self, parameters, *, force=False):
+        """发送参数映射或参数项序列；要求正常运行且为 STOP 或阻尼。
+
+        返回发送字节数。调用 query_parameters() 读取单片机实际生效值。
+        """
+        payload = protocol.encode_parameter_set(parameters)
+        if not force and payload:
+            fb = self._fresh_feedback("set_parameters")
+            why = []
+            if fb.robot_state != self.board_defs.STATE_NORMAL:
+                why.append(i18n.tr("arm.gate_parameter_state", i18n.state_name(fb.robot_state),
+                                   i18n.state_name(self.board_defs.STATE_NORMAL)))
+            if fb.mode not in (self.board_defs.MODE_STOP, self.board_defs.MODE_DAMPING):
+                why.append(i18n.tr("arm.gate_parameter_mode"))
+            self._raise_if(why, "set_parameters")
+        return self._send(protocol.TID_PARAMETER_SET, payload)
+
+    @property
+    def last_parameter_feedback(self):
+        """最近收到的参数反馈；当前连接尚无反馈时为 None。"""
+        return self._chan.snapshot_parameters()[0]
+
+    def query_parameters(self, timeout=1.0):
+        """查询全部可变参数，每 100 ms 重试，超时抛 TimeoutError。"""
+        after = self._chan.snapshot_parameters()[2]
+        self._send(protocol.TID_PARAMETER_SET)
+        now = time.monotonic()
+        deadline = now + timeout
+        retry_at = now + 0.1
+        while True:
+            parameters, _, seq = self._chan.snapshot_parameters()
+            if parameters is not None and seq > after:
+                return parameters
+            now = time.monotonic()
+            if now >= deadline:
+                raise TimeoutError(i18n.tr("arm.parameter_timeout", timeout))
+            if now >= retry_at:
+                self._send(protocol.TID_PARAMETER_SET)
+                retry_at = now + 0.1
+            time.sleep(0.005)
+
     # 等
 
     @property

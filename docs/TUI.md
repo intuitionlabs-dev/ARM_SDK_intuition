@@ -63,5 +63,5 @@ TUI 为每台臂发送目标或保活，切换显示臂不会停止另一台臂�
 | --- | --- | --- |
 | `vcode 0xXXXXXXXX` | 所选配置的 `board_defs.VERSION_CODE` | 握手用的协议版本码，随 `--robot-type` 变化 |
 | `board_version` | 单片机返回的版本帧 | 握手协议版本 |
-| `package_version` | `arx-x5-control` 安装元数据，当前 `0.6.0` | 发行包版本 |
+| `package_version` | `arx-x5-control` 安装元数据，当前 `0.7.0` | 发行包版本 |
 | 源码提交 | `git rev-parse --short HEAD` | 当前源码版本 |
