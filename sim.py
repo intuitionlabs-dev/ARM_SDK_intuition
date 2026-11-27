@@ -188,7 +188,7 @@ class SimLink(Link):
                 board.mode = _EMPTY_MODE_TID_TO_MODE[tid]
             elif tid == protocol.TID_ARM_CTRL_POS and \
                     len(payload) == protocol.CTRL_POS_LEN:
-                # 要求正常运行 / RUN；模拟器不建模遥控器。
+                # 要求正常运行 / RUN。
                 if board.state == board_defs.STATE_NORMAL and board.mode == board_defs.MODE_RUN:
                     try:
                         target, _, _, _ = protocol.decode_ctrl_pos(payload)

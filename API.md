@@ -220,7 +220,7 @@ except sdk.ArError as e:
 | `query_parameters(timeout=1.0)` | 发送空参数帧，等待本臂的新参数反馈。每 100 ms 重试，直至收到反馈或超时。返回 `ParameterFeedback`。超时抛 `TimeoutError` |
 | `last_parameter_feedback` | 最近收到的参数反馈。当前连接尚无反馈时为 `None` |
 
-设置参数要求 `STATE_NORMAL`，且为 STOP 或阻尼模式。单片机同时检查遥控器控制权。
+设置参数要求 `STATE_NORMAL`，且为 STOP 或阻尼模式。
 单片机按顺序处理参数项。重复编号以最后一个有效值为准。
 单片机跳过未知编号和无效算法值。载荷长度错误时，单片机保留全部参数。
 每次设置或查询均反馈实际参数值。调用 `query_parameters()` 确认结果。
